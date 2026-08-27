@@ -16,7 +16,19 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
-  self.skipWaiting();
+  // Deliberately NOT calling skipWaiting() here. A new worker installs and
+  // then waits — it only activates once the page explicitly asks it to
+  // (see the SKIP_WAITING message handler below), which happens when the
+  // user taps the "update available" banner. This is what makes that
+  // banner meaningful instead of cosmetic: without this, the new version
+  // would silently take over in the background the moment it finished
+  // installing, and the "tap to update" prompt would be a lie.
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (event) => {
