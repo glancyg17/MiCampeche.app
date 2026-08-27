@@ -9,9 +9,9 @@ button{font:inherit;line-height:1.2}
    design already. */
 :root{color-scheme:light}
 :root{
-  --wall:#cd8f47;--wall-dk:#a86f30;--wall-soft:#eecda1;
-  --gulf:#204c58;--gulf-dk:#153338;--gulf-soft:#3a6d7a;
-  --night:#12201d;--night2:#1a2b27;--night3:#233a34;
+  --wall:#fab400;--wall-dk:#f5670f;--wall-soft:#fddd8c;
+  --gulf:#00309c;--gulf-dk:#001f65;--gulf-soft:#597ed1;
+  --night:#000612;--night2:#00081c;--night3:#000c28;
   --paper:#fbf8f2;--paper2:#f3ecdd;--paper3:#eae1cc;
   --signal:#b8402a;--signal-bg:#faeae5;
   --palm:#3f6b52;--palm-bg:#e7efe4;
