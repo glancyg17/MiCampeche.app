@@ -287,12 +287,55 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="update-banner" id="update-banner">
+  <svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+  <div class="update-banner-txt">Hay una nueva versión de MiCampeche</div>
+  <button class="update-banner-btn" id="update-banner-btn">Actualizar</button>
+  <button class="update-banner-dismiss" id="update-banner-dismiss" aria-label="Cerrar"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+</div>
+
 <script src="js/app.js"></script>
 <script>
+/* ══════════════ SERVICE WORKER + UPDATE DETECTION ══════════════
+   Standard "new version waiting" pattern: register the worker, listen for
+   updatefound, watch the new worker's state. If it reaches 'installed'
+   while navigator.serviceWorker.controller already exists, this is a real
+   update (not the first-ever install) — show the banner. Tapping it tells
+   the waiting worker to activate, then reloads once it does. */
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('sw.js').catch(err=>console.error('SW registration failed:',err));
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      reg.addEventListener('updatefound',()=>{
+        const newWorker=reg.installing;
+        if(!newWorker)return;
+        newWorker.addEventListener('statechange',()=>{
+          if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
+            showUpdateBanner(reg);
+          }
+        });
+      });
+    }).catch(err=>console.error('SW registration failed:',err));
+
+    // Reload once the new worker actually takes control, not before —
+    // otherwise the page could reload while still served by the old worker.
+    let refreshing=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(refreshing)return;
+      refreshing=true;
+      window.location.reload();
+    });
   });
+}
+function showUpdateBanner(reg){
+  const banner=document.getElementById('update-banner');
+  const btn=document.getElementById('update-banner-btn');
+  const dismiss=document.getElementById('update-banner-dismiss');
+  banner.classList.add('on');
+  btn.onclick=()=>{
+    if(reg.waiting)reg.waiting.postMessage('SKIP_WAITING');
+    btn.disabled=true;btn.textContent='Actualizando…';
+  };
+  dismiss.onclick=()=>banner.classList.remove('on');
 }
 </script>
 </body>
