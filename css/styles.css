@@ -1,5 +1,13 @@
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
+/* Tells the browser this page has its own deliberate theming and shouldn't
+   be auto-repainted by a device/browser dark-mode setting (Samsung Internet
+   and some other Chromium browsers do this aggressively by default, which
+   fights our own dark header + light content palette and looks worse than
+   either). "light" here means "render this as authored, don't force-dark
+   it" — it does not mean the app itself looks light, most of it is dark by
+   design already. */
+:root{color-scheme:light}
 :root{
   --wall:#cd8f47;--wall-dk:#a86f30;--wall-soft:#eecda1;
   --gulf:#204c58;--gulf-dk:#153338;--gulf-soft:#3a6d7a;
