@@ -822,6 +822,55 @@ function closeModal(){document.getElementById('modal-bg').classList.remove('on')
    Every visitor already has an anonymous session; signing up upgrades
    that SAME session in place (see MC.signUp), so nothing already
    submitted gets orphaned. */
+
+// Mexico first (the app's actual audience + the default), then the rest
+// of the Americas (diaspora/family contact is the realistic use case for
+// most non-Mexico signups here), then a broader set of other countries.
+const COUNTRY_CODES=[
+  ['MX','México','52'],
+  ['US','Estados Unidos','1'],
+  ['CA','Canadá','1'],
+  ['GT','Guatemala','502'],
+  ['BZ','Belice','501'],
+  ['HN','Honduras','504'],
+  ['SV','El Salvador','503'],
+  ['NI','Nicaragua','505'],
+  ['CR','Costa Rica','506'],
+  ['PA','Panamá','507'],
+  ['CU','Cuba','53'],
+  ['DO','República Dominicana','1'],
+  ['PR','Puerto Rico','1'],
+  ['CO','Colombia','57'],
+  ['VE','Venezuela','58'],
+  ['EC','Ecuador','593'],
+  ['PE','Perú','51'],
+  ['BO','Bolivia','591'],
+  ['CL','Chile','56'],
+  ['AR','Argentina','54'],
+  ['UY','Uruguay','598'],
+  ['PY','Paraguay','595'],
+  ['BR','Brasil','55'],
+  ['ES','España','34'],
+  ['FR','Francia','33'],
+  ['DE','Alemania','49'],
+  ['IT','Italia','39'],
+  ['GB','Reino Unido','44'],
+  ['PT','Portugal','351'],
+  ['NL','Países Bajos','31'],
+  ['BE','Bélgica','32'],
+  ['CH','Suiza','41'],
+  ['IE','Irlanda','353'],
+  ['AU','Australia','61'],
+  ['NZ','Nueva Zelanda','64'],
+  ['JP','Japón','81'],
+  ['KR','Corea del Sur','82'],
+  ['CN','China','86'],
+  ['IN','India','91'],
+  ['PH','Filipinas','63'],
+  ['ZA','Sudáfrica','27'],
+  ['IL','Israel','972'],
+  ['AE','Emiratos Árabes Unidos','971']
+];
 let accountMode='signup';
 async function openAccount(){
   const acct=await MC.currentAccount();
@@ -853,7 +902,12 @@ function renderAccountForm(){
   </div>`;
   if(isSignup)h+=`<div><label class="fl">Tu nombre</label><input class="fi" id="acct-name" type="text" placeholder="Ej. Ricardo Martín"></div>`;
   h+=`<div><label class="fl">Correo</label><input class="fi" id="acct-email" type="email" placeholder="tu@correo.com"></div>`;
-  if(isSignup)h+=`<div><label class="fl">Teléfono / WhatsApp</label><input class="fi" id="acct-phone" type="tel" placeholder="981 000 0000"></div>`;
+  if(isSignup)h+=`<div><label class="fl">Teléfono / WhatsApp</label>
+    <div style="display:flex;gap:8px">
+      <select class="fs" id="acct-phone-cc" style="flex:0 0 138px">${COUNTRY_CODES.map(([iso,name,code])=>`<option value="${code}"${iso==='MX'?' selected':''}>+${code} ${name}</option>`).join('')}</select>
+      <input class="fi" id="acct-phone" type="tel" placeholder="981 000 0000" style="flex:1;min-width:0">
+    </div>
+  </div>`;
   h+=`<div><label class="fl">Contraseña</label><input class="fi" id="acct-password" type="password" placeholder="Mínimo 6 caracteres"></div>`;
   h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Usamos tu teléfono para tus publicaciones (contacto) y avisos importantes — nunca lo compartimos ni lo vendemos.':'Usa el correo y contraseña con los que creaste tu cuenta.'}</div>`;
   h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
@@ -871,11 +925,12 @@ async function submitAuth(){
   let result;
   if(accountMode==='signup'){
     const name=(document.getElementById('acct-name').value||'').trim()||'Vecino';
-    const phoneRaw=(document.getElementById('acct-phone').value||'').trim();
-    const phoneDigits=phoneRaw.replace(/\D/g,'');
-    if(phoneDigits.length<10){toast('Ingresa un número de teléfono válido (10 dígitos)');return;}
+    const dialCode=document.getElementById('acct-phone-cc').value;
+    const phoneDigits=(document.getElementById('acct-phone').value||'').replace(/\D/g,'');
+    if(phoneDigits.length<6||phoneDigits.length>12){toast('Ingresa un número de teléfono válido');return;}
+    const fullPhone='+'+dialCode+phoneDigits;
     btn.disabled=true;btn.textContent='Un momento…';
-    result=await MC.signUp(email,password,name,phoneDigits);
+    result=await MC.signUp(email,password,name,fullPhone);
   } else {
     btn.disabled=true;btn.textContent='Un momento…';
     result=await MC.signIn(email,password);
