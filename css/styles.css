@@ -22,7 +22,7 @@ button{font:inherit;line-height:1.2}
   --sh2:0 4px 14px rgba(20,25,20,.09),0 1px 3px rgba(20,25,20,.06);
   --sh3:0 10px 30px rgba(15,20,18,.16),0 2px 6px rgba(15,20,18,.08);
 }
-html,body{height:100%;height:100dvh;background:var(--night);font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+html,body{height:100%;height:100dvh;overflow:hidden;position:fixed;inset:0;width:100%;background:var(--night);font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
 body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 svg{display:block}
 .ico{width:20px;height:20px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
