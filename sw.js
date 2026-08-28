@@ -1,13 +1,16 @@
 // MiCampeche service worker — deliberately conservative.
 // Only the app shell (HTML/CSS/JS) is cached for offline access; everything
-// else (images, external links) goes straight to the network. This avoids
-// silently serving stale content the way a cache-everything strategy would.
+// else (images, external links, Supabase API calls) goes straight to the
+// network. This avoids silently serving stale content the way a
+// cache-everything strategy would.
 // Bump CACHE_NAME whenever app-shell files change so old caches get cleared.
-const CACHE_NAME = 'micampeche-shell-v9';
+const CACHE_NAME = 'micampeche-shell-v10';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/css/styles.css',
+  '/js/vendor/supabase.js',
+  '/js/supabase-client.js',
   '/js/app.js',
   '/manifest.json'
 ];

@@ -1,0 +1,11 @@
+{
+  "name": "micampeche-app",
+  "private": true,
+  "description": "Static PWA frontend for MiCampeche. No build step. package.json exists only to hold the test dependency for test-smoke.js.",
+  "devDependencies": {
+    "jsdom": "^27.0.0"
+  },
+  "scripts": {
+    "test": "node test-smoke.js"
+  }
+}

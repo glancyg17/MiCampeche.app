@@ -132,140 +132,63 @@ function confirmPhotoUploaded(){
   toast('¡Gracias! Tu foto quedó registrada ✓');
 }
 
-/* ══════════════ MOCK DATA LAYER ══════════════ */
+/* ══════════════ REAL DATA LAYER (Supabase) ══════════════
+   These start empty and are populated by loadAllData() during init().
+   Every render function below is otherwise UNCHANGED from the mock-data
+   version — it just reads whatever these variables currently hold. */
 const WEATHER={city:'Campeche',temp:31,cond:'Soleado',condCode:'sun',feelsLike:35,humidity:64,wind:18,hi:33,lo:26,alert:'Aviso de calor — hidrátate entre 12pm y 4pm',source:'Servicio Meteorológico Nacional (Conagua)',sourceUrl:'https://smn.conagua.gob.mx/es/pronosticos/pronostico-por-ciudad/campeche'};
+// STILL MOCK, deliberately — real weather (current + hourly via Open-Meteo)
+// is separate, later work per the Codex (Sections 5 & 8).
 
-const NOTICIAS=[
-  {id:'n1',source:'Yoli Chan · Reportera independiente',title:'Vecinos del barrio de San Román piden bacheo urgente en calle 10',desc:'Habitantes de la zona denuncian que los baches han provocado ya dos accidentes menores esta semana y exigen respuesta del ayuntamiento.',img:'https://images.unsplash.com/photo-1594819047050-8a1358f7d6d6?w=600&q=80',time:'Hace 2 horas',url:'https://facebook.com/example'},
-  {id:'n2',source:'Beto Cámara · Campeche al Día (FB)',title:'Este fin de semana regresa el tianguis nocturno al Malecón',desc:'Más de 40 puestos de comida y artesanía se instalarán desde el viernes en el tramo frente a la Plaza Moch-Couoh.',img:'https://images.unsplash.com/photo-1533900298318-6b8da08a523e?w=600&q=80',time:'Hace 5 horas',url:'https://facebook.com/example'},
-  {id:'n3',source:'Ana Pat Dzul · Reportera ciudadana',title:'Cierre parcial de la Av. Ah Kim Pech por trabajos de drenaje',desc:'La obra durará aproximadamente diez días. Se recomienda tomar rutas alternas en horario matutino.',img:'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&q=80',time:'Ayer',url:'https://facebook.com/example'},
-  {id:'n4',source:'Jorge Uc · Independiente',title:'Corsarios de Campeche gana 2-1 en casa y sube al tercer lugar',desc:'Gol de último minuto en el Estadio Universitario desató la celebración de la afición local.',img:'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=600&q=80',time:'Ayer',url:'https://facebook.com/example'},
-  {id:'n5',source:'Mariana Pech · Vecina reportera',title:'Reportan corte de agua programado en Fraccionamiento Prado',desc:'La comisión confirmó que el servicio se restablecerá este jueves por la tarde tras labores de mantenimiento.',img:'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=600&q=80',time:'Hace 2 días',url:'https://facebook.com/example'}
-];
+let NOTICIAS=[];
+let EVENTOS=[];
+let TIENDA=[];
+let PERDIDOS=[];
+let ALERTAS=[];
+let EMPLEOS=[];
+let REPORTES=[];
+let AVISOS=[];
 
-/* Each event now carries a real ds (yyyy-mm-dd) so Inicio can filter to
-   "today only" honestly, instead of relying on hardcoded day/mon strings
-   that would silently go stale. day/mon are derived from ds, not separate. */
-const EVENTOS_RAW=[
-  {id:'e1',cat:'Mercado',name:'Tianguis nocturno del Malecón',dsOffset:0,time:'6:00 PM',loc:'Malecón, frente a Plaza Moch-Couoh'},
-  {id:'e2',cat:'Cultura',name:'Noche de museos — entrada libre',dsOffset:0,time:'7:00 PM',loc:'Centro Histórico'},
-  {id:'e6',cat:'Comunidad',name:'Rifa y kermés de la parroquia',dsOffset:0,time:'11:00 AM',loc:'Parque de San Román'},
-  {id:'e3',cat:'Deporte',name:'Corsarios de Campeche vs. Correcaminos',dsOffset:2,time:'8:00 PM',loc:'Estadio Universitario'},
-  {id:'e4',cat:'Comunidad',name:'Jornada de vacunación para mascotas',dsOffset:3,time:'9:00 AM',loc:'Parque Principal, Col. Guadalupe'},
-  {id:'e5',cat:'Música',name:'Trova en la Puerta de Mar',dsOffset:4,time:'8:30 PM',loc:'Puerta de Mar'}
-];
-const MONTH_ABBR_ES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-const EVENTOS=EVENTOS_RAW.map(x=>{
-  const ds=offsetDs(x.dsOffset);
-  const d=new Date(ds+'T12:00:00');
-  return {...x,ds,day:String(d.getDate()),mon:MONTH_ABBR_ES[d.getMonth()]};
-});
-
-/* sellerType distinguishes Mercado (negocio) from Clasificados (personal) —
-   mirrors the account-tier split discussed for the real backend. */
-const TIENDA=[
-  {id:'t1',cat:'Comida',name:'Pastel de tres leches (rebanada o entero)',price:'$350',seller:'Repostería Tsuk Tun',img:'https://images.unsplash.com/photo-1571115177098-24ec42ed204d?w=500&q=80',featured:true,sellerType:'negocio'},
-  {id:'t2',cat:'Ropa',name:'Guayabera bordada a mano, talla M',price:'$680',seller:'Bordados Yolanda',img:'https://images.unsplash.com/photo-1520975954732-35dd22299614?w=500&q=80',sellerType:'negocio'},
-  {id:'t3',cat:'Hogar',name:'Hamaca matrimonial hilo fino',price:'$920',seller:'Hamacas del Sur',img:'https://images.unsplash.com/photo-1587145717093-53b7ea9a1b2d?w=500&q=80',sellerType:'negocio'},
-  {id:'t4',cat:'Comida',name:'Pan de cazón para 4 personas',price:'$180',seller:'Cocina de Doña Mich',img:'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=500&q=80',sellerType:'negocio'},
-  {id:'t5',cat:'Belleza',name:'Set de jabones artesanales de miel',price:'$220',seller:'Miel de la Península',img:'https://images.unsplash.com/photo-1600857062241-98e5dba7f214?w=500&q=80',sellerType:'negocio'},
-  {id:'t6',cat:'Hogar',name:'Vela de cera de abeja, aroma natural',price:'$150',seller:'Casa Menta',img:'https://images.unsplash.com/photo-1602874801007-bd458bb1b8b6?w=500&q=80',sellerType:'negocio'},
-  {id:'t7',cat:'Hogar',name:'Cama matrimonial usada, buen estado',price:'$1,200',seller:'Ricardo M.',img:'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=500&q=80',sellerType:'personal'},
-  {id:'t8',cat:'Otro',name:'Bicicleta rodada 26, poco uso',price:'$1,800',seller:'Wendy C.',img:'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=500&q=80',sellerType:'personal'}
-];
-
-/* OFERTAS — daily deal drop. Field names lean toward the eventual schema:
-   claimed/total drive the progress bar + sold-out state; tier controls the
-   Premium badge; drop_date would gate "today's" set once this is real. */
-function dToDs(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-const TODAY_DS=dToDs(new Date());
-
-/* OFERTAS — early-stage rule: 1 new deal can be BOOKED per day (see the
-   OFERTAS_SLOTS booking calendar below), but a deal STAYS VISIBLE for up to
-   OFERTA_LIFESPAN_DAYS or until its quantity sells out, whichever happens
-   first. This is a deliberate bridge until there's enough daily traffic to
-   justify tightening
-   to a true single "today's one deal, gone at midnight" cycle. Each entry
-   needs postedDs (the day it was booked) so isOfertaLive() can compute
-   whether it's still within its display window. */
+/* OFERTAS — a deal STAYS VISIBLE for up to OFERTA_LIFESPAN_DAYS or until
+   its quantity sells out, whichever happens first (see Codex Section 6). */
 const OFERTA_LIFESPAN_DAYS=7;
-const OFERTAS=[
-  {id:'o1',seller:'Repostería Tsuk Tun',tier:'premium',name:'Pastel de tres leches entero',priceWas:350,priceNow:199,img:'https://images.unsplash.com/photo-1571115177098-24ec42ed204d?w=500&q=80',claimed:14,total:20,postedDs:offsetDs(-2)},
-  {id:'o2',seller:'Bordados Yolanda',tier:'free',name:'Guayabera bordada a mano',priceWas:680,priceNow:450,img:'https://images.unsplash.com/photo-1520975954732-35dd22299614?w=500&q=80',claimed:3,total:8,postedDs:offsetDs(-1)},
-  {id:'o3',seller:'Cocina de Doña Mich',tier:'free',name:'Pan de cazón para 4 personas',priceWas:180,priceNow:99,img:'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=500&q=80',claimed:12,total:12,postedDs:offsetDs(-3)}
-];
-function offsetDs(dayOffset){const d=new Date();d.setDate(d.getDate()+dayOffset);return dToDs(d);}
+let OFERTAS=[];
 function ofertaAgeDays(o){
   const posted=new Date(o.postedDs+'T00:00:00');
   return Math.floor((Date.now()-posted.getTime())/86400000);
 }
 
-/* OFERTAS_SLOTS — the free-tier daily-deal booking calendar. 1 slot/day,
-   enforced implicitly (OFERTAS_BOOKINGS[date] holds a single business or
-   nothing — real capacity-per-day logic belongs in the Supabase booking
-   table, not bolted onto this mock structure), first-come-first-served,
-   $99 MXN per booking, 2-week visible window. Fully separate from Negocio
-   Premium's guaranteed slots. Keyed by yyyy-mm-dd; a booked day stores who
-   booked it (mock only — real version ties this to the business's account). */
+/* Ofertas booking calendar — 1 slot/day, $99 MXN, 14-day visible window,
+   enforced for real by a unique constraint on ofertas_bookings.booked_date
+   (not just implied by this Set, which is only a display cache). */
 const SLOT_FEE_MXN=99;
 // TODO: replace with the real Google Form URL once created (one field: image upload,
 // destination: your own Drive folder). Google Forms supports iframe embedding by default.
 const OFERTA_PHOTO_FORM_URL='https://forms.google.com/PLACEHOLDER-REPLACE-WITH-REAL-FORM-LINK';
 const SLOT_WINDOW_DAYS=14;
-const OFERTAS_BOOKINGS={}; // populated below relative to today, so the demo never looks stale
-(function seedMockBookings(){
-  const today=new Date();
-  const bookedOffsets=[1,2,3,5]; // a handful of near-term days already taken, rest open
-  bookedOffsets.forEach(off=>{
-    const d=new Date(today);d.setDate(d.getDate()+off);
-    OFERTAS_BOOKINGS[dToDs(d)]={business:'Casa Menta'};
-  });
-})();
-const OFERTAS_WAITLIST=[]; // mock — {business, requestedDs, joinedAt}
-
-const PERDIDOS=[
-  {id:'p1',tag:'perdido',name:'Gato atigrado — "Michi"',desc:'Se perdió cerca del parque de San Román, es muy asustadizo pero cariñoso.',loc:'Barrio de San Román',img:'https://images.unsplash.com/photo-1533738363-b7f9aef128ce?w=300&q=80'},
-  {id:'p2',tag:'encontrado',name:'Perro mestizo, collar rojo',desc:'Lo encontramos cerca de la Av. Resurgimiento, no tiene placa. Está a salvo con nosotros.',loc:'Av. Resurgimiento',img:'https://images.unsplash.com/photo-1552053831-71594a27632d?w=300&q=80'},
-  {id:'p3',tag:'perdido',name:'Cartera café con documentos',desc:'Se perdió en el mercado principal, contiene INE e identificaciones. Recompensa.',loc:'Mercado Principal',img:''},
-  {id:'p4',tag:'perdido',name:'Loro (guacamaya pequeña)',desc:'Voló desde el Fraccionamiento Prado, responde a "Paco".',loc:'Fraccionamiento Prado',img:'https://images.unsplash.com/photo-1544923246-77307dd654cb?w=300&q=80'}
-];
-
-const ALERTAS=[
-  {id:'a1',type:'Corte de agua',cls:'',zone:'Fraccionamiento Prado',desc:'Corte programado por mantenimiento. Restablecimiento estimado: jueves 3:00 PM.',time:'Hace 3h'},
-  {id:'a2',type:'Vialidad',cls:'info',zone:'Av. Ah Kim Pech',desc:'Cierre parcial por obras de drenaje. Circulación reducida a un carril durante 10 días.',time:'Hace 1 día'},
-  {id:'a3',type:'Corte de luz',cls:'',zone:'Col. Buenavista',desc:'Interrupción reportada por CFE. Cuadrillas trabajando en la zona, sin hora estimada.',time:'Hace 6h'},
-  {id:'a4',type:'Corte de agua',cls:'resolved',zone:'Barrio de Guadalupe',desc:'Servicio restablecido tras mantenimiento programado.',time:'Ayer'}
-];
-
-const EMPLEOS=[
-  {id:'j1',title:'Mesero(a) con experiencia',co:'Restaurante en el Centro Histórico',pay:'$350/día + propinas',tags:['Tiempo completo','Turno mixto']},
-  {id:'j2',title:'Repartidor con moto propia',co:'Negocio local de comida',pay:'$4,500/quincena',tags:['Moto propia','Medio tiempo']},
-  {id:'j3',title:'Recepcionista bilingüe (ES/EN)',co:'Hotel boutique, Centro',pay:'A convenir',tags:['Turno matutino','Bilingüe']},
-  {id:'j4',title:'Ayudante de cocina',co:'Cocina económica, Col. San Román',pay:'$300/día',tags:['Tiempo completo']}
-];
-
-const REPORTES=[
-  {id:'r1',cat:'Bache',title:'Bache grande sobre Calle 10',loc:'Barrio de San Román',desc:'Bache profundo que ya provocó dos accidentes menores esta semana.',confirms:14,status:'abierto',time:'Hace 2 días',img:'https://images.unsplash.com/photo-1594819047050-8a1358f7d6d6?w=500&q=80'},
-  {id:'r2',cat:'Semáforo',title:'Semáforo apagado en cruce importante',loc:'Av. Ah Kim Pech esq. Circuito',desc:'Lleva apagado desde el fin de semana, tráfico complicado en hora pico.',confirms:9,status:'abierto',time:'Hace 4 días',img:''},
-  {id:'r3',cat:'Árbol caído',title:'Árbol caído bloqueando banqueta',loc:'Fraccionamiento Prado',desc:'Cayó tras la tormenta del martes, bloquea el paso a peatones.',confirms:6,status:'abierto',time:'Hace 5 días',img:'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=500&q=80'},
-  {id:'r4',cat:'Alumbrado',title:'Falta alumbrado público en toda la cuadra',loc:'Col. Buenavista',desc:'Varias luminarias sin funcionar, zona muy oscura de noche.',confirms:11,status:'abierto',time:'Hace 1 semana',img:''},
-  {id:'r5',cat:'Bache',title:'Bache reparado — confirmado',loc:'Calle 59, cerca del centro',desc:'El bache que reportamos hace dos semanas ya fue tapado.',confirms:5,status:'resuelto',time:'Hace 3 días',img:''}
-];
-
-/* AVISOS — open community noticeboard, not commerce, no confirm-counter.
-   Distinct from Reportes (infrastructure problems) and Perdidos (specific
-   lost pets/items). Covers appeals and calls to action: family search,
-   organizing a watch scheme, general community notices. */
-const AVISOS=[
-  {id:'av1',cat:'Familia',title:'Buscamos a nuestro tío, Manuel Kú Poot',desc:'No hemos sabido de él desde hace dos semanas. Última vez visto por el Mercado Principal. Cualquier información, por favor contáctanos.',author:'Familia Kú',contact:'981 234 5678',time:'Hace 1 día'},
-  {id:'av2',cat:'Comunidad',title:'Buscamos vecinos para reactivar la vigilancia del barrio',desc:'Queremos organizar rondas y un grupo de WhatsApp para Fraccionamiento Prado. Si te interesa, escríbenos.',author:'Comité vecinal Prado',contact:'981 345 6789',time:'Hace 2 días'},
-  {id:'av3',cat:'Comunidad',title:'Se busca voluntarios para limpieza de la plazoleta',desc:'Este sábado 8am, Barrio de Guadalupe. Traer guantes si puedes — nosotros llevamos bolsas y agua.',author:'Rosa Interián',contact:'981 456 7890',time:'Hace 3 días'}
-];
+let bookedDates=new Set();
 
 const SERVICIOS_UTILES=[
   {id:'cfe',name:'CFE — pagar recibo de luz',sub:'Portal oficial · app.cfe.mx',url:'https://app.cfe.mx/Aplicaciones/CCFE/MiEspacio/login.aspx',ico:'bolt'},
   {id:'agua',name:'JAPAY — pagar recibo de agua',sub:'Junta de Agua Potable de Campeche',url:'https://www.japay.gob.mx/',ico:'droplet'}
 ];
+
+/* Pulls every content type from Supabase in parallel, seeds the local
+   optimistic claim/confirm caches from what's actually true in the
+   database (see claimedByMe/confirmedByMe further down), then hands off
+   to the same render pipeline that used to run against mock arrays. */
+async function loadAllData(){
+  await MC.ready;
+  const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked]=await Promise.all([
+    MC.fetchNoticias(),MC.fetchEventos(),MC.fetchTienda(),MC.fetchOfertas(),MC.fetchPerdidos(),
+    MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates()
+  ]);
+  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
+  ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;
+  OFERTAS.forEach(o=>{if(o.iClaimedReal)claimedByMe[o.id]=true;});
+  REPORTES.forEach(r=>{if(r.iConfirmedReal)confirmedByMe[r.id]=true;});
+}
+
 
 /* ══════════════ BOTTOM NAV (4 primary tabs) ══════════════ */
 const TAB_DEFS=[
@@ -594,12 +517,23 @@ function renderOfertas(){
     </div>
   `;}).join('');
 }
-function toggleClaim(id){
+async function toggleClaim(id){
   const o=OFERTAS.find(x=>x.id===id);if(!o)return;
   const alreadyClaimed=o.claimed+(claimedByMe[id]?1:0)>=o.total;
   if(!claimedByMe[id]&&alreadyClaimed){toast('Esta oferta ya se agotó');renderOfertas();return;}
-  claimedByMe[id]=!claimedByMe[id];
+  // Optimistic: flip the UI immediately, then confirm against Supabase —
+  // roll back and explain if the real write fails (e.g. someone else
+  // claimed the last spot in the meantime).
+  const wasClaimed=!!claimedByMe[id];
+  claimedByMe[id]=!wasClaimed;
   renderOfertas();
+  const {error}=wasClaimed?await MC.unclaimOferta(id):await MC.claimOferta(id);
+  if(error){
+    claimedByMe[id]=wasClaimed;
+    renderOfertas();
+    toast(pgErrorToast(error,'No se pudo actualizar tu reclamo.'));
+    return;
+  }
   toast(claimedByMe[id]?'¡Reclamado! Muestra esto en el negocio':'Reclamo cancelado');
 }
 
@@ -687,9 +621,16 @@ function renderReportes(){
     </div>
   `;}).join('');
 }
-function toggleConfirm(id){
-  confirmedByMe[id]=!confirmedByMe[id];
+async function toggleConfirm(id){
+  const wasConfirmed=!!confirmedByMe[id];
+  confirmedByMe[id]=!wasConfirmed;
   renderReportes();
+  const {error}=wasConfirmed?await MC.unconfirmReporte(id):await MC.confirmReporte(id);
+  if(error){
+    confirmedByMe[id]=wasConfirmed;
+    renderReportes();
+    toast(pgErrorToast(error,'No se pudo actualizar tu confirmación.'));
+  }
 }
 function renderAvisos(){
   const el=document.getElementById('av-list');
@@ -785,8 +726,12 @@ const POST_FORMS={
 let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kind==='oferta'
 let photoUploadConfirmed=false; // set by confirmPhotoUploaded(), read by submitPost()
 
-function openPost(kind){
+async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
+  // Refresh which days are actually booked right before showing the
+  // calendar — bookedDates from initial load could already be stale by
+  // the time someone opens this form.
+  if(kind==='oferta')bookedDates=await MC.fetchBookedDates();
   document.getElementById('modal-title').textContent=form.title;
   let h='';
   form.fields.forEach(f=>{
@@ -823,7 +768,7 @@ function slotCalendarHtml(){
   let h=`<div class="slot-cal-note">${svgIco('clock')}1 espacio por día · $${SLOT_FEE_MXN} MXN por reserva</div><div class="slot-cal-grid">`;
   days.forEach(d=>{
     const ds=dToDs(d);
-    const isFull=!!OFERTAS_BOOKINGS[ds];
+    const isFull=bookedDates.has(ds);
     const isToday=ds===dToDs(today);
     h+=`<div class="slot-day${isFull?' full':''}" data-ds="${ds}" onclick="pickSlotDay(this,${isFull})">
       <div class="slot-day-dow">${dayNames[d.getDay()]}${isToday?' · hoy':''}</div>
@@ -861,7 +806,12 @@ function segPick(el){
 }
 function closeModal(){document.getElementById('modal-bg').classList.remove('on');}
 
-function submitPost(kind){
+const SUBMIT_HANDLERS={
+  eventos:MC.submitEvento, tienda:MC.submitTienda, perdidos:MC.submitPerdido,
+  empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
+};
+
+async function submitPost(kind){
   const form=POST_FORMS[kind];
   const data={};
   form.fields.forEach(f=>{
@@ -870,24 +820,36 @@ function submitPost(kind){
     else if(f.type==='imgupload'){data[f.k]=photoUploadConfirmed?'(confirmado por el negocio)':'(sin foto)';}
     else{const el=document.getElementById('pf-'+f.k);data[f.k]=el?el.value:'';}
   });
-  if(kind==='oferta'&&!selectedSlotDate){toast('Selecciona un día primero');return;}
+
+  const btn=document.getElementById('post-submit-btn');
+  const originalLabel=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+
   if(kind==='oferta'){
-    const isFull=!!OFERTAS_BOOKINGS[selectedSlotDate];
-    if(isFull){
-      OFERTAS_WAITLIST.push({business:data.name||'Negocio',requestedDs:selectedSlotDate,joinedAt:new Date().toISOString()});
-      console.log('Joined waitlist for '+selectedSlotDate+':',data);
-      closeModal();
-      toast('Estás en la lista de espera — te avisaremos ✓');
-      return;
-    } else {
-      OFERTAS_BOOKINGS[selectedSlotDate]={business:data.name||'Negocio'};
-      console.log('Slot booked for '+selectedSlotDate+' (pending $'+SLOT_FEE_MXN+' MXN payment + review):',data);
-      closeModal();
-      toast('¡Reservado! Revisa tu correo para completar el pago ✓');
+    if(!selectedSlotDate){toast('Selecciona un día primero');if(btn){btn.disabled=false;btn.textContent=originalLabel;}return;}
+    const isFull=bookedDates.has(selectedSlotDate);
+    const result=await MC.submitOferta(data,selectedSlotDate,isFull);
+    if(result.error){
+      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+      toast(pgErrorToast(result.error,'No se pudo completar la reserva.'));
+      // Someone else may have just taken this slot — refresh so the
+      // calendar reflects reality instead of leaving a stale "Libre".
+      if(!isFull){bookedDates=await MC.fetchBookedDates();}
       return;
     }
+    closeModal();
+    toast(result.waitlisted?'Estás en la lista de espera — te avisaremos ✓':'¡Reservado! En revisión antes de publicarse ✓');
+    return;
   }
-  console.log('New '+kind+' submission (pending review):',data);
+
+  const handler=SUBMIT_HANDLERS[kind];
+  if(!handler){closeModal();return;} // unrecognized kind — nothing to send
+  const {error}=await handler(data);
+  if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+  if(error){
+    toast(pgErrorToast(error,'No se pudo enviar tu publicación.'));
+    return;
+  }
   closeModal();
   toast('Enviado — en revisión antes de publicarse ✓');
 }
@@ -908,11 +870,12 @@ function toast(msg){
 function isMobile(){
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth<700;
 }
-function init(){
+async function init(){
   if(isMobile()){document.getElementById('app').classList.add('on');}
   else{document.getElementById('desktop-gate').classList.add('on');}
   renderBottomNav();
   renderHeaderWeather();
+  await loadAllData();
   renderInicio();
   renderNoticias();
   renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();setTiendaMode('mercado');
