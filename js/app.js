@@ -48,6 +48,47 @@ function contactUs(){
   window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent('Hola, tengo una pregunta sobre MiCampeche'));
 }
 
+/* On-demand update check — the automatic banner only appears when the
+   browser happens to notice a new sw.js on its own timing, which during
+   active development can mean waiting on an unpredictable popup. This
+   forces the check right now and reuses the exact same showUpdateBanner()
+   flow (defined in index.html's inline script) if one's actually found,
+   rather than duplicating that logic here. */
+async function checkForUpdates(){
+  closeMenu();
+  if(!('serviceWorker' in navigator)){toast('Este navegador no soporta actualizaciones automáticas');return;}
+  const reg=await navigator.serviceWorker.getRegistration();
+  if(!reg){toast('No se pudo verificar — intenta recargar la página primero');return;}
+  toast('Buscando actualizaciones…');
+  let found=false;
+  const onUpdateFound=()=>{
+    found=true;
+    const newWorker=reg.installing;
+    if(!newWorker)return;
+    newWorker.addEventListener('statechange',()=>{
+      if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
+        showUpdateBanner(reg);
+      }
+    });
+  };
+  reg.addEventListener('updatefound',onUpdateFound);
+  try{
+    await reg.update();
+  }catch(err){
+    console.error('Update check failed:',err);
+    toast('No se pudo buscar actualizaciones — revisa tu conexión');
+    reg.removeEventListener('updatefound',onUpdateFound);
+    return;
+  }
+  // updatefound (if anything changed) fires as part of the update() check
+  // above — a short grace period covers the async install step that
+  // follows it, without leaving the listener attached indefinitely.
+  setTimeout(()=>{
+    reg.removeEventListener('updatefound',onUpdateFound);
+    if(!found)toast('Ya tienes la versión más reciente ✓');
+  },1500);
+}
+
 /* Install prompt — Android/Chrome exposes a real beforeinstallprompt event
    once this page is served with a proper manifest.json; we capture it the
    moment it fires and reuse it on demand. iOS never fires this event at
