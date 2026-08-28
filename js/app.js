@@ -180,10 +180,11 @@ const TIENDA=[
 function dToDs(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 const TODAY_DS=dToDs(new Date());
 
-/* OFERTAS — early-stage rule: 1 new deal can be BOOKED per day (see
-   SLOTS_PER_DAY below), but a deal STAYS VISIBLE for up to OFERTA_LIFESPAN_DAYS
-   or until its quantity sells out, whichever happens first. This is a
-   deliberate bridge until there's enough daily traffic to justify tightening
+/* OFERTAS — early-stage rule: 1 new deal can be BOOKED per day (see the
+   OFERTAS_SLOTS booking calendar below), but a deal STAYS VISIBLE for up to
+   OFERTA_LIFESPAN_DAYS or until its quantity sells out, whichever happens
+   first. This is a deliberate bridge until there's enough daily traffic to
+   justify tightening
    to a true single "today's one deal, gone at midnight" cycle. Each entry
    needs postedDs (the day it was booked) so isOfertaLive() can compute
    whether it's still within its display window. */
@@ -199,12 +200,13 @@ function ofertaAgeDays(o){
   return Math.floor((Date.now()-posted.getTime())/86400000);
 }
 
-/* OFERTAS_SLOTS — the free-tier daily-deal booking calendar. 1 slot/day
-   (SLOTS_PER_DAY), first-come-first-served, $99 MXN per booking, 2-week
-   visible window. Fully separate from Negocio Premium's guaranteed slots.
-   Keyed by yyyy-mm-dd; a booked day stores who booked it (mock only —
-   real version ties this to the business's account). */
-const SLOTS_PER_DAY=1;
+/* OFERTAS_SLOTS — the free-tier daily-deal booking calendar. 1 slot/day,
+   enforced implicitly (OFERTAS_BOOKINGS[date] holds a single business or
+   nothing — real capacity-per-day logic belongs in the Supabase booking
+   table, not bolted onto this mock structure), first-come-first-served,
+   $99 MXN per booking, 2-week visible window. Fully separate from Negocio
+   Premium's guaranteed slots. Keyed by yyyy-mm-dd; a booked day stores who
+   booked it (mock only — real version ties this to the business's account). */
 const SLOT_FEE_MXN=99;
 // TODO: replace with the real Google Form URL once created (one field: image upload,
 // destination: your own Drive folder). Google Forms supports iframe embedding by default.
@@ -273,8 +275,6 @@ const TAB_DEFS=[
   {k:'reportar',lbl:'Vecinos',ico:'reportar'}
 ];
 const TABS=TAB_DEFS.map(t=>t.k);
-// Screens reachable but not in the bottom nav (pushed to from Inicio's "Ver todo")
-const SECONDARY_SCREENS=['noticias','noticia-detail'];
 let curTab='inicio';
 
 function renderBottomNav(){
@@ -421,7 +421,6 @@ function dashSection(ico,label,goTab,cardsHtml){
 // Jump into a tab AND pre-select its sub-toggle in one action, used by dashboard cards
 function openAnunciosTo(mode){nav('anuncios');setAnunciosMode(mode);}
 function openReportarTo(mode){nav('reportar');setReportarMode(mode);}
-function openTiendaTo(mode){nav('tienda');if(mode)setTiendaMode(mode);}
 
 /* ══════════════ RENDER: NOTICIAS (now a plain full page, no toggle) ══════════════ */
 function renderNoticias(){
@@ -810,7 +809,7 @@ function openPost(kind){
 
 /* ══════════════ OFERTAS SLOT CALENDAR (business-facing booking picker) ══════════════
    Renders only inside the "Publicar una Oferta" form, at the moment a business
-   is choosing a day. 1 slot/day (SLOTS_PER_DAY), $99 MXN, 14-day visible window.
+   is choosing a day. 1 slot/day, $99 MXN, 14-day visible window.
    A full day shows "Unirme a la lista de espera" instead of a book button. */
 function slotCalendarHtml(){
   const today=new Date();
