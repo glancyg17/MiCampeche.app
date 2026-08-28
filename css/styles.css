@@ -73,8 +73,6 @@ svg{display:block}
 .bn span{font-size:10.5px;font-weight:600}
 .bn.on{color:var(--gulf)}
 .bn.on .ico{stroke-width:2}
-.bn-badge{position:absolute;top:2px;right:calc(50% - 16px);width:8px;height:8px;border-radius:50%;background:var(--signal);border:1.5px solid #fff}
-.bn-wrap{position:relative;flex:1;display:flex}
 
 /* ═══ SCREENS ═══ */
 .screens{flex:1;overflow:hidden;position:relative;z-index:5}
@@ -197,11 +195,6 @@ svg{display:block}
 .dc-evt-name{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.3}
 .dc-evt-meta{font-size:11.5px;color:var(--ink3);margin-top:2px}
 
-.dc-alert{display:flex;gap:11px;padding:12px 14px;border-left:3px solid var(--signal)}
-.dc-alert .ico{color:var(--signal);width:18px;height:18px;margin-top:1px}
-.dc-alert-zone{font-size:13px;font-weight:700;color:var(--ink)}
-.dc-alert-type{font-size:11px;color:var(--signal);font-weight:700;margin-bottom:2px}
-
 .dc-of{display:flex;align-items:center;gap:12px;padding:10px}
 .dc-of-img{width:48px;height:48px;border-radius:10px;background-size:cover;background-position:center;background-color:var(--paper2);flex-shrink:0}
 .dc-of-body{flex:1;min-width:0}
@@ -209,12 +202,6 @@ svg{display:block}
 .dc-of-price{font-size:12.5px;font-weight:700;color:var(--signal);margin-top:2px}
 .dc-of-price span{font-size:11px;font-weight:500;color:var(--ink3);text-decoration:line-through}
 .dc-of-pct{background:var(--signal);color:#fff;font-size:10.5px;font-weight:700;padding:4px 8px;border-radius:99px;flex-shrink:0}
-
-.dash-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.dc-mini{background:#fff;border-radius:var(--r);box-shadow:var(--sh1);border:1px solid var(--line);padding:10px;cursor:pointer}
-.dc-mini-img{width:100%;aspect-ratio:1.3;border-radius:var(--rs);background-size:cover;background-position:center;background-color:var(--paper2);margin-bottom:8px}
-.dc-mini-name{font-size:12px;font-weight:700;color:var(--ink);line-height:1.3}
-.dc-mini-sub{font-size:11px;color:var(--palm);font-weight:700;margin-top:2px}
 
 /* ═══ NEWS CARDS ═══ */
 .news-list{padding:6px 18px 24px}
@@ -295,7 +282,6 @@ svg{display:block}
 .alert-desc{font-size:12.5px;color:var(--ink2);line-height:1.5}
 
 /* ═══ SERVICIOS ÚTILES (CFE / agua shortcuts) ═══ */
-.su-lbl{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
 .su-list{padding:0 18px 24px;display:flex;flex-direction:column;gap:9px}
 .su-card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;text-decoration:none;box-shadow:var(--sh1)}
 .su-ico{width:38px;height:38px;border-radius:11px;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
