@@ -76,8 +76,8 @@ MC.signOut=async function(){
 MC.currentAccount=async function(){
   const {data:{session}}=await sb.auth.getSession();
   if(!session||session.user.is_anonymous)return {signedIn:false};
-  const {data:prof}=await sb.from('profiles').select('display_name,tier,phone').eq('id',session.user.id).single();
-  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',tier:(prof&&prof.tier)||'personal',phone:(prof&&prof.phone)||null};
+  const {data:prof}=await sb.from('profiles').select('display_name,tier,phone,is_admin').eq('id',session.user.id).single();
+  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',tier:(prof&&prof.tier)||'personal',phone:(prof&&prof.phone)||null,isAdmin:!!(prof&&prof.is_admin)};
 };
 
 MC.myProfile=async function(){
@@ -140,6 +140,43 @@ function authErrorToast(error){
   console.error('Auth error:',error);
   return 'No se pudo completar. Intenta de nuevo.';
 }
+
+/* ══════════════ ADMIN: moderation queue ══════════════
+   Reads rely on the "admin read all" RLS policy already in place since
+   Phase 1 (is_admin can SELECT regardless of status) — nothing new needed
+   there. Approve/reject reuse the existing "admin update (moderation)"
+   policy too. Only real gap this closes: pulling all 9 tables' pending
+   rows into one unified list instead of clicking through Studio's Table
+   Editor nine times. */
+const CONTENT_TABLES=[
+  {table:'noticias',label:'Noticia',titleField:'headline'},
+  {table:'eventos',label:'Evento',titleField:'title'},
+  {table:'productos',label:'Producto (Tienda)',titleField:'title'},
+  {table:'clasificados',label:'Clasificado',titleField:'title'},
+  {table:'ofertas',label:'Oferta',titleField:'title'},
+  {table:'perdidos',label:'Perdido/Encontrado',titleField:'title'},
+  {table:'empleos',label:'Empleo',titleField:'title'},
+  {table:'reportes',label:'Reporte',titleField:'title'},
+  {table:'avisos',label:'Aviso',titleField:'title'}
+];
+
+MC.fetchPendingQueue=async function(){
+  const results=await Promise.all(CONTENT_TABLES.map(async ({table,label,titleField})=>{
+    const {data,error}=await sb.from(table).select('*, profiles(display_name)').eq('status','pending').order('created_at',{ascending:true});
+    if(error){console.error(error);return [];}
+    return (data||[]).map(r=>({
+      table,label,id:r.id,
+      title:r[titleField]||'(sin título)',
+      submittedBy:(r.profiles&&r.profiles.display_name)||'Vecino',
+      createdAt:r.created_at
+    }));
+  }));
+  return results.flat().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+};
+
+MC.moderatePost=async function(table,id,newStatus){
+  return sb.from(table).update({status:newStatus}).eq('id',id);
+};
 
 MC.fetchNoticias=async function(){
   const {data,error}=await sb.from('noticias').select('*')

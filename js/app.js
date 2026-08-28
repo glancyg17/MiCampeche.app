@@ -887,8 +887,9 @@ function renderAccountSignedIn(acct){
       <div style="font-weight:700;font-size:16px">${e(acct.displayName)}</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(acct.email)}</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:1px">${e(acct.phone||'')}</div>
-      <div style="color:var(--ink3);font-size:12px;margin-top:6px">Cuenta ${e(TIER_LABEL[acct.tier]||'Personal')}</div>
+      <div style="color:var(--ink3);font-size:12px;margin-top:6px">Cuenta ${e(TIER_LABEL[acct.tier]||'Personal')}${acct.isAdmin?' · Admin':''}</div>
     </div>
+    ${acct.isAdmin?`<button class="submit-btn" onclick="openModeration()">${svgIco('checkBadge')} Moderación</button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -944,6 +945,48 @@ async function doSignOut(){
   await MC.signOut();
   closeModal();
   toast('Sesión cerrada ✓');
+}
+
+/* ══════════════ ADMIN: moderation queue ══════════════
+   Reuses the same #modal-bg/#modal-body infrastructure as everything
+   else — a real screen would be nicer long-term, but the modal already
+   scrolls (max-height:88vh, overflow-y:auto), so it genuinely works fine
+   for a list, not just short forms. Real RLS backs every action here —
+   this UI is convenience, not the security boundary. */
+let moderationQueue=[];
+async function openModeration(){
+  document.getElementById('modal-title').textContent='Moderación';
+  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
+  document.getElementById('modal-bg').classList.add('on');
+  moderationQueue=await MC.fetchPendingQueue();
+  renderModerationQueue();
+}
+function renderModerationQueue(){
+  document.getElementById('modal-title').textContent=`Moderación (${moderationQueue.length})`;
+  if(!moderationQueue.length){
+    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay nada pendiente de revisión.</div></div>`;
+    return;
+  }
+  let h='';
+  moderationQueue.forEach(item=>{
+    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(item.label)}</div>
+      <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(item.title)}</div>
+      <div style="color:var(--ink3);font-size:12px;margin-top:2px">${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1" onclick="moderateItem('${item.table}','${item.id}','published')">Aprobar</button>
+        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1;background:var(--paper2);color:var(--ink)" onclick="moderateItem('${item.table}','${item.id}','rejected')">Rechazar</button>
+      </div>
+    </div>`;
+  });
+  document.getElementById('modal-body').innerHTML=h;
+}
+async function moderateItem(table,id,newStatus){
+  const {error}=await MC.moderatePost(table,id,newStatus);
+  if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));return;}
+  moderationQueue=moderationQueue.filter(i=>!(i.table===table&&i.id===id));
+  renderModerationQueue();
+  toast(newStatus==='published'?'Publicado ✓':'Rechazado');
 }
 
 

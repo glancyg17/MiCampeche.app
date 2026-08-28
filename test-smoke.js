@@ -43,7 +43,7 @@ function makeChain(getResult) {
 }
 
 const SAMPLE = {
-  profiles: [{ id: 'uid-1', tier: 'personal', display_name: 'Vecino Test', phone: '+529811234567', is_admin: false }],
+  profiles: [{ id: 'uid-1', tier: 'personal', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true }],
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', status: 'published' }],
   productos: [{ id: 'p1', business_name: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, image_url: '', featured: true, status: 'published' }],
@@ -66,7 +66,7 @@ const SAMPLE = {
 // lets the error-path tests below force a real Postgres-shaped error
 // through the REAL MC.submitAviso/claimOferta code, rather than
 // monkey-patching those functions out of the test.
-const forcedErrors = { insert: {}, delete: {} };
+const forcedErrors = { insert: {}, delete: {}, update: {} };
 
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
 Object.assign(forcedErrors, { updateUser: null, signIn: null });
@@ -102,7 +102,9 @@ const fakeClient = {
       delete: () => makeChain(() => forcedErrors.delete[table]
         ? { data: null, error: forcedErrors.delete[table] }
         : { data: [], error: null }),
-      update: (row) => { lastUpdate[table] = row; return makeChain(() => ({ data: [row], error: null })); },
+      update: (row) => { lastUpdate[table] = row; return makeChain(() => forcedErrors.update[table]
+        ? { data: null, error: forcedErrors.update[table] }
+        : { data: [row], error: null }); },
     };
   },
   rpc: async (_name, args) => ({ data: (args.p_oferta_ids || []).map(id => ({ oferta_id: id, claimed: 2 })), error: null }),
@@ -140,6 +142,7 @@ const fakeClient = {
 
   const doc = window.document;
   const text = (id) => { const el = doc.getElementById(id); return el ? el.innerHTML : null; };
+  const moderationQueueCountFromTitle = (title) => { const m = /\((\d+)\)/.exec(title || ''); return m ? Number(m[1]) : null; };
 
   assert(text('news-list') && text('news-list').includes('Titular de prueba'), 'Noticias rendered real fetched data');
   assert(text('evt-list') && text('evt-list').includes('Evento de prueba'), 'Eventos rendered real fetched data');
@@ -266,6 +269,31 @@ const fakeClient = {
     // pre-filled with the account's phone once signed in.
     await window.openPost('avisos');
     assert(doc.getElementById('pf-contact').value === '+529811234567', 'Avisos contact field is pre-filled from the account\'s phone for a signed-in user');
+
+    // ── Admin moderation queue (this fixture account is_admin: true) ──
+    await window.openAccount();
+    assert(text('modal-body').includes('Moderación'), 'signed-in admin sees the Moderación entry point (a non-admin would not)');
+
+    await window.openModeration();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Moderación (9)', 'queue aggregates one pending item from each of the 9 content tables');
+    assert(text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'each queue item has approve/reject actions');
+
+    await window.moderateItem('avisos', 'av1', 'published');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Publicado ✓', 'approving an item shows the right confirmation toast');
+    assert(text('modal-title') === 'Moderación (8)', 'approved item is removed from the queue and the count updates');
+    assert(lastUpdate.avisos && lastUpdate.avisos.status === 'published', 'approval actually sent status: published to Supabase');
+
+    // Reject, with a genuinely forced failure — item must stay in the
+    // queue and show the real error, not silently vanish either way.
+    forcedErrors.update.noticias = { code: '42501', message: 'simulated failure' };
+    const beforeCount = moderationQueueCountFromTitle(text('modal-title'));
+    await window.moderateItem('noticias', 'n1', 'rejected');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'No tienes permiso para hacer esto — intenta de nuevo en un momento.', 'a failed reject shows the real error toast');
+    assert(moderationQueueCountFromTitle(text('modal-title')) === beforeCount, 'a failed reject leaves the item in the queue rather than removing it anyway');
+    forcedErrors.update.noticias = null;
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
