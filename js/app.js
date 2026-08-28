@@ -38,7 +38,16 @@ function renderHeaderWeather(){
 }
 /* ══════════════ HAMBURGER MENU DRAWER ══════════════ */
 // TODO: replace with the real MiCampeche WhatsApp business number once set up
-const MICAMPECHE_WHATSAPP='529810000000';
+// Real number, but used sparingly on purpose — in-app contact is preferred
+// for now; this is a fallback path only (Contacto menu item), not the
+// default flow for anything else.
+const MICAMPECHE_WHATSAPP='529811086380';
+
+/* Real, live Stripe Payment Links. ?locale=es-419 forces Mexican Spanish
+   on Stripe's hosted checkout regardless of the visitor's own browser
+   language — without it, Stripe auto-detects and can show English. */
+const STRIPE_LINK_OFERTA='https://buy.stripe.com/eVq28sguZ7uxcEqgr54F200?locale=es-419';
+const STRIPE_LINK_PREMIUM='https://buy.stripe.com/bJe5kE7YteWZcEq0s74F201?locale=es-419';
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
@@ -460,7 +469,7 @@ function setTiendaMode(mode){
   document.querySelectorAll('#scr-tienda .subtog-btn').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
   document.getElementById('tienda-mercado').style.display=mode==='mercado'?'block':'none';
   document.getElementById('tienda-clasificados').style.display=mode==='clasificados'?'block':'none';
-  document.getElementById('tienda-fab').onclick=function(){openPost('tienda');};
+  document.getElementById('tienda-fab').onclick=function(){openPost(mode==='mercado'?'producto':'clasificado');};
 }
 
 /* Shared card markup for both Mercado and Clasificados grids — same visual
@@ -720,12 +729,19 @@ const POST_FORMS={
     {k:'photo',lbl:'Foto o cartel del evento',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más...'}
   ]},
-  tienda:{title:'Publicar un producto',fields:[
+  producto:{title:'Publicar un producto',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Pastel de tres leches'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Otro']},
     {k:'price',lbl:'Precio',type:'text',ph:'$'},
     {k:'photo',lbl:'Foto del producto',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, tamaño, disponibilidad...'}
+  ]},
+  clasificado:{title:'Publicar en Clasificados',note:'Un artículo por persona. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
+    {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Bicicleta usada'},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Otro']},
+    {k:'price',lbl:'Precio',type:'text',ph:'$'},
+    {k:'photo',lbl:'Foto del artículo',type:'imgupload'},
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
   ]},
   perdidos:{title:'Reportar perdido o encontrado',fields:[
     {k:'tag',lbl:'Tipo de reporte',type:'seg',opts:[['perdido','Perdido'],['encontrado','Encontrado']]},
@@ -753,14 +769,20 @@ const POST_FORMS={
     {k:'desc',lbl:'Mensaje',type:'textarea',ph:'Cuenta los detalles a tus vecinos...'},
     {k:'contact',lbl:'Tu número de contacto',type:'tel',ph:'981 000 0000'}
   ]},
-  oferta:{title:'Publicar una Oferta',note:'Negocios Premium tienen 2 espacios garantizados a la semana, sin costo. Para negocios sin Premium: $99 MXN por reserva, sujeto a disponibilidad.',fields:[
-    {k:'name',lbl:'Nombre del negocio',type:'text',ph:'Ej. Repostería Tsuk Tun'},
+  oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
     {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload'},
     {k:'priceWas',lbl:'Precio normal',type:'text',ph:'$'},
     {k:'priceNow',lbl:'Precio con descuento',type:'text',ph:'$'},
     {k:'qty',lbl:'Cantidad disponible',type:'number',ph:'Ej. 10'},
     {k:'slot',lbl:'Elige el día',type:'calendar'}
+  ]},
+  negocio_verificar:{title:'Verifica tu negocio',note:'Esta información se guarda en tu cuenta — no necesitas volver a escribirla en cada publicación.',fields:[
+    {k:'name',lbl:'Nombre del negocio',type:'text',ph:'Ej. Repostería Tsuk Tun'},
+    {k:'address',lbl:'Dirección',type:'text',ph:'Calle, número, colonia'},
+    {k:'phone',lbl:'Teléfono del negocio',type:'tel',ph:'981 000 0000'},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Servicios','Otro']},
+    {k:'rfc',lbl:'RFC (opcional)',type:'text',ph:'Opcional'}
   ]}
 };
 
@@ -769,6 +791,14 @@ let photoUploadConfirmed=false; // set by confirmPhotoUploaded(), read by submit
 
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
+  // Selling in Tienda or posting an Oferta requires a verified business —
+  // this is an account capability, not a different kind of account (any
+  // personal account can verify one). Show the prompt instead of the
+  // form when there isn't one yet.
+  if(kind==='producto'||kind==='oferta'){
+    const biz=await MC.myBusiness();
+    if(!biz){openBusinessPrompt(kind);return;}
+  }
   // Refresh which days are actually booked right before showing the
   // calendar — bookedDates from initial load could already be stale by
   // the time someone opens this form.
@@ -920,7 +950,7 @@ async function openAccount(){
   renderAccountForm();
 }
 function renderAccountSignedIn(acct){
-  const TIER_LABEL={personal:'Personal',negocio:'Negocio',negocio_premium:'Negocio Premium'};
+  const biz=acct.business;
   document.getElementById('modal-title').textContent='Tu cuenta';
   document.getElementById('modal-body').innerHTML=`
     <div style="text-align:center;padding:8px 0 4px">
@@ -928,8 +958,34 @@ function renderAccountSignedIn(acct){
       <div style="font-weight:700;font-size:16px">${e(acct.displayName)}</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(acct.email)}</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:1px">${e(acct.phone||'')}</div>
-      <div style="color:var(--ink3);font-size:12px;margin-top:6px">Cuenta ${e(TIER_LABEL[acct.tier]||'Personal')}${acct.isAdmin?' · Admin':''}</div>
+      ${acct.isAdmin?'<div style="color:var(--ink3);font-size:12px;margin-top:6px">Admin</div>':''}
     </div>
+    ${biz?`
+      <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${biz.is_premium?'Negocio Premium':'Negocio'}</div>
+        <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(biz.business_name)}</div>
+        <div style="color:var(--ink3);font-size:12.5px;margin-top:2px">${e(biz.category)} · ${e(biz.phone)}</div>
+      </div>
+      ${biz.is_premium?'':`
+        <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
+          <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
+          <span class="menu-item-txt">
+            <span class="menu-item-lbl">Actualizar a Premium</span>
+            <span class="menu-item-sub">$749 MXN/mes · más productos y espacios de Oferta</span>
+          </span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </a>
+      `}
+    `:`
+      <button class="menu-item" onclick="openPost('negocio_verificar')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Verificar mi negocio</span>
+          <span class="menu-item-sub">Para vender en Tienda y publicar Ofertas</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `}
     ${acct.isAdmin?`<button class="submit-btn" onclick="openModeration()">${svgIco('checkBadge')} Moderación</button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
@@ -1031,9 +1087,54 @@ async function moderateItem(table,id,newStatus){
 }
 
 
+let pendingPostAfterVerification=null;
+function openBusinessPrompt(kind){
+  pendingPostAfterVerification=kind;
+  document.getElementById('modal-title').textContent='Verifica tu negocio';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:16px 10px 6px">
+      ${svgIco('checkBadge')}
+      <div style="font-weight:700;font-size:15px;margin-top:10px">Verifica tu negocio para publicar</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">${kind==='oferta'?'Publicar una Oferta':'Vender en Tienda'} requiere una cuenta de negocio verificada — es un formulario corto, solo lo llenas una vez.</div>
+    </div>
+    <button class="submit-btn" onclick="openPost('negocio_verificar')">Verificar mi negocio</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+
+/* The actual path to Premium — MiCampeche never processes payments (same
+   rule that already applies to the $99 Ofertas fee itself), so "upgrade"
+   here means: request it, the founder arranges payment personally
+   (WhatsApp, exactly like every other merchant relationship in this app),
+   then flips is_premium=true by hand. This is that request step — without
+   it, the cap-reached error was a dead end that only *mentioned* Premium
+   with no way to act on it. */
+function isCapReachedError(error){
+  const m=(error&&error.message)||'';
+  return error&&error.code==='P0001'&&(m.includes('product_cap_reached')||m.includes('oferta_concurrent_slot_cap_reached'));
+}
+async function openPremiumPrompt(context){
+  const limitText=context==='oferta'
+    ? 'Las cuentas Negocio pueden tener 1 espacio de Oferta reservado a la vez. Premium permite hasta 3 a la vez.'
+    : 'Las cuentas Negocio pueden tener hasta 2 productos en Tienda. Premium permite hasta 10.';
+  document.getElementById('modal-title').textContent='Actualiza a Premium';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:16px 10px 6px">
+      ${svgIco('checkBadge')}
+      <div style="font-weight:700;font-size:15px;margin-top:10px">Llegaste al límite de tu plan actual</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">${limitText}</div>
+    </div>
+    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none"
+       href="${STRIPE_LINK_PREMIUM}">
+      ${svgIco('checkBadge')}Actualizar a Premium — $749 MXN/mes
+    </a>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+
 const SUBMIT_HANDLERS={
-  eventos:MC.submitEvento, tienda:MC.submitTienda, perdidos:MC.submitPerdido,
-  empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
+  eventos:MC.submitEvento, producto:MC.submitProducto, clasificado:MC.submitClasificado,
+  perdidos:MC.submitPerdido, empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
 };
 
 async function submitPost(kind){
@@ -1050,29 +1151,59 @@ async function submitPost(kind){
   const originalLabel=btn?btn.textContent:'';
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
 
+  if(kind==='negocio_verificar'){
+    if(!data.name||!data.address||!data.phone||!data.cat){
+      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+      toast('Completa nombre, dirección, teléfono y categoría');
+      return;
+    }
+    const {error}=await MC.verifyBusiness(data);
+    if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+    if(error){toast(pgErrorToast(error,'No se pudo verificar tu negocio.'));return;}
+    toast('¡Negocio verificado! ✓');
+    const next=pendingPostAfterVerification;
+    pendingPostAfterVerification=null;
+    if(next){await openPost(next);} else {closeModal();}
+    return;
+  }
+
   if(kind==='oferta'){
     if(!selectedSlotDate){toast('Selecciona un día primero');if(btn){btn.disabled=false;btn.textContent=originalLabel;}return;}
     const isFull=bookedDates.has(selectedSlotDate);
-    const result=await MC.submitOferta(data,selectedSlotDate,isFull);
-    if(result.error){
-      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
-      toast(pgErrorToast(result.error,'No se pudo completar la reserva.'));
-      // Someone else may have just taken this slot — refresh so the
-      // calendar reflects reality instead of leaving a stale "Libre".
-      if(!isFull){bookedDates=await MC.fetchBookedDates();}
+
+    if(isFull){
+      // Joining a waitlist isn't a confirmed booking — no payment needed.
+      const result=await MC.submitOferta(data,selectedSlotDate,isFull);
+      if(result.needsBusiness){if(btn){btn.disabled=false;btn.textContent=originalLabel;}openBusinessPrompt('oferta');return;}
+      if(result.error){
+        if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+        toast(pgErrorToast(result.error,'No se pudo unir a la lista de espera.'));
+        return;
+      }
+      closeModal();
+      toast('Estás en la lista de espera — te avisaremos ✓');
       return;
     }
-    closeModal();
-    toast(result.waitlisted?'Estás en la lista de espera — te avisaremos ✓':'¡Reservado! En revisión antes de publicarse ✓');
+
+    // A real, available slot: verify the business first (no point sending
+    // someone to pay for something they can't actually use), then pay
+    // BEFORE the booking is created — same reasoning as the concurrent-
+    // slot cap: an unpaid "reservation" would just squat on the calendar.
+    const biz=await MC.myBusiness();
+    if(!biz){if(btn){btn.disabled=false;btn.textContent=originalLabel;}openBusinessPrompt('oferta');return;}
+    sessionStorage.setItem('mc_pending_oferta',JSON.stringify({data,slotDs:selectedSlotDate}));
+    window.location.href=STRIPE_LINK_OFERTA;
     return;
   }
 
   const handler=SUBMIT_HANDLERS[kind];
   if(!handler){closeModal();return;} // unrecognized kind — nothing to send
-  const {error}=await handler(data);
+  const result=await handler(data);
   if(btn){btn.disabled=false;btn.textContent=originalLabel;}
-  if(error){
-    toast(pgErrorToast(error,'No se pudo enviar tu publicación.'));
+  if(result&&result.needsBusiness){openBusinessPrompt(kind);return;}
+  if(result&&result.error){
+    if(isCapReachedError(result.error)){openPremiumPrompt('producto');return;}
+    toast(pgErrorToast(result.error,'No se pudo enviar tu publicación.'));
     return;
   }
   closeModal();
@@ -1095,12 +1226,46 @@ function toast(msg){
 function isMobile(){
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth<700;
 }
+/* ══════════════ STRIPE PAYMENT RETURN ══════════════
+   Both payment links redirect back here with a ?paid= marker. This is a
+   client-side signal only — not cryptographic proof of payment (no
+   webhook verification yet) — which is why Premium never self-grants
+   itself here; only the Oferta booking actually completes automatically,
+   and that's a low-stakes "did they pay for the booking ceremony" gate,
+   not a privilege escalation risk the way flipping is_premium would be. */
+async function checkPaymentReturn(){
+  const params=new URLSearchParams(window.location.search);
+  const paid=params.get('paid');
+  if(!paid)return;
+  window.history.replaceState({},'',window.location.pathname); // don't re-trigger on refresh
+
+  if(paid==='oferta'){
+    const pending=sessionStorage.getItem('mc_pending_oferta');
+    if(!pending){toast('Pago recibido, pero no encontramos los detalles de tu oferta. Escríbenos por WhatsApp.');return;}
+    sessionStorage.removeItem('mc_pending_oferta');
+    const {data,slotDs}=JSON.parse(pending);
+    const result=await MC.submitOferta(data,slotDs,false);
+    if(result.error){
+      if(isCapReachedError(result.error)){
+        toast('Pago recibido, pero llegaste al límite de espacios de tu plan justo antes de que se confirmara. Escríbenos por WhatsApp — te ayudamos a resolverlo.');
+        return;
+      }
+      toast('Pago recibido, pero ese día ya no está disponible — alguien más lo reservó mientras pagabas. Escríbenos por WhatsApp para reprogramar.');
+      return;
+    }
+    toast('¡Pago recibido y espacio reservado! En revisión antes de publicarse ✓');
+  } else if(paid==='premium'){
+    toast('¡Pago recibido! Activaremos tu cuenta Premium en breve.');
+  }
+}
+
 async function init(){
   if(isMobile()){document.getElementById('app').classList.add('on');}
   else{document.getElementById('desktop-gate').classList.add('on');}
   renderBottomNav();
   renderHeaderWeather();
   await loadAllData();
+  await checkPaymentReturn();
   renderInicio();
   renderNoticias();
   renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();setTiendaMode('mercado');

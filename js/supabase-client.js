@@ -76,15 +76,38 @@ MC.signOut=async function(){
 MC.currentAccount=async function(){
   const {data:{session}}=await sb.auth.getSession();
   if(!session||session.user.is_anonymous)return {signedIn:false};
-  const {data:prof}=await sb.from('profiles').select('display_name,tier,phone,is_admin').eq('id',session.user.id).single();
-  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',tier:(prof&&prof.tier)||'personal',phone:(prof&&prof.phone)||null,isAdmin:!!(prof&&prof.is_admin)};
+  const {data:prof}=await sb.from('profiles').select('display_name,phone,is_admin').eq('id',session.user.id).single();
+  const business=await MC.myBusiness();
+  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',phone:(prof&&prof.phone)||null,isAdmin:!!(prof&&prof.is_admin),business};
 };
 
 MC.myProfile=async function(){
   const uid=await MC.ready;
-  if(!uid)return {tier:'personal',display_name:'Vecino',phone:null};
-  const {data}=await sb.from('profiles').select('tier,display_name,phone').eq('id',uid).single();
-  return data||{tier:'personal',display_name:'Vecino',phone:null};
+  if(!uid)return {display_name:'Vecino',phone:null};
+  const {data}=await sb.from('profiles').select('display_name,phone').eq('id',uid).single();
+  return data||{display_name:'Vecino',phone:null};
+};
+
+/* ── BUSINESS VERIFICATION ──
+   A business is something an ACCOUNT HAS, not a different kind of
+   account — any personal account can verify one business (enforced by a
+   unique constraint on businesses.profile_id) and immediately gains
+   Tienda/Ofertas access at the free tier. Verification itself is
+   instant/self-serve; the individual products/ofertas they then post
+   still go through the same admin review as everything else, so there's
+   still a real checkpoint before anything's actually public. */
+MC.myBusiness=async function(){
+  const uid=await MC.ready;
+  if(!uid)return null;
+  const {data}=await sb.from('businesses').select('*').eq('profile_id',uid).maybeSingle();
+  return data||null;
+};
+
+MC.verifyBusiness=async function(d){
+  const uid=await MC.ready;
+  return sb.from('businesses').insert({
+    profile_id:uid,business_name:d.name,address:d.address,phone:d.phone,category:d.cat,rfc:d.rfc||null
+  });
 };
 
 /* ── HELPERS ── */
@@ -122,7 +145,13 @@ function pgErrorToast(error,fallback){
     if(m.includes('ofertas_bookings_booked_date_key'))return 'Ese día ya fue reservado por otro negocio — intenta con otro.';
     if(m.includes('one_claim_per_person_per_oferta'))return 'Ya habías reclamado esta oferta.';
     if(m.includes('reportes_confirmations'))return 'Ya habías confirmado este reporte.';
+    if(m.includes('businesses_profile_id_key'))return 'Ya tienes un negocio verificado en esta cuenta.';
     return 'Ya existe un registro con esos datos.';
+  }
+  if(error.code==='P0001'){
+    const m=error.message||'';
+    if(m.includes('product_cap_reached'))return 'Llegaste al límite de productos en Tienda para tu plan actual.';
+    if(m.includes('oferta_concurrent_slot_cap_reached'))return 'Ya tienes el máximo de espacios reservados para tu plan. Espera a que pase la fecha de uno, o actualiza a Premium para tener hasta 3 a la vez.';
   }
   if(error.code==='42501')return 'No tienes permiso para hacer esto — intenta de nuevo en un momento.';
   console.error('Supabase error:',error);
@@ -202,7 +231,7 @@ MC.fetchTienda=async function(){
   ]);
   if(prod.error)console.error(prod.error);
   if(clas.error)console.error(clas.error);
-  const negocios=(prod.data||[]).map(r=>({id:r.id,cat:r.category||'Otro',name:r.title,price:fmtMXN(r.price_mxn),seller:r.business_name,img:r.image_url||'',featured:!!r.featured,sellerType:'negocio'}));
+  const negocios=(prod.data||[]).map(r=>({id:r.id,cat:r.category||'Otro',name:r.title,price:fmtMXN(r.price_mxn),seller:r.business_name_snapshot,img:r.image_url||'',featured:!!r.featured,sellerType:'negocio'}));
   const personales=(clas.data||[]).map(r=>({id:r.id,cat:r.category||'Otro',name:r.title,price:fmtMXN(r.price_mxn),seller:(r.profiles&&r.profiles.display_name)||'Vecino',img:r.image_url||'',featured:false,sellerType:'personal'}));
   return [...negocios,...personales];
 };
@@ -233,7 +262,7 @@ MC.fetchOfertas=async function(){
     const totalClaimed=countsById[r.id]||0;
     const iClaimed=myClaims.has(r.id);
     return {
-      id:r.id,seller:r.business_name,tier:r.is_premium?'premium':'free',name:r.title,
+      id:r.id,seller:r.business_name_snapshot,tier:r.is_premium?'premium':'free',name:r.title,
       priceWas:Number(r.price_was)||0,priceNow:Number(r.price_now)||0,img:r.image_url||'',
       claimed:iClaimed?Math.max(0,totalClaimed-1):totalClaimed,total:r.quantity_total||1,
       postedDs,iClaimedReal:iClaimed
@@ -308,15 +337,22 @@ MC.submitEvento=async function(d){
   return sb.from('eventos').insert({title:d.name,category:d.cat||null,event_date:d.date||null,event_time:d.time||null,location:d.loc||null,description:d.desc||null,submitted_by:uid});
 };
 
-/* Routes to productos (negocio) or clasificados (personal) based on the
-   submitter's own tier — there's only one Tienda submit form/FAB today,
-   so the tier on their profile is what decides which table this becomes. */
-MC.submitTienda=async function(d){
+/* Selling in Tienda requires a verified business — the FAB in app.js
+   routes here only when the Mercado sub-tab is active. If somehow called
+   without one (shouldn't happen given app.js's own gate, but defense in
+   depth), returns needsBusiness so the UI can show the verify prompt. */
+MC.submitProducto=async function(d){
   const uid=await MC.ready;
-  const prof=await MC.myProfile();
-  if(prof.tier==='negocio'||prof.tier==='negocio_premium'){
-    return sb.from('productos').insert({business_name:prof.display_name||'Negocio',title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
-  }
+  const biz=await MC.myBusiness();
+  if(!biz)return {needsBusiness:true};
+  return sb.from('productos').insert({business_id:biz.id,business_name_snapshot:biz.business_name,title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
+};
+
+/* Clasificados stays open to every account — no business needed, matches
+   the "personal listing" spirit (1 free item/person, enforced by the
+   existing unique index). */
+MC.submitClasificado=async function(d){
+  const uid=await MC.ready;
   return sb.from('clasificados').insert({title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
 };
 
@@ -348,17 +384,24 @@ MC.submitAviso=async function(d){
 
 /* Ofertas is two writes: the deal itself, then either a booking (day free)
    or a waitlist entry (day full) — mirrors the existing slotCalendarHtml
-   free/full branching in app.js exactly, just against real tables now. */
+   free/full branching in app.js exactly, just against real tables now.
+   Requires a verified business (same needsBusiness fallback as Productos).
+   Pricing/scheduling ($99/slot, 1/day, 2-week window) is IDENTICAL
+   regardless of premium — only the concurrent-slot cap (enforced by a real
+   DB trigger, not here) differs by tier. */
 MC.submitOferta=async function(d,slotDs,isFull){
   const uid=await MC.ready;
+  const biz=await MC.myBusiness();
+  if(!biz)return {needsBusiness:true};
   if(isFull){
-    const {error}=await sb.from('ofertas_waitlist').insert({business_name:d.name||'Negocio',requested_date:slotDs,submitted_by:uid});
+    const {error}=await sb.from('ofertas_waitlist').insert({business_name:biz.business_name,requested_date:slotDs,submitted_by:uid});
     return {waitlisted:true,error};
   }
   const priceWas=parseMoney(d.priceWas),priceNow=parseMoney(d.priceNow);
   const discountPct=(priceWas&&priceNow&&priceWas>0)?Math.max(1,Math.min(75,Math.round((1-priceNow/priceWas)*100))):null;
   const {data:oferta,error:ofErr}=await sb.from('ofertas').insert({
-    business_name:d.name||'Negocio',title:d.item||'Oferta',price_was:priceWas,price_now:priceNow,
+    business_id:biz.id,business_name_snapshot:biz.business_name,is_premium:biz.is_premium,
+    title:d.item||'Oferta',price_was:priceWas,price_now:priceNow,
     quantity_total:parseInt(d.qty,10)||1,discount_pct:discountPct,submitted_by:uid
   }).select().single();
   if(ofErr)return {error:ofErr};

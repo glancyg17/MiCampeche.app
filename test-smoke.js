@@ -35,7 +35,7 @@ function makeChain(getResult) {
         };
       }
       if (prop === 'catch') return (fn) => Promise.resolve(getResult()).catch(fn);
-      if (prop === 'single') { single = true; return () => proxy; }
+      if (prop === 'single' || prop === 'maybeSingle') { single = true; return () => proxy; }
       return (..._args) => proxy; // select/eq/order/limit/gte/in/etc all just chain
     }
   });
@@ -43,12 +43,12 @@ function makeChain(getResult) {
 }
 
 const SAMPLE = {
-  profiles: [{ id: 'uid-1', tier: 'personal', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true }],
+  profiles: [{ id: 'uid-1', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true }],
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', status: 'published' }],
-  productos: [{ id: 'p1', business_name: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, image_url: '', featured: true, status: 'published' }],
+  productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, image_url: '', featured: true, status: 'published' }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' } }],
-  ofertas: [{ id: 'o1', business_name: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
+  ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
   ofertas_redemptions: [],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
   perdidos: [{ id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '' }],
@@ -58,6 +58,11 @@ const SAMPLE = {
   reportes_confirmations: [],
   avisos: [{ id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } }],
 };
+
+// Businesses needs REAL stateful behavior (starts as "no business", becomes
+// "has a business" after a real verifyBusiness() insert) — unlike the other
+// tables above, which are static read-only fixtures for these tests.
+let currentBusiness = null;
 
 // Mutable from outside the eval'd scope (unlike `MC`/`sb`, which are
 // let/const bindings private to that eval call and unreachable as
@@ -94,6 +99,17 @@ const fakeClient = {
     signOut: async () => { currentSession = null; return { error: null }; },
   },
   from(table) {
+    if (table === 'businesses') {
+      return {
+        select: (..._a) => makeChain(() => ({ data: currentBusiness ? [currentBusiness] : [], error: null })),
+        insert: (row) => { lastInsert.businesses = row; return makeChain(() => {
+          if (forcedErrors.insert.businesses) return { data: null, error: forcedErrors.insert.businesses };
+          if (currentBusiness) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "businesses_profile_id_key"' } };
+          currentBusiness = { ...row, id: 'biz-1' };
+          return { data: [currentBusiness], error: null };
+        }); },
+      };
+    }
     return {
       select: (..._a) => makeChain(() => ({ data: SAMPLE[table] || [], error: null })),
       insert: (row) => { lastInsert[table] = row; return makeChain(() => forcedErrors.insert[table]
@@ -269,6 +285,103 @@ const fakeClient = {
     // pre-filled with the account's phone once signed in.
     await window.openPost('avisos');
     assert(doc.getElementById('pf-contact').value === '+529811234567', 'Avisos contact field is pre-filled from the account\'s phone for a signed-in user');
+
+    // ── Business verification: a capability an account HAS, not a
+    // different kind of account. Clasificados stays open to everyone;
+    // Producto/Oferta require verifying first. ──
+    await window.openPost('clasificado');
+    assert(text('modal-title') === 'Publicar en Clasificados', 'Clasificados stays open with no business required — no gate at all');
+
+    await window.openPost('producto');
+    assert(text('modal-title') === 'Verifica tu negocio', 'Producto is gated behind business verification when none exists yet');
+    assert(text('modal-body').includes('Vender en Tienda'), 'the gate explains which capability needs verification');
+
+    await window.openPost('negocio_verificar');
+    assert(text('modal-title') === 'Verifica tu negocio' && !!doc.getElementById('pf-address'), 'the real verification form (not just the prompt) renders with its fields');
+
+    doc.getElementById('pf-name').value = 'Taco Loco';
+    doc.getElementById('pf-address').value = 'Calle 10 #123';
+    doc.getElementById('pf-phone').value = '981 555 0000';
+    doc.getElementById('pf-cat').value = 'Comida';
+    await window.submitPost('negocio_verificar');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Negocio verificado! ✓', 'verification succeeds with the right confirmation toast');
+    assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco', 'the real business data was sent to Supabase');
+    assert(text('modal-title') === 'Publicar un producto', 'after verifying, it auto-continues into the ORIGINALLY requested form (Producto) instead of just closing');
+
+    await window.openPost('oferta');
+    assert(text('modal-title') === 'Publicar una Oferta', 'now that a business exists, Oferta opens the real form instead of the gate');
+
+    await window.openAccount();
+    assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view now shows the verified business');
+
+    // Product cap error now routes to the real Premium upgrade prompt
+    // (with the actual Stripe payment link), not a dead-end toast.
+    forcedErrors.insert.productos = { code: 'P0001', message: 'product_cap_reached' };
+    await window.openPost('producto');
+    doc.getElementById('pf-name').value = 'Producto de prueba';
+    await window.submitPost('producto');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Actualiza a Premium', 'product cap error opens the real Premium upgrade prompt instead of a dead-end toast');
+    assert(text('modal-body').includes('749'), 'the Premium prompt shows the real $749 MXN price');
+    forcedErrors.insert.productos = null;
+
+    // Ofertas: submitting a real (non-full) slot should NOT book
+    // immediately anymore — it persists the pending submission and sends
+    // the user to pay first. Confirmed here without actually navigating
+    // (jsdom doesn't support real navigation; the persisted state is what
+    // matters and is what the real return trip reads back).
+    await window.openPost('oferta');
+    doc.getElementById('pf-item').value = 'Oferta de prueba';
+    doc.getElementById('pf-priceWas').value = '100';
+    doc.getElementById('pf-priceNow').value = '50';
+    const openSlot = doc.querySelector('.slot-day:not(.full)');
+    assert(!!openSlot, 'the booking calendar rendered at least one open (non-full) day to pick');
+    window.pickSlotDay(openSlot, false);
+    const selectedDs = openSlot.dataset.ds;
+    await window.submitPost('oferta');
+    await new Promise(r => setTimeout(r, 20));
+    const pendingRaw = window.sessionStorage.getItem('mc_pending_oferta');
+    assert(!!pendingRaw, 'submitting an available Ofertas slot persists pending data instead of booking immediately (payment happens first)');
+    const pending = JSON.parse(pendingRaw);
+    assert(pending.data.item === 'Oferta de prueba' && pending.slotDs === selectedDs, 'the persisted pending data carries the real form fields and chosen date');
+
+    // Simulate landing back from Stripe with ?paid=oferta — the real
+    // return handler should pick up that same pending data and actually
+    // complete the booking now, for real, through MC.submitOferta.
+    window.history.pushState({}, '', '/?paid=oferta');
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Pago recibido y espacio reservado! En revisión antes de publicarse ✓', 'returning from a successful Stripe payment completes the real booking with the right toast');
+    assert(!window.sessionStorage.getItem('mc_pending_oferta'), 'pending data is cleared after the booking completes, so a page refresh cannot re-submit it');
+    assert(lastInsert.ofertas_bookings && lastInsert.ofertas_bookings.booked_date === selectedDs, 'the actual booking sent to Supabase carries the date chosen before payment, not something reconstructed incorrectly');
+
+    // Now the cap-reached case ON RETURN — payment succeeded but the real
+    // trigger rejects the booking (e.g. cap hit in the interim). Must
+    // surface a specific, honest message, not a silent failure.
+    await window.openPost('oferta');
+    doc.getElementById('pf-item').value = 'Segunda oferta';
+    doc.getElementById('pf-priceWas').value = '100';
+    doc.getElementById('pf-priceNow').value = '50';
+    const openSlot2 = doc.querySelector('.slot-day:not(.full)');
+    window.pickSlotDay(openSlot2, false);
+    await window.submitPost('oferta');
+    await new Promise(r => setTimeout(r, 20));
+    forcedErrors.insert.ofertas_bookings = { code: 'P0001', message: 'oferta_concurrent_slot_cap_reached' };
+    window.history.pushState({}, '', '/?paid=oferta');
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Pago recibido, pero llegaste al límite de espacios de tu plan justo antes de que se confirmara. Escríbenos por WhatsApp — te ayudamos a resolverlo.', 'a cap-reached failure AFTER payment shows the specific, honest recovery message');
+    forcedErrors.insert.ofertas_bookings = null;
+
+    // Premium's return path: confirmation only — must NEVER self-grant
+    // is_premium client-side. That stays a founder-verified, manual step.
+    window.history.pushState({}, '', '/?paid=premium');
+    delete lastUpdate.businesses; // clear any earlier business update from this test run
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Pago recibido! Activaremos tu cuenta Premium en breve.', 'Premium payment return shows a confirmation, not an immediate upgrade');
+    assert(!lastUpdate.businesses, 'returning from a Premium payment never calls a client-side update to is_premium — that stays a manual, founder-verified step');
 
     // ── Admin moderation queue (this fixture account is_admin: true) ──
     await window.openAccount();
