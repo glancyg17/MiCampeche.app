@@ -43,7 +43,7 @@ function makeChain(getResult) {
 }
 
 const SAMPLE = {
-  profiles: [{ id: 'uid-1', tier: 'personal', display_name: 'Vecino Test', is_admin: false }],
+  profiles: [{ id: 'uid-1', tier: 'personal', display_name: 'Vecino Test', phone: '9811234567', is_admin: false }],
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', status: 'published' }],
   productos: [{ id: 'p1', business_name: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, image_url: '', featured: true, status: 'published' }],
@@ -71,6 +71,8 @@ const forcedErrors = { insert: {}, delete: {} };
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
 Object.assign(forcedErrors, { updateUser: null, signIn: null });
 
+const lastInsert = {};
+
 const fakeClient = {
   auth: {
     getSession: async () => ({ data: { session: currentSession } }),
@@ -93,9 +95,9 @@ const fakeClient = {
   from(table) {
     return {
       select: (..._a) => makeChain(() => ({ data: SAMPLE[table] || [], error: null })),
-      insert: (row) => makeChain(() => forcedErrors.insert[table]
+      insert: (row) => { lastInsert[table] = row; return makeChain(() => forcedErrors.insert[table]
         ? { data: null, error: forcedErrors.insert[table] }
-        : { data: [{ ...row, id: 'new-' + Math.random().toString(36).slice(2) }], error: null }),
+        : { data: [{ ...row, id: 'new-' + Math.random().toString(36).slice(2) }], error: null }); },
       delete: () => makeChain(() => forcedErrors.delete[table]
         ? { data: null, error: forcedErrors.delete[table] }
         : { data: [], error: null }),
@@ -208,9 +210,21 @@ const fakeClient = {
   try {
     await window.openAccount();
     assert(text('modal-title') === 'Crear cuenta', 'openAccount() while anonymous shows the signup form, not a signed-in view');
+    assert(!!doc.getElementById('acct-phone'), 'signup form includes the (now required) phone field');
+
+    // Phone validation: too short / missing should block signup entirely.
+    doc.getElementById('acct-name').value = 'Sin Telefono';
+    doc.getElementById('acct-email').value = 'sintelefono@example.com';
+    doc.getElementById('acct-phone').value = '981';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Ingresa un número de teléfono válido (10 dígitos)', 'signup with too-short phone is blocked with the right message, not silently accepted');
+    assert(text('modal-title') === 'Crear cuenta', 'blocked signup leaves the form open rather than closing the modal');
 
     doc.getElementById('acct-name').value = 'Ricardo Martín';
     doc.getElementById('acct-email').value = 'ricardo@example.com';
+    doc.getElementById('acct-phone').value = '981 123 4567';
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
@@ -218,7 +232,21 @@ const fakeClient = {
 
     await window.openAccount();
     assert(text('modal-body').includes('ricardo@example.com'), 'openAccount() after signup shows the signed-in view with the real email');
+    assert(text('modal-body').includes('9811234567'), 'signed-in view shows the phone saved during signup');
     assert(text('modal-body').includes('Cerrar sesión'), 'signed-in view offers sign-out');
+
+    // Perdidos has no manual contact field — while signed in, the submitted
+    // row should carry the account's phone automatically.
+    await window.openPost('perdidos');
+    doc.getElementById('pf-name').value = 'Gato perdido de prueba';
+    await window.submitPost('perdidos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.perdidos && lastInsert.perdidos.contact_info === '9811234567', 'Perdidos submission auto-fills contact_info from the signed-in account\'s phone, with no form field for it');
+
+    // Avisos DOES have a manual contact field, but it should arrive
+    // pre-filled with the account's phone once signed in.
+    await window.openPost('avisos');
+    assert(doc.getElementById('pf-contact').value === '9811234567', 'Avisos contact field is pre-filled from the account\'s phone for a signed-in user');
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
@@ -236,6 +264,7 @@ const fakeClient = {
     await window.openAccount();
     doc.getElementById('acct-name').value = 'Otra Persona';
     doc.getElementById('acct-email').value = 'ya@existe.com';
+    doc.getElementById('acct-phone').value = '981 999 8888';
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));

@@ -750,6 +750,16 @@ async function openPost(kind){
   document.getElementById('modal-bg').classList.add('on');
   selectedSlotDate=null;
   photoUploadConfirmed=false;
+  if(kind==='avisos'){
+    // Convenience only — anonymous visitors without an account yet can
+    // still type their own contact info manually; this just saves a real
+    // account holder from retyping their phone on every post.
+    const acct=await MC.currentAccount();
+    if(acct.signedIn&&acct.phone){
+      const contactEl=document.getElementById('pf-contact');
+      if(contactEl)contactEl.value=acct.phone;
+    }
+  }
 }
 
 /* ══════════════ OFERTAS SLOT CALENDAR (business-facing booking picker) ══════════════
@@ -827,6 +837,7 @@ function renderAccountSignedIn(acct){
       <div style="width:56px;height:56px;border-radius:50%;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;font-weight:700">${e((acct.displayName||'V')[0].toUpperCase())}</div>
       <div style="font-weight:700;font-size:16px">${e(acct.displayName)}</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(acct.email)}</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:1px">${e(acct.phone||'')}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:6px">Cuenta ${e(TIER_LABEL[acct.tier]||'Personal')}</div>
     </div>
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
@@ -842,8 +853,9 @@ function renderAccountForm(){
   </div>`;
   if(isSignup)h+=`<div><label class="fl">Tu nombre</label><input class="fi" id="acct-name" type="text" placeholder="Ej. Ricardo Martín"></div>`;
   h+=`<div><label class="fl">Correo</label><input class="fi" id="acct-email" type="email" placeholder="tu@correo.com"></div>`;
+  if(isSignup)h+=`<div><label class="fl">Teléfono / WhatsApp</label><input class="fi" id="acct-phone" type="tel" placeholder="981 000 0000"></div>`;
   h+=`<div><label class="fl">Contraseña</label><input class="fi" id="acct-password" type="password" placeholder="Mínimo 6 caracteres"></div>`;
-  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Tus publicaciones anteriores (si tienes) quedan asociadas a esta cuenta.':'Usa el correo y contraseña con los que creaste tu cuenta.'}</div>`;
+  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Usamos tu teléfono para tus publicaciones (contacto) y avisos importantes — nunca lo compartimos ni lo vendemos.':'Usa el correo y contraseña con los que creaste tu cuenta.'}</div>`;
   h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
@@ -856,12 +868,16 @@ async function submitAuth(){
   if(!email||!password){toast('Completa correo y contraseña');return;}
   const btn=document.getElementById('acct-submit-btn');
   const original=btn.textContent;
-  btn.disabled=true;btn.textContent='Un momento…';
   let result;
   if(accountMode==='signup'){
     const name=(document.getElementById('acct-name').value||'').trim()||'Vecino';
-    result=await MC.signUp(email,password,name);
+    const phoneRaw=(document.getElementById('acct-phone').value||'').trim();
+    const phoneDigits=phoneRaw.replace(/\D/g,'');
+    if(phoneDigits.length<10){toast('Ingresa un número de teléfono válido (10 dígitos)');return;}
+    btn.disabled=true;btn.textContent='Un momento…';
+    result=await MC.signUp(email,password,name,phoneDigits);
   } else {
+    btn.disabled=true;btn.textContent='Un momento…';
     result=await MC.signIn(email,password);
   }
   btn.disabled=false;btn.textContent=original;

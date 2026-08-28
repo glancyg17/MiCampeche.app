@@ -49,12 +49,15 @@ MC.ready=ensureSession();
    someone did before creating an account gets orphaned. Signing in on a
    different device replaces the local anonymous identity with the real
    one tied to that email. */
-MC.signUp=async function(email,password,displayName){
+MC.signUp=async function(email,password,displayName,phone){
   const {data,error}=await sb.auth.updateUser({email,password,data:{display_name:displayName}});
   if(error)return {error};
   // The profile row already exists (created by the trigger back when the
-  // anonymous session first started) — this just fills in the real name.
-  await sb.from('profiles').update({display_name:displayName}).eq('id',data.user.id);
+  // anonymous session first started) — this just fills in the real name
+  // and phone. Phone is required at signup (per the founder's own call —
+  // more durably useful than email for this community, and it's what
+  // makes contact-info auto-fill on posts possible).
+  await sb.from('profiles').update({display_name:displayName,phone}).eq('id',data.user.id);
   return {error:null};
 };
 
@@ -73,15 +76,15 @@ MC.signOut=async function(){
 MC.currentAccount=async function(){
   const {data:{session}}=await sb.auth.getSession();
   if(!session||session.user.is_anonymous)return {signedIn:false};
-  const {data:prof}=await sb.from('profiles').select('display_name,tier').eq('id',session.user.id).single();
-  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',tier:(prof&&prof.tier)||'personal'};
+  const {data:prof}=await sb.from('profiles').select('display_name,tier,phone').eq('id',session.user.id).single();
+  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',tier:(prof&&prof.tier)||'personal',phone:(prof&&prof.phone)||null};
 };
 
-MC.myTier=async function(){
+MC.myProfile=async function(){
   const uid=await MC.ready;
-  if(!uid)return 'personal';
-  const {data}=await sb.from('profiles').select('tier,display_name').eq('id',uid).single();
-  return data||{tier:'personal',display_name:'Vecino'};
+  if(!uid)return {tier:'personal',display_name:'Vecino',phone:null};
+  const {data}=await sb.from('profiles').select('tier,display_name,phone').eq('id',uid).single();
+  return data||{tier:'personal',display_name:'Vecino',phone:null};
 };
 
 /* ── HELPERS ── */
@@ -273,21 +276,27 @@ MC.submitEvento=async function(d){
    so the tier on their profile is what decides which table this becomes. */
 MC.submitTienda=async function(d){
   const uid=await MC.ready;
-  const prof=await MC.myTier();
+  const prof=await MC.myProfile();
   if(prof.tier==='negocio'||prof.tier==='negocio_premium'){
     return sb.from('productos').insert({business_name:prof.display_name||'Negocio',title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
   }
   return sb.from('clasificados').insert({title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
 };
 
+/* Perdidos/Empleos have no manual contact field in the UI — phone is now
+   required at signup, so pulling it from the profile is more reliable
+   than asking again on every post. Anonymous (not-yet-signed-up)
+   visitors simply won't have one yet, same as before this existed. */
 MC.submitPerdido=async function(d){
   const uid=await MC.ready;
-  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,submitted_by:uid});
+  const prof=await MC.myProfile();
+  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,contact_info:prof.phone||null,submitted_by:uid});
 };
 
 MC.submitEmpleo=async function(d){
   const uid=await MC.ready;
-  return sb.from('empleos').insert({title:d.title,company:d.co,pay:d.pay||null,description:d.desc||null,submitted_by:uid});
+  const prof=await MC.myProfile();
+  return sb.from('empleos').insert({title:d.title,company:d.co,pay:d.pay||null,description:d.desc||null,contact_info:prof.phone||null,submitted_by:uid});
 };
 
 MC.submitReporte=async function(d){
