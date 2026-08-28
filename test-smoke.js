@@ -68,10 +68,27 @@ const SAMPLE = {
 // monkey-patching those functions out of the test.
 const forcedErrors = { insert: {}, delete: {} };
 
+let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+Object.assign(forcedErrors, { updateUser: null, signIn: null });
+
 const fakeClient = {
   auth: {
-    getSession: async () => ({ data: { session: null } }),
-    signInAnonymously: async () => ({ data: { user: { id: 'uid-1' } }, error: null }),
+    getSession: async () => ({ data: { session: currentSession } }),
+    signInAnonymously: async () => {
+      currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+      return { data: { user: currentSession.user }, error: null };
+    },
+    updateUser: async ({ email, password, data }) => {
+      if (forcedErrors.updateUser) return { data: null, error: forcedErrors.updateUser };
+      currentSession = { user: { id: 'uid-1', is_anonymous: false, email } };
+      return { data: { user: currentSession.user }, error: null };
+    },
+    signInWithPassword: async ({ email, password }) => {
+      if (forcedErrors.signIn) return { data: null, error: forcedErrors.signIn };
+      currentSession = { user: { id: 'uid-2', is_anonymous: false, email } };
+      return { data: { user: currentSession.user }, error: null };
+    },
+    signOut: async () => { currentSession = null; return { error: null }; },
   },
   from(table) {
     return {
@@ -184,6 +201,49 @@ const fakeClient = {
   } finally {
     forcedErrors.insert.ofertas_redemptions = null;
     forcedErrors.delete.ofertas_redemptions = null;
+  }
+
+  // ── Account flow: signup, signed-in view, sign-out — all through the
+  // real openAccount/submitAuth/doSignOut, never touching MC directly. ──
+  try {
+    await window.openAccount();
+    assert(text('modal-title') === 'Crear cuenta', 'openAccount() while anonymous shows the signup form, not a signed-in view');
+
+    doc.getElementById('acct-name').value = 'Ricardo Martín';
+    doc.getElementById('acct-email').value = 'ricardo@example.com';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'submitAuth() in signup mode → real MC.signUp → success toast');
+
+    await window.openAccount();
+    assert(text('modal-body').includes('ricardo@example.com'), 'openAccount() after signup shows the signed-in view with the real email');
+    assert(text('modal-body').includes('Cerrar sesión'), 'signed-in view offers sign-out');
+
+    await window.doSignOut();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Sesión cerrada ✓', 'doSignOut() → real MC.signOut → confirmation toast');
+
+    await window.openAccount();
+    assert(text('modal-title') === 'Crear cuenta', 'after sign-out, a fresh anonymous session is active again (openAccount shows signup, not signed-in)');
+  } catch (err) {
+    assert(false, 'account flow threw: ' + err.stack);
+  }
+
+  // Account error path: duplicate email on signup
+  try {
+    forcedErrors.updateUser = { message: 'User already registered' };
+    await window.openAccount();
+    doc.getElementById('acct-name').value = 'Otra Persona';
+    doc.getElementById('acct-email').value = 'ya@existe.com';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Ya existe una cuenta con ese correo — intenta iniciar sesión en vez de crear una nueva.', 'duplicate-email signup maps to the correct friendly toast');
+  } catch (err) {
+    assert(false, 'account error-path threw: ' + err.stack);
+  } finally {
+    forcedErrors.updateUser = null;
   }
 
   console.log('\n' + (failures === 0 ? `ALL PASSED` : `${failures} FAILURE(S)`));

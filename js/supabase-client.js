@@ -28,9 +28,10 @@ const MONTH_ABBR_ES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT'
 const MC={};
 
 /* ── SESSION BOOTSTRAP ──
-   Resolves once to the current user's id (creating an anonymous session
-   on first visit). Every fetch/submit function below awaits this first. */
-MC.ready=(async function ensureSession(){
+   Resolves to the current user's id, creating an anonymous session on
+   first visit. A named function (not just an inline IIFE) so sign-out can
+   call it again to re-establish a fresh anonymous session afterward. */
+async function ensureSession(){
   try{
     const {data:{session}}=await sb.auth.getSession();
     if(session)return session.user.id;
@@ -38,7 +39,43 @@ MC.ready=(async function ensureSession(){
     if(error){console.error('Anonymous sign-in failed:',error);return null;}
     return data.user.id;
   }catch(err){console.error('Session bootstrap failed:',err);return null;}
-})();
+}
+MC.ready=ensureSession();
+
+/* ── REAL ACCOUNTS ──
+   Every visitor already has an anonymous session (see above). Signing up
+   converts that SAME session into a permanent one — same auth.uid(), same
+   profile row, same submissions — rather than starting over, so nothing
+   someone did before creating an account gets orphaned. Signing in on a
+   different device replaces the local anonymous identity with the real
+   one tied to that email. */
+MC.signUp=async function(email,password,displayName){
+  const {data,error}=await sb.auth.updateUser({email,password,data:{display_name:displayName}});
+  if(error)return {error};
+  // The profile row already exists (created by the trigger back when the
+  // anonymous session first started) — this just fills in the real name.
+  await sb.from('profiles').update({display_name:displayName}).eq('id',data.user.id);
+  return {error:null};
+};
+
+MC.signIn=async function(email,password){
+  const {data,error}=await sb.auth.signInWithPassword({email,password});
+  if(!error&&data.user)MC.ready=Promise.resolve(data.user.id);
+  return {error};
+};
+
+MC.signOut=async function(){
+  await sb.auth.signOut();
+  MC.ready=ensureSession(); // immediately re-establish anonymous browsing, same as a fresh visit
+  await MC.ready;
+};
+
+MC.currentAccount=async function(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session||session.user.is_anonymous)return {signedIn:false};
+  const {data:prof}=await sb.from('profiles').select('display_name,tier').eq('id',session.user.id).single();
+  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',tier:(prof&&prof.tier)||'personal'};
+};
 
 MC.myTier=async function(){
   const uid=await MC.ready;
@@ -89,7 +126,17 @@ function pgErrorToast(error,fallback){
   return fallback||'Algo salió mal. Intenta de nuevo.';
 }
 
-/* ══════════════ FETCH: read-only public data ══════════════ */
+function authErrorToast(error){
+  if(!error)return null;
+  const m=(error.message||'').toLowerCase();
+  if(m.includes('already registered')||m.includes('already exists'))return 'Ya existe una cuenta con ese correo — intenta iniciar sesión en vez de crear una nueva.';
+  if(m.includes('invalid login credentials'))return 'Correo o contraseña incorrectos.';
+  if(m.includes('password')&&(m.includes('6 character')||m.includes('at least')))return 'La contraseña debe tener al menos 6 caracteres.';
+  if(m.includes('invalid') && m.includes('email'))return 'Ese correo no parece válido — revísalo e intenta de nuevo.';
+  if(m.includes('email not confirmed'))return 'Este correo aún no está confirmado.';
+  console.error('Auth error:',error);
+  return 'No se pudo completar. Intenta de nuevo.';
+}
 
 MC.fetchNoticias=async function(){
   const {data,error}=await sb.from('noticias').select('*')

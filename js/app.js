@@ -806,6 +806,76 @@ function segPick(el){
 }
 function closeModal(){document.getElementById('modal-bg').classList.remove('on');}
 
+/* ══════════════ ACCOUNT (login / signup / signed-in view) ══════════════
+   Reuses the same #modal-bg/#modal-body infrastructure as the content
+   submission forms above — same visual language, no new UI invented.
+   Every visitor already has an anonymous session; signing up upgrades
+   that SAME session in place (see MC.signUp), so nothing already
+   submitted gets orphaned. */
+let accountMode='signup';
+async function openAccount(){
+  const acct=await MC.currentAccount();
+  if(acct.signedIn){renderAccountSignedIn(acct);return;}
+  accountMode='signup';
+  renderAccountForm();
+}
+function renderAccountSignedIn(acct){
+  const TIER_LABEL={personal:'Personal',negocio:'Negocio',negocio_premium:'Negocio Premium'};
+  document.getElementById('modal-title').textContent='Tu cuenta';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:8px 0 4px">
+      <div style="width:56px;height:56px;border-radius:50%;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;font-weight:700">${e((acct.displayName||'V')[0].toUpperCase())}</div>
+      <div style="font-weight:700;font-size:16px">${e(acct.displayName)}</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(acct.email)}</div>
+      <div style="color:var(--ink3);font-size:12px;margin-top:6px">Cuenta ${e(TIER_LABEL[acct.tier]||'Personal')}</div>
+    </div>
+    <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+function renderAccountForm(){
+  const isSignup=accountMode==='signup';
+  document.getElementById('modal-title').textContent=isSignup?'Crear cuenta':'Iniciar sesión';
+  let h=`<div class="subtog">
+    <button class="subtog-btn${isSignup?' on':''}" onclick="setAccountMode('signup')">Crear cuenta</button>
+    <button class="subtog-btn${isSignup?'':' on'}" onclick="setAccountMode('login')">Iniciar sesión</button>
+  </div>`;
+  if(isSignup)h+=`<div><label class="fl">Tu nombre</label><input class="fi" id="acct-name" type="text" placeholder="Ej. Ricardo Martín"></div>`;
+  h+=`<div><label class="fl">Correo</label><input class="fi" id="acct-email" type="email" placeholder="tu@correo.com"></div>`;
+  h+=`<div><label class="fl">Contraseña</label><input class="fi" id="acct-password" type="password" placeholder="Mínimo 6 caracteres"></div>`;
+  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Tus publicaciones anteriores (si tienes) quedan asociadas a esta cuenta.':'Usa el correo y contraseña con los que creaste tu cuenta.'}</div>`;
+  h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
+  document.getElementById('modal-body').innerHTML=h;
+  document.getElementById('modal-bg').classList.add('on');
+}
+function setAccountMode(mode){accountMode=mode;renderAccountForm();}
+
+async function submitAuth(){
+  const email=(document.getElementById('acct-email').value||'').trim();
+  const password=document.getElementById('acct-password').value||'';
+  if(!email||!password){toast('Completa correo y contraseña');return;}
+  const btn=document.getElementById('acct-submit-btn');
+  const original=btn.textContent;
+  btn.disabled=true;btn.textContent='Un momento…';
+  let result;
+  if(accountMode==='signup'){
+    const name=(document.getElementById('acct-name').value||'').trim()||'Vecino';
+    result=await MC.signUp(email,password,name);
+  } else {
+    result=await MC.signIn(email,password);
+  }
+  btn.disabled=false;btn.textContent=original;
+  if(result.error){toast(authErrorToast(result.error));return;}
+  closeModal();
+  toast(accountMode==='signup'?'¡Cuenta creada! Ya tienes sesión iniciada ✓':'Sesión iniciada ✓');
+}
+async function doSignOut(){
+  await MC.signOut();
+  closeModal();
+  toast('Sesión cerrada ✓');
+}
+
+
 const SUBMIT_HANDLERS={
   eventos:MC.submitEvento, tienda:MC.submitTienda, perdidos:MC.submitPerdido,
   empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
