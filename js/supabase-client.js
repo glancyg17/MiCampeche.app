@@ -52,6 +52,14 @@ MC.ready=ensureSession();
 MC.signUp=async function(email,password,displayName,phone){
   const {data,error}=await sb.auth.updateUser({email,password,data:{display_name:displayName}});
   if(error)return {error};
+  // updateUser() converts the anonymous account to a real one server-side,
+  // but the CURRENT session's JWT still carries the old is_anonymous:true
+  // claim until explicitly refreshed — every request made with the stale
+  // token afterward (verifying a business, submitting anything) silently
+  // behaves as if still anonymous. This affects every brand-new signup,
+  // not an edge case, so it's not optional.
+  await sb.auth.refreshSession();
+  MC.ready=Promise.resolve(data.user.id); // same uid, but keeps this in sync defensively
   // The profile row already exists (created by the trigger back when the
   // anonymous session first started) — this just fills in the real name
   // and phone. Phone is required at signup (per the founder's own call —

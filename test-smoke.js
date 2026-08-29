@@ -75,6 +75,7 @@ let currentBusiness = null;
 const forcedErrors = { insert: {}, delete: {}, update: {} };
 
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+let refreshSessionCallCount = 0;
 Object.assign(forcedErrors, { updateUser: null, signIn: null });
 
 const lastInsert = {};
@@ -92,6 +93,7 @@ const fakeClient = {
       currentSession = { user: { id: 'uid-1', is_anonymous: false, email } };
       return { data: { user: currentSession.user }, error: null };
     },
+    refreshSession: async () => { refreshSessionCallCount++; return { data: { session: currentSession }, error: null }; },
     signInWithPassword: async ({ email, password }) => {
       if (forcedErrors.signIn) return { data: null, error: forcedErrors.signIn };
       currentSession = { user: { id: 'uid-2', is_anonymous: false, email } };
@@ -267,6 +269,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'submitAuth() in signup mode → real MC.signUp → success toast');
     assert(lastUpdate.profiles && lastUpdate.profiles.phone === '+529811234567', 'Mexico (+52) default combines correctly too');
+    assert(refreshSessionCallCount >= 1, 'signup forces a session refresh so the JWT drops the stale is_anonymous:true claim — without this, every new signup would fail on their very first authenticated action afterward (e.g. verifying a business) with a permission error');
 
     await window.openAccount();
     assert(text('modal-body').includes('ricardo@example.com'), 'openAccount() after signup shows the signed-in view with the real email');
