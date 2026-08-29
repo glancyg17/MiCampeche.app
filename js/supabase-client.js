@@ -186,7 +186,8 @@ const CONTENT_TABLES=[
   {table:'perdidos',label:'Perdido/Encontrado',titleField:'title'},
   {table:'empleos',label:'Empleo',titleField:'title'},
   {table:'reportes',label:'Reporte',titleField:'title'},
-  {table:'avisos',label:'Aviso',titleField:'title'}
+  {table:'avisos',label:'Aviso',titleField:'title'},
+  {table:'businesses',label:'Verificación de negocio',titleField:'business_name'}
 ];
 
 MC.fetchPendingQueue=async function(){
@@ -345,7 +346,7 @@ MC.submitProducto=async function(d){
   const uid=await MC.ready;
   const biz=await MC.myBusiness();
   if(!biz)return {needsBusiness:true};
-  return sb.from('productos').insert({business_id:biz.id,business_name_snapshot:biz.business_name,title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
+  return sb.from('productos').insert({business_id:biz.id,business_name_snapshot:biz.business_name,title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,image_url:d.photo||null,submitted_by:uid});
 };
 
 /* Clasificados stays open to every account — no business needed, matches
@@ -353,7 +354,7 @@ MC.submitProducto=async function(d){
    existing unique index). */
 MC.submitClasificado=async function(d){
   const uid=await MC.ready;
-  return sb.from('clasificados').insert({title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,submitted_by:uid});
+  return sb.from('clasificados').insert({title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,image_url:d.photo||null,submitted_by:uid});
 };
 
 /* Perdidos/Empleos have no manual contact field in the UI — phone is now
@@ -363,7 +364,7 @@ MC.submitClasificado=async function(d){
 MC.submitPerdido=async function(d){
   const uid=await MC.ready;
   const prof=await MC.myProfile();
-  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,contact_info:prof.phone||null,submitted_by:uid});
+  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,contact_info:prof.phone||null,submitted_by:uid});
 };
 
 MC.submitEmpleo=async function(d){
@@ -374,7 +375,7 @@ MC.submitEmpleo=async function(d){
 
 MC.submitReporte=async function(d){
   const uid=await MC.ready;
-  return sb.from('reportes').insert({category:d.cat||null,title:d.title,location_text:d.loc||null,description:d.desc||null,submitted_by:uid});
+  return sb.from('reportes').insert({category:d.cat||null,title:d.title,location_text:d.loc||null,description:d.desc||null,image_url:d.photo||null,submitted_by:uid});
 };
 
 MC.submitAviso=async function(d){
@@ -401,12 +402,28 @@ MC.submitOferta=async function(d,slotDs,isFull){
   const discountPct=(priceWas&&priceNow&&priceWas>0)?Math.max(1,Math.min(75,Math.round((1-priceNow/priceWas)*100))):null;
   const {data:oferta,error:ofErr}=await sb.from('ofertas').insert({
     business_id:biz.id,business_name_snapshot:biz.business_name,is_premium:biz.is_premium,
-    title:d.item||'Oferta',price_was:priceWas,price_now:priceNow,
+    title:d.item||'Oferta',description:d.desc||null,terms:d.terms||null,image_url:d.photo||null,
+    price_was:priceWas,price_now:priceNow,
     quantity_total:parseInt(d.qty,10)||1,discount_pct:discountPct,submitted_by:uid
   }).select().single();
   if(ofErr)return {error:ofErr};
   const {error:bookErr}=await sb.from('ofertas_bookings').insert({oferta_id:oferta.id,booked_date:slotDs});
   return {error:bookErr,oferta};
+};
+
+/* Real image upload — replaces the Google Form placeholder that never
+   actually worked (image_url was never populated by any real submission
+   before this). Resizing happens client-side in app.js before this is
+   called; this just handles the actual Storage write. Files are scoped
+   to the uploader's own folder (uid/...), matching the bucket's RLS. */
+MC.uploadImage=async function(blob,ext){
+  const uid=await MC.ready;
+  if(!uid)throw new Error('No hay sesión activa');
+  const path=`${uid}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const {error}=await sb.storage.from('uploads').upload(path,blob,{contentType:'image/'+ext,upsert:false});
+  if(error)throw error;
+  const {data}=sb.storage.from('uploads').getPublicUrl(path);
+  return data.publicUrl;
 };
 
 MC.claimOferta=async function(ofertaId){

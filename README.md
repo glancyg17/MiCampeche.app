@@ -46,9 +46,6 @@ micampeche/
 - **No backend.** See above — this is the next real milestone.
 - **Hardcoded placeholders in `js/app.js`** worth searching for and
   replacing before going live:
-  - `OFERTA_PHOTO_FORM_URL` — a placeholder Google Form link for the
-    business photo-upload flow. Replace with a real form (one field, image
-    upload, pointed at a Drive folder you control).
   - `MICAMPECHE_WHATSAPP` — a placeholder phone number for the "Contacto"
     menu item. Replace with the real MiCampeche WhatsApp Business number.
 - **Account/tier system doesn't exist yet.** The Negocio / Negocio Premium

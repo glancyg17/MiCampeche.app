@@ -148,38 +148,70 @@ function openWeatherLightbox(){
 }
 function closeWeatherLightbox(){document.getElementById('wx-lb-bg').classList.remove('on');}
 
-/* ══════════════ PHOTO UPLOAD LIGHTBOX (in-app Google Form embed) ══════════════
-   Opens the business's photo-upload Google Form inside an iframe so they never
-   leave the app. The form itself deposits the image straight into a Drive
-   folder — MiCampeche never touches the file. "Ya subí mi foto" is a manual
-   confirmation since a cross-origin iframe can't tell us the form was submitted. */
-/* ══════════════ PHOTO UPLOAD LIGHTBOX (in-app Google Form embed) ══════════════
-   Opens the business's photo-upload Google Form inside an iframe so they never
-   leave the app. The form itself deposits the image straight into a Drive
-   folder — MiCampeche never touches the file. "Ya subí mi foto" is a manual
-   confirmation since a cross-origin iframe can't tell us the form was submitted.
-   activePhotoFieldKey tracks which form field triggered the lightbox, so the
-   correct button updates even if a future form uses a different field key. */
-let activePhotoFieldKey=null;
-function openPhotoUploadLightbox(fieldKey){
-  activePhotoFieldKey=fieldKey;
-  document.getElementById('photo-lb-frame').src=OFERTA_PHOTO_FORM_URL;
-  document.getElementById('photo-lb-bg').classList.add('on');
+/* ══════════════ REAL IMAGE UPLOAD ══════════════
+   Replaces the old Google Form / Drive placeholder, which never actually
+   worked — image_url was never populated by any real submission before
+   this. Resizes client-side (max 1200px on the long side, JPEG ~80%
+   quality) before uploading, to keep Storage usage small. uploadedImageUrls
+   is keyed by form field key so multiple photo fields could coexist,
+   though every current form only has one. */
+let uploadedImageUrls={};
+
+function resizeImageToBlob(file,maxDim=1200,quality=0.8){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('No se pudo leer el archivo'));
+    reader.onload=e=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('No se pudo leer la imagen'));
+      img.onload=()=>{
+        let {width,height}=img;
+        if(width>maxDim||height>maxDim){
+          if(width>=height){height=Math.round(height*maxDim/width);width=maxDim;}
+          else{width=Math.round(width*maxDim/height);height=maxDim;}
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=width;canvas.height=height;
+        canvas.getContext('2d').drawImage(img,0,0,width,height);
+        canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('No se pudo procesar la imagen')),'image/jpeg',quality);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
-function closePhotoUploadLightbox(){
-  document.getElementById('photo-lb-bg').classList.remove('on');
-  document.getElementById('photo-lb-frame').src='';
-}
-function confirmPhotoUploaded(){
-  photoUploadConfirmed=true;
-  const btn=document.getElementById('pf-'+activePhotoFieldKey);
-  if(btn){
-    btn.classList.add('done');
-    const lbl=btn.querySelector('.photo-upload-lbl');
-    if(lbl)lbl.textContent='Foto subida ✓';
+
+async function handlePhotoSelect(input,fieldKey){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  if(!file.type.startsWith('image/')){toast('Selecciona un archivo de imagen');input.value='';return;}
+  const wrap=document.getElementById('pf-'+fieldKey+'-wrap');
+  if(!wrap)return;
+  wrap.innerHTML=`<div class="photo-upload-btn" style="opacity:.55;pointer-events:none">${svgIco('camera')}<span class="photo-upload-lbl">Subiendo…</span></div>`;
+  try{
+    const blob=await resizeImageToBlob(file);
+    const url=await MC.uploadImage(blob,'jpg');
+    uploadedImageUrls[fieldKey]=url;
+    wrap.innerHTML=`<div style="position:relative;display:inline-block">
+      <img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:var(--rs);display:block">
+      <button type="button" onclick="removePhotoSelection('${fieldKey}')" aria-label="Quitar foto"
+        style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
+    </div>`;
+  }catch(err){
+    console.error('Photo upload failed:',err);
+    toast('No se pudo subir la foto — intenta de nuevo');
+    renderPhotoUploadButton(fieldKey);
   }
-  closePhotoUploadLightbox();
-  toast('¡Gracias! Tu foto quedó registrada ✓');
+}
+function removePhotoSelection(fieldKey){
+  delete uploadedImageUrls[fieldKey];
+  renderPhotoUploadButton(fieldKey);
+}
+function renderPhotoUploadButton(fieldKey){
+  const wrap=document.getElementById('pf-'+fieldKey+'-wrap');
+  if(!wrap)return;
+  wrap.innerHTML=`<button type="button" class="photo-upload-btn" onclick="document.getElementById('pf-${fieldKey}-input').click()">${svgIco('camera')}<span class="photo-upload-lbl">Subir foto</span></button>
+    <input type="file" accept="image/*" id="pf-${fieldKey}-input" style="display:none" onchange="handlePhotoSelect(this,'${fieldKey}')">`;
 }
 
 /* ══════════════ REAL DATA LAYER (Supabase) ══════════════
@@ -212,9 +244,6 @@ function ofertaAgeDays(o){
    enforced for real by a unique constraint on ofertas_bookings.booked_date
    (not just implied by this Set, which is only a display cache). */
 const SLOT_FEE_MXN=99;
-// TODO: replace with the real Google Form URL once created (one field: image upload,
-// destination: your own Drive folder). Google Forms supports iframe embedding by default.
-const OFERTA_PHOTO_FORM_URL='https://forms.google.com/PLACEHOLDER-REPLACE-WITH-REAL-FORM-LINK';
 const SLOT_WINDOW_DAYS=14;
 let bookedDates=new Set();
 
@@ -568,6 +597,8 @@ function renderOfertas(){
   `;}).join('');
 }
 async function toggleClaim(id){
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn){openSignInGate(null);return;}
   const o=OFERTAS.find(x=>x.id===id);if(!o)return;
   const alreadyClaimed=o.claimed+(claimedByMe[id]?1:0)>=o.total;
   if(!claimedByMe[id]&&alreadyClaimed){toast('Esta oferta ya se agotó');renderOfertas();return;}
@@ -672,6 +703,8 @@ function renderReportes(){
   `;}).join('');
 }
 async function toggleConfirm(id){
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn){openSignInGate(null);return;}
   const wasConfirmed=!!confirmedByMe[id];
   confirmedByMe[id]=!wasConfirmed;
   renderReportes();
@@ -771,10 +804,12 @@ const POST_FORMS={
   ]},
   oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntale a la gente qué incluye esta oferta...'},
     {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload'},
     {k:'priceWas',lbl:'Precio normal',type:'text',ph:'$'},
     {k:'priceNow',lbl:'Precio con descuento',type:'text',ph:'$'},
     {k:'qty',lbl:'Cantidad disponible',type:'number',ph:'Ej. 10'},
+    {k:'terms',lbl:'Condiciones (opcional)',type:'textarea',ph:'Ej. Válido de lunes a viernes, no aplica con otras promociones...'},
     {k:'slot',lbl:'Elige el día',type:'calendar'}
   ]},
   negocio_verificar:{title:'Verifica tu negocio',note:'Esta información se guarda en tu cuenta — no necesitas volver a escribirla en cada publicación.',fields:[
@@ -787,17 +822,24 @@ const POST_FORMS={
 };
 
 let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kind==='oferta'
-let photoUploadConfirmed=false; // set by confirmPhotoUploaded(), read by submitPost()
 
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
-  // Selling in Tienda or posting an Oferta requires a verified business —
-  // this is an account capability, not a different kind of account (any
-  // personal account can verify one). Show the prompt instead of the
-  // form when there isn't one yet.
+  // A real account (not just an anonymous browsing session) is required
+  // for ANY interactive/posting action — this is the actual traceability
+  // guarantee, and it's enforced at the database layer too (RLS rejects
+  // anonymous inserts outright), not just here for UX. This check comes
+  // first, before the business-verification check below, since verifying
+  // a business is itself a write action that needs a real account.
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn){openSignInGate(kind);return;}
+  // Selling in Tienda or posting an Oferta requires a verified AND
+  // admin-approved business — verification alone used to be enough
+  // (instant self-serve), but now goes through the same moderation queue
+  // as everything else, same as any other submission.
   if(kind==='producto'||kind==='oferta'){
-    const biz=await MC.myBusiness();
-    if(!biz){openBusinessPrompt(kind);return;}
+    if(!acct.business){openBusinessPrompt(kind);return;}
+    if(acct.business.status!=='published'){openBusinessStatusPrompt(acct.business);return;}
   }
   // Refresh which days are actually booked right before showing the
   // calendar — bookedDates from initial load could already be stale by
@@ -811,7 +853,7 @@ async function openPost(kind){
     else if(f.type==='select')h+=`<select class="fs" id="pf-${f.k}"><option value="">Selecciona...</option>${f.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;
     else if(f.type==='seg')h+=`<div class="seg" id="pf-${f.k}">${f.opts.map((o,i)=>`<div class="seg-btn${i===0?' on':''}" data-v="${o[0]}" onclick="segPick(this)">${o[1]}</div>`).join('')}</div>`;
     else if(f.type==='calendar')h+=`<div id="pf-${f.k}">${slotCalendarHtml()}</div>`;
-    else if(f.type==='imgupload')h+=`<button type="button" class="photo-upload-btn" id="pf-${f.k}" data-field-key="${f.k}" onclick="openPhotoUploadLightbox('${f.k}')">${svgIco('camera')}<span class="photo-upload-lbl">Subir foto</span></button>`;
+    else if(f.type==='imgupload')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else h+=`<input class="fi" id="pf-${f.k}" type="${f.type}" placeholder="${f.ph||''}">`;
     h+=`</div>`;
   });
@@ -820,7 +862,8 @@ async function openPost(kind){
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
   selectedSlotDate=null;
-  photoUploadConfirmed=false;
+  uploadedImageUrls={};
+  form.fields.forEach(f=>{if(f.type==='imgupload')renderPhotoUploadButton(f.k);});
   if(kind==='avisos'){
     // Convenience only — anonymous visitors without an account yet can
     // still type their own contact info manually; this just saves a real
@@ -962,11 +1005,11 @@ function renderAccountSignedIn(acct){
     </div>
     ${biz?`
       <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:4px">
-        <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${biz.is_premium?'Negocio Premium':'Negocio'}</div>
+        <div style="font-size:11px;font-weight:700;color:${biz.status==='published'?'var(--gulf)':'var(--wall-dk)'};text-transform:uppercase;letter-spacing:.04em">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio'}</div>
         <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(biz.business_name)}</div>
         <div style="color:var(--ink3);font-size:12.5px;margin-top:2px">${e(biz.category)} · ${e(biz.phone)}</div>
       </div>
-      ${biz.is_premium?'':`
+      ${(biz.status==='published'&&!biz.is_premium)?`
         <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
           <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
           <span class="menu-item-txt">
@@ -975,7 +1018,7 @@ function renderAccountSignedIn(acct){
           </span>
           <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
         </a>
-      `}
+      `:''}
     `:`
       <button class="menu-item" onclick="openPost('negocio_verificar')" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
@@ -1035,8 +1078,10 @@ async function submitAuth(){
   }
   btn.disabled=false;btn.textContent=original;
   if(result.error){toast(authErrorToast(result.error));return;}
-  closeModal();
   toast(accountMode==='signup'?'¡Cuenta creada! Ya tienes sesión iniciada ✓':'Sesión iniciada ✓');
+  const next=pendingPostAfterAuth;
+  pendingPostAfterAuth=null;
+  if(next){await openPost(next);} else {closeModal();}
 }
 async function doSignOut(){
   await MC.signOut();
@@ -1087,9 +1132,28 @@ async function moderateItem(table,id,newStatus){
 }
 
 
-let pendingPostAfterVerification=null;
+// Shared by both gates below — after either signing in OR verifying a
+// business, we just re-open the originally requested kind, and openPost()
+// re-checks both gates in order, so this naturally chains: sign-in gate →
+// (now signed in) → business gate if still needed → the real form.
+let pendingPostAfterAuth=null;
+
+function openSignInGate(kind){
+  pendingPostAfterAuth=kind;
+  document.getElementById('modal-title').textContent='Inicia sesión para continuar';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:16px 10px 6px">
+      ${svgIco('checkBadge')}
+      <div style="font-weight:700;font-size:15px;margin-top:10px">Necesitas una cuenta para esto</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">Para que todo en MiCampeche sea confiable, necesitas iniciar sesión o crear una cuenta antes de publicar o interactuar — solo toma un momento.</div>
+    </div>
+    <button class="submit-btn" onclick="openAccount()">Iniciar sesión / Crear cuenta</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+
 function openBusinessPrompt(kind){
-  pendingPostAfterVerification=kind;
+  pendingPostAfterAuth=kind;
   document.getElementById('modal-title').textContent='Verifica tu negocio';
   document.getElementById('modal-body').innerHTML=`
     <div style="text-align:center;padding:16px 10px 6px">
@@ -1098,6 +1162,24 @@ function openBusinessPrompt(kind){
       <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">${kind==='oferta'?'Publicar una Oferta':'Vender en Tienda'} requiere una cuenta de negocio verificada — es un formulario corto, solo lo llenas una vez.</div>
     </div>
     <button class="submit-btn" onclick="openPost('negocio_verificar')">Verificar mi negocio</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+
+/* A business that's been submitted but not yet approved (or was rejected)
+   — distinct from having no business at all. No action button for the
+   pending case; there's nothing to do but wait for review. */
+function openBusinessStatusPrompt(biz){
+  const isPending=biz.status==='pending';
+  document.getElementById('modal-title').textContent=isPending?'Negocio en revisión':'Negocio no aprobado';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:16px 10px 6px">
+      ${svgIco('checkBadge')}
+      <div style="font-weight:700;font-size:15px;margin-top:10px">${e(biz.business_name)}</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">${isPending
+        ?'Tu solicitud de negocio está en revisión — te avisaremos en cuanto sea aprobada, normalmente toma poco tiempo.'
+        :'Tu solicitud de negocio no fue aprobada esta vez. Escríbenos por WhatsApp si quieres más información.'}</div>
+    </div>
   `;
   document.getElementById('modal-bg').classList.add('on');
 }
@@ -1143,7 +1225,7 @@ async function submitPost(kind){
   form.fields.forEach(f=>{
     if(f.type==='seg'){const sel=document.querySelector(`#pf-${f.k} .seg-btn.on`);data[f.k]=sel?sel.dataset.v:'';}
     else if(f.type==='calendar'){data[f.k]=selectedSlotDate;}
-    else if(f.type==='imgupload'){data[f.k]=photoUploadConfirmed?'(confirmado por el negocio)':'(sin foto)';}
+    else if(f.type==='imgupload'){data[f.k]=uploadedImageUrls[f.k]||null;}
     else{const el=document.getElementById('pf-'+f.k);data[f.k]=el?el.value:'';}
   });
 
@@ -1160,9 +1242,9 @@ async function submitPost(kind){
     const {error}=await MC.verifyBusiness(data);
     if(btn){btn.disabled=false;btn.textContent=originalLabel;}
     if(error){toast(pgErrorToast(error,'No se pudo verificar tu negocio.'));return;}
-    toast('¡Negocio verificado! ✓');
-    const next=pendingPostAfterVerification;
-    pendingPostAfterVerification=null;
+    toast('Tu negocio fue enviado para revisión ✓');
+    const next=pendingPostAfterAuth;
+    pendingPostAfterAuth=null;
     if(next){await openPost(next);} else {closeModal();}
     return;
   }

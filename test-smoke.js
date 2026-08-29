@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
+const { createCanvas } = require('canvas');
 
 const NOW = new Date();
 function ds(offsetDays) {
@@ -105,8 +106,12 @@ const fakeClient = {
         insert: (row) => { lastInsert.businesses = row; return makeChain(() => {
           if (forcedErrors.insert.businesses) return { data: null, error: forcedErrors.insert.businesses };
           if (currentBusiness) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "businesses_profile_id_key"' } };
-          currentBusiness = { ...row, id: 'biz-1' };
+          currentBusiness = { ...row, id: 'biz-1', status: 'pending' }; // matches the real DB default
           return { data: [currentBusiness], error: null };
+        }); },
+        update: (row) => { lastUpdate.businesses = row; return makeChain(() => {
+          if (currentBusiness) currentBusiness = { ...currentBusiness, ...row };
+          return { data: currentBusiness ? [currentBusiness] : [], error: null };
         }); },
       };
     }
@@ -124,11 +129,21 @@ const fakeClient = {
     };
   },
   rpc: async (_name, args) => ({ data: (args.p_oferta_ids || []).map(id => ({ oferta_id: id, claimed: 2 })), error: null }),
+  storage: {
+    from: (bucket) => ({
+      upload: async (uploadPath, blob, opts) => {
+        lastInsert.storageUpload = { bucket, path: uploadPath, size: blob.size, type: blob.type, contentType: opts && opts.contentType };
+        if (forcedErrors.storageUpload) return { data: null, error: forcedErrors.storageUpload };
+        return { data: { path: uploadPath }, error: null };
+      },
+      getPublicUrl: (uploadPath) => ({ data: { publicUrl: `https://fake-storage.test/${bucket}/${uploadPath}` } }),
+    }),
+  },
 };
 
 (async () => {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-  const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://micampeche.app/' });
+  const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://micampeche.app/', resources: 'usable', pretendToBeVisual: true });
   const { window } = dom;
 
   window.supabase = { createClient: () => fakeClient };
@@ -171,58 +186,43 @@ const fakeClient = {
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
 
-  // Exercise the actual submit path (real MC.submitAviso → fake insert → real toast handling)
+  // Anonymous visitors must be gated before ANY posting or interactive
+  // action — no more silent "ride the anonymous session" behavior.
   try {
     window.openPost('avisos');
-    doc.getElementById('pf-title').value = 'Prueba de envío';
-    doc.getElementById('pf-desc').value = 'Contenido de prueba';
-    doc.getElementById('pf-contact').value = '981 111 2222';
-    await window.submitPost('avisos');
-    await new Promise(r => setTimeout(r, 50));
-    assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'submitPost(avisos) → real MC.submitAviso → success toast');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Inicia sesión para continuar', 'an anonymous visitor tapping "+" gets the sign-in gate, not the real Avisos form');
+    assert(text('modal-body').includes('cuenta'), 'the gate explains an account is needed');
   } catch (err) {
-    assert(false, 'submitPost(avisos) threw: ' + err.stack);
+    assert(false, 'sign-in gate for avisos threw: ' + err.stack);
   }
 
-  // Exercise the claim/unclaim toggle path against the real toggleClaim()
   try {
-    const beforeHtml = text('of-list');
     await window.toggleClaim('o1');
-    await new Promise(r => setTimeout(r, 50));
-    assert(text('of-list') !== beforeHtml, 'toggleClaim() actually changed rendered state (optimistic update path ran)');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Inicia sesión para continuar', 'an anonymous visitor tapping claim on an Oferta also gets gated, not silently claimed');
   } catch (err) {
-    assert(false, 'toggleClaim threw: ' + err.stack);
+    assert(false, 'sign-in gate for toggleClaim threw: ' + err.stack);
   }
 
-  // ── Error paths: the newest, most bespoke logic (friendly toasts +
-  // optimistic-UI rollback), so worth testing deliberately rather than
-  // just trusting it reads right. ──
+  // The gate should cascade correctly: tapping "+" while anonymous, then
+  // actually signing up, should land directly in the form originally
+  // requested — not just a generic "you're signed in now" dead end.
   try {
-    forcedErrors.insert.avisos = { code: '23505', message: 'duplicate key value violates unique constraint "one_aviso_per_person_per_day"' };
     window.openPost('avisos');
-    doc.getElementById('pf-title').value = 'Segundo aviso';
-    await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === 'Ya publicaste un aviso hoy — puedes publicar otro mañana.', 'duplicate-submission error (through the REAL MC.submitAviso) maps to the correct friendly Spanish toast, not a generic one');
-  } catch (err) {
-    assert(false, 'error-path submitPost threw instead of handling the error: ' + err.stack);
-  } finally {
-    forcedErrors.insert.avisos = null;
-  }
-
-  try {
-    forcedErrors.insert.ofertas_redemptions = { code: '23505', message: 'duplicate key value violates unique constraint "one_claim_per_person_per_oferta"' };
-    forcedErrors.delete.ofertas_redemptions = { code: '23505', message: 'duplicate key value violates unique constraint "one_claim_per_person_per_oferta"' };
-    const before = text('of-list');
-    await window.toggleClaim('o1');
+    await window.openAccount(); // the gate's own button does this — showing the real form
+    doc.getElementById('acct-name').value = 'Gate Test';
+    doc.getElementById('acct-email').value = 'gate-test@example.com';
+    doc.getElementById('acct-phone').value = '981 000 1111';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('of-list') === before, 'toggleClaim() (through the REAL MC.claimOferta/unclaimOferta) rolled back the optimistic UI update after a failed write, instead of leaving it stuck');
-    assert(text('toast') === 'Ya habías reclamado esta oferta.', 'claim-toggle failure surfaced the correct friendly toast');
+    assert(text('modal-title') === 'Publicar un aviso', 'signing up from the gate resumes directly into the originally-requested Avisos form, not just closing');
+    await window.doSignOut(); // back to anonymous for the rest of the account-flow tests below
+    await new Promise(r => setTimeout(r, 20));
   } catch (err) {
-    assert(false, 'error-path toggleClaim threw instead of handling the error: ' + err.stack);
-  } finally {
-    forcedErrors.insert.ofertas_redemptions = null;
-    forcedErrors.delete.ofertas_redemptions = null;
+    assert(false, 'gate → signup → resume cascade threw: ' + err.stack);
   }
 
   // ── Account flow: signup, signed-in view, sign-out — all through the
@@ -273,6 +273,44 @@ const fakeClient = {
     assert(text('modal-body').includes('+529811234567'), 'signed-in view shows the phone in international (+52…) format');
     assert(text('modal-body').includes('Cerrar sesión'), 'signed-in view offers sign-out');
 
+    // Now that a real account exists, exercise the actual submit path
+    // (real MC.submitAviso → fake insert → real toast handling) — these
+    // used to run anonymously before the sign-in gate existed; moved here
+    // to run in the auth context they now actually require.
+    await window.openPost('avisos');
+    doc.getElementById('pf-title').value = 'Prueba de envío';
+    doc.getElementById('pf-desc').value = 'Contenido de prueba';
+    doc.getElementById('pf-contact').value = '981 111 2222';
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 50));
+    assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'submitPost(avisos) → real MC.submitAviso → success toast');
+
+    // Claim/unclaim mechanics, now as a real signed-in user.
+    const beforeHtml = text('of-list');
+    await window.toggleClaim('o1');
+    await new Promise(r => setTimeout(r, 50));
+    assert(text('of-list') !== beforeHtml, 'toggleClaim() actually changed rendered state (optimistic update path ran)');
+
+    // ── Error paths: the newest, most bespoke logic (friendly toasts +
+    // optimistic-UI rollback), so worth testing deliberately. ──
+    forcedErrors.insert.avisos = { code: '23505', message: 'duplicate key value violates unique constraint "one_aviso_per_person_per_day"' };
+    await window.openPost('avisos');
+    doc.getElementById('pf-title').value = 'Segundo aviso';
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Ya publicaste un aviso hoy — puedes publicar otro mañana.', 'duplicate-submission error (through the REAL MC.submitAviso) maps to the correct friendly Spanish toast, not a generic one');
+    forcedErrors.insert.avisos = null;
+
+    forcedErrors.insert.ofertas_redemptions = { code: '23505', message: 'duplicate key value violates unique constraint "one_claim_per_person_per_oferta"' };
+    forcedErrors.delete.ofertas_redemptions = { code: '23505', message: 'duplicate key value violates unique constraint "one_claim_per_person_per_oferta"' };
+    const beforeClaim = text('of-list');
+    await window.toggleClaim('o1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('of-list') === beforeClaim, 'toggleClaim() (through the REAL MC.claimOferta/unclaimOferta) rolled back the optimistic UI update after a failed write, instead of leaving it stuck');
+    assert(text('toast') === 'Ya habías reclamado esta oferta.', 'claim-toggle failure surfaced the correct friendly toast');
+    forcedErrors.insert.ofertas_redemptions = null;
+    forcedErrors.delete.ofertas_redemptions = null;
+
     // Perdidos has no manual contact field — while signed in, the submitted
     // row should carry the account's phone automatically.
     await window.openPost('perdidos');
@@ -305,15 +343,84 @@ const fakeClient = {
     doc.getElementById('pf-cat').value = 'Comida';
     await window.submitPost('negocio_verificar');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === '¡Negocio verificado! ✓', 'verification succeeds with the right confirmation toast');
+    assert(text('toast') === 'Tu negocio fue enviado para revisión ✓', 'verification submission shows a "sent for review" toast, not instant approval');
     assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco', 'the real business data was sent to Supabase');
-    assert(text('modal-title') === 'Publicar un producto', 'after verifying, it auto-continues into the ORIGINALLY requested form (Producto) instead of just closing');
+    assert(text('modal-title') === 'Negocio en revisión', 'resuming into Producto after submitting shows the pending-review state, NOT the real form — verification alone no longer grants access');
+
+    // Oferta should show the same pending state, not the real form either.
+    await window.openPost('oferta');
+    assert(text('modal-title') === 'Negocio en revisión', 'Oferta also shows pending-review state while the business awaits admin approval');
+
+    await window.openAccount();
+    assert(text('modal-body').includes('En revisión'), 'account view shows the pending-review label before approval');
+    assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell is hidden until the business is actually approved');
+
+    // Simulate what actually unlocks posting: an admin approving the
+    // business through the moderation queue (status → published).
+    currentBusiness.status = 'published';
+    await window.openPost('producto');
+    assert(text('modal-title') === 'Publicar un producto', 'once an admin approves the business, Producto opens the real form');
+
+    // ── Real image upload: replaces the old fake Google Form placeholder,
+    // which never once actually populated image_url. Uses a real
+    // 2000x1000 JPEG (via node-canvas) run through the REAL resize
+    // pipeline (FileReader → Image decode → canvas draw → toBlob) — not
+    // a bypass of it — then the real MC.uploadImage() against the fake
+    // Storage client. ──
+    {
+      const srcCanvas = createCanvas(2000, 1000);
+      const cctx = srcCanvas.getContext('2d');
+      cctx.fillStyle = 'green'; cctx.fillRect(0, 0, 2000, 1000);
+      const jpegBuffer = srcCanvas.toBuffer('image/jpeg');
+      const testFile = new window.File([jpegBuffer], 'test.jpg', { type: 'image/jpeg' });
+
+      await window.handlePhotoSelect({ files: [testFile] }, 'photo');
+      await new Promise(r => setTimeout(r, 100)); // real async decode + resize + fake upload
+
+      assert(!!lastInsert.storageUpload, 'a real upload actually reached the (fake) Storage client, through the real resize pipeline');
+      assert(lastInsert.storageUpload.bucket === 'uploads', 'uploads to the real "uploads" bucket');
+      assert(lastInsert.storageUpload.path.startsWith('uid-1/'), 'the file path is scoped to the uploader\'s own folder, matching the real bucket RLS');
+      assert(lastInsert.storageUpload.size < jpegBuffer.length, 'the resized/compressed blob is genuinely smaller than the original 2000x1000 source — the resize step actually did something, not a no-op');
+      assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('<img'), 'a real preview thumbnail renders after upload completes');
+
+      doc.getElementById('pf-name').value = 'Producto con foto';
+      await window.submitPost('producto');
+      await new Promise(r => setTimeout(r, 20));
+      assert(lastInsert.productos && lastInsert.productos.image_url && lastInsert.productos.image_url.startsWith('https://fake-storage.test/uploads/'), 'the real uploaded URL (not a placeholder string) ends up as image_url on the actual submission');
+    }
+
+    // Error path: a failed upload must revert to the upload button, not
+    // leave it stuck showing "Subiendo…" forever.
+    {
+      await window.openPost('producto');
+      forcedErrors.storageUpload = { message: 'simulated storage failure' };
+      const srcCanvas2 = createCanvas(400, 400);
+      srcCanvas2.getContext('2d').fillRect(0, 0, 400, 400);
+      const testFile2 = new window.File([srcCanvas2.toBuffer('image/jpeg')], 'test2.jpg', { type: 'image/jpeg' });
+      await window.handlePhotoSelect({ files: [testFile2] }, 'photo');
+      await new Promise(r => setTimeout(r, 100));
+      assert(text('toast') === 'No se pudo subir la foto — intenta de nuevo', 'a failed upload shows a clear error toast');
+      assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('photo-upload-btn') && !doc.getElementById('pf-photo-wrap').innerHTML.includes('<img'), 'a failed upload reverts to the real upload button, not stuck on "Subiendo…" or showing a broken preview');
+      forcedErrors.storageUpload = null;
+    }
+
+    // Non-image file rejected before ever touching Storage.
+    {
+      await window.openPost('producto');
+      const notImage = new window.File(['plain text'], 'note.txt', { type: 'text/plain' });
+      delete lastInsert.storageUpload;
+      await window.handlePhotoSelect({ files: [notImage] }, 'photo');
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('toast') === 'Selecciona un archivo de imagen', 'a non-image file is rejected client-side with a clear message');
+      assert(!lastInsert.storageUpload, 'a rejected non-image file never reaches the Storage upload call at all');
+    }
 
     await window.openPost('oferta');
-    assert(text('modal-title') === 'Publicar una Oferta', 'now that a business exists, Oferta opens the real form instead of the gate');
+    assert(text('modal-title') === 'Publicar una Oferta', 'and so does Oferta, now that the business is actually approved');
 
     await window.openAccount();
     assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view now shows the verified business');
+    assert(text('modal-body').includes('Actualizar a Premium'), 'Premium upsell now appears since the business is approved');
 
     // Product cap error now routes to the real Premium upgrade prompt
     // (with the actual Stripe payment link), not a dead-end toast.
@@ -389,13 +496,13 @@ const fakeClient = {
 
     await window.openModeration();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Moderación (9)', 'queue aggregates one pending item from each of the 9 content tables');
+    assert(text('modal-title') === 'Moderación (10)', 'queue aggregates one pending item from each of the 9 content tables plus business verification requests');
     assert(text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'each queue item has approve/reject actions');
 
     await window.moderateItem('avisos', 'av1', 'published');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Publicado ✓', 'approving an item shows the right confirmation toast');
-    assert(text('modal-title') === 'Moderación (8)', 'approved item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Moderación (9)', 'approved item is removed from the queue and the count updates');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'published', 'approval actually sent status: published to Supabase');
 
     // Reject, with a genuinely forced failure — item must stay in the

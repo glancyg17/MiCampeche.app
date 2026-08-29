@@ -384,18 +384,8 @@ svg{display:block}
 .wx-lb-link{display:flex;align-items:center;justify-content:center;gap:7px;background:var(--night);color:#fff;border-radius:99px;padding:12px;font-size:13.5px;font-weight:700;text-decoration:none}
 .wx-lb-link .ico{width:15px;height:15px}
 
-/* ═══ PHOTO UPLOAD LIGHTBOX (in-app Google Form embed) ═══ */
-.photo-lb-bg{position:fixed;inset:0;background:rgba(18,32,29,.65);z-index:260;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
-.photo-lb-bg.on{display:flex}
-.photo-lb{background:#fff;width:100%;max-width:400px;height:min(80vh,640px);border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column}
-.photo-lb-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--night);color:var(--paper);font-size:14px;font-weight:700;flex-shrink:0}
-.photo-lb-close{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.12);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.photo-lb-close .ico{width:14px;height:14px}
-.photo-lb #photo-lb-frame{flex:1;width:100%;border:none;background:#f4f4f4}
-.photo-lb-foot{padding:12px 16px;border-top:1px solid var(--line);flex-shrink:0}
-.photo-lb-done-btn{width:100%;background:var(--palm);color:#fff;border:none;border-radius:99px;padding:12px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+/* ═══ PHOTO UPLOAD (real file picker + preview) ═══ */
 .photo-upload-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--paper2);border:1.5px dashed var(--line2);border-radius:var(--rs);padding:13px;font-size:13.5px;font-weight:700;color:var(--gulf);cursor:pointer;font-family:inherit}
-.photo-upload-btn.done{background:var(--palm-bg);border-style:solid;border-color:var(--palm);color:var(--palm)}
 .photo-upload-btn .ico{width:16px;height:16px}
 
 /* ═══ POST / SUBMISSION MODAL ═══ */
