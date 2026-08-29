@@ -114,8 +114,20 @@ MC.myBusiness=async function(){
 MC.verifyBusiness=async function(d){
   const uid=await MC.ready;
   return sb.from('businesses').insert({
-    profile_id:uid,business_name:d.name,address:d.address,phone:d.phone,category:d.cat,rfc:d.rfc||null
+    profile_id:uid,business_name:d.name,description:d.desc,address:d.address,phone:d.phone,category:d.cat,
+    business_image_url:d.photo||null,hours:d.hours||null,social_url:d.social||null,rfc:d.rfc||null
   });
+};
+
+/* Editing an existing business — a real DB trigger (not this function)
+   forces status back to 'pending' and clears any old rejection reason on
+   any owner-driven update, so this never needs to touch status itself;
+   it also can't be bypassed by sending status in the payload anyway. */
+MC.updateBusiness=async function(id,d){
+  return sb.from('businesses').update({
+    business_name:d.name,description:d.desc,address:d.address,phone:d.phone,category:d.cat,
+    business_image_url:d.photo||null,hours:d.hours||null,social_url:d.social||null,rfc:d.rfc||null
+  }).eq('id',id);
 };
 
 /* ── HELPERS ── */
@@ -211,7 +223,7 @@ const MODERATION_DETAIL_FIELDS={
   empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas']],
   reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
   avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto']],
-  businesses:[['business_name','Nombre del negocio'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['rfc','RFC']]
+  businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC']]
 };
 
 MC.fetchPendingQueue=async function(){

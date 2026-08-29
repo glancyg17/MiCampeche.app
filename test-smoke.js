@@ -339,15 +339,30 @@ const fakeClient = {
 
     await window.openPost('negocio_verificar');
     assert(text('modal-title') === 'Verifica tu negocio' && !!doc.getElementById('pf-address'), 'the real verification form (not just the prompt) renders with its fields');
+    assert(!!doc.getElementById('pf-desc') && !!doc.getElementById('pf-photo-wrap'), 'the form includes the newly-added description and image fields');
 
-    doc.getElementById('pf-name').value = 'Taco Loco';
-    doc.getElementById('pf-address').value = 'Calle 10 #123';
-    doc.getElementById('pf-phone').value = '981 555 0000';
+    // Missing description must block submission — collecting it was the
+    // whole point of this change, not just adding an optional field.
+    doc.getElementById('pf-name').value = 'Sin Descripcion';
+    doc.getElementById('pf-address').value = 'Calle 1';
+    doc.getElementById('pf-phone').value = '981 000 0000';
     doc.getElementById('pf-cat').value = 'Comida';
     await window.submitPost('negocio_verificar');
     await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Completa nombre, descripción, dirección, teléfono y categoría', 'submitting without a description is blocked, not silently accepted');
+    assert(!lastInsert.businesses || lastInsert.businesses.business_name !== 'Sin Descripcion', 'the blocked submission never actually reached Supabase');
+
+    doc.getElementById('pf-name').value = 'Taco Loco';
+    doc.getElementById('pf-desc').value = 'Tacos al pastor y de canasta, para llevar';
+    doc.getElementById('pf-address').value = 'Calle 10 #123';
+    doc.getElementById('pf-phone').value = '981 555 0000';
+    doc.getElementById('pf-cat').value = 'Comida';
+    doc.getElementById('pf-hours').value = 'Lun-Sáb 9am-8pm';
+    doc.getElementById('pf-social').value = 'instagram.com/tacolocotest';
+    await window.submitPost('negocio_verificar');
+    await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Tu negocio fue enviado para revisión ✓', 'verification submission shows a "sent for review" toast, not instant approval');
-    assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco', 'the real business data was sent to Supabase');
+    assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco' && lastInsert.businesses.description === 'Tacos al pastor y de canasta, para llevar', 'the real business data — including the now-required description — was sent to Supabase');
     assert(text('modal-title') === 'Negocio en revisión', 'resuming into Producto after submitting shows the pending-review state, NOT the real form — verification alone no longer grants access');
 
     // Oferta should show the same pending state, not the real form either.
@@ -425,6 +440,21 @@ const fakeClient = {
     assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view now shows the verified business');
     assert(text('modal-body').includes('Actualizar a Premium'), 'Premium upsell now appears since the business is approved');
 
+    // ── Editing an existing (approved) business ──
+    await window.openBusinessEdit();
+    assert(text('modal-title') === 'Editar mi negocio', 'editing opens a distinctly-titled form, not the first-time verification screen');
+    assert(doc.getElementById('pf-name').value === 'Taco Loco', 'the edit form is pre-filled with the real current business name');
+    assert(doc.getElementById('pf-desc').value === 'Tacos al pastor y de canasta, para llevar', 'the edit form is pre-filled with the real current description');
+    assert(doc.getElementById('pf-hours').value === 'Lun-Sáb 9am-8pm', 'the edit form is pre-filled with real current hours');
+
+    doc.getElementById('pf-phone').value = '981 000 1234';
+    delete lastInsert.businesses; // so the next assertion can tell insert vs update apart cleanly
+    await window.submitPost('negocio_verificar');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Cambios guardados — tu negocio vuelve a revisión ✓', 'editing shows a distinct "back to review" toast, not the first-time verification message');
+    assert(lastUpdate.businesses && lastUpdate.businesses.phone === '981 000 1234', 'the real edited field was sent as an UPDATE');
+    assert(!lastInsert.businesses, 'editing an existing business never creates a second (duplicate) business row via insert');
+
     // Product cap error now routes to the real Premium upgrade prompt
     // (with the actual Stripe payment link), not a dead-end toast.
     forcedErrors.insert.productos = { code: 'P0001', message: 'product_cap_reached' };
@@ -500,6 +530,14 @@ const fakeClient = {
     await window.openModeration();
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Moderación (10)', 'queue aggregates one pending item from each of the 9 content tables plus business verification requests');
+
+    // The whole point of this change: a business verification request
+    // should show enough to actually review, not just a name.
+    window.openModerationDetail('businesses', currentBusiness.id);
+    assert(text('modal-body').includes('Tacos al pastor'), 'business detail view shows the real description, not just the business name');
+    assert(text('modal-body').includes('Lun-Sáb 9am-8pm'), 'business detail view shows hours');
+    assert(text('modal-body').includes('instagram.com/tacolocotest'), 'business detail view shows the social/website link');
+    window.renderModerationQueue();
     assert(!text('modal-body').includes('Aprobar') && !text('modal-body').includes('Rechazar'), 'the LIST no longer has blind approve/reject buttons — reviewing detail is required first');
 
     // Tapping an item opens its full detail — real submitted fields, not

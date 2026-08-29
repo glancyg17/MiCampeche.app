@@ -814,9 +814,13 @@ const POST_FORMS={
   ]},
   negocio_verificar:{title:'Verifica tu negocio',note:'Esta información se guarda en tu cuenta — no necesitas volver a escribirla en cada publicación.',fields:[
     {k:'name',lbl:'Nombre del negocio',type:'text',ph:'Ej. Repostería Tsuk Tun'},
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'¿Qué venden o qué servicio ofrecen?'},
+    {k:'photo',lbl:'Logo o foto del negocio (opcional)',type:'imgupload'},
     {k:'address',lbl:'Dirección',type:'text',ph:'Calle, número, colonia'},
     {k:'phone',lbl:'Teléfono del negocio',type:'tel',ph:'981 000 0000'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Servicios','Otro']},
+    {k:'hours',lbl:'Horario de atención (opcional)',type:'text',ph:'Ej. Lun-Sáb 9am-8pm'},
+    {k:'social',lbl:'Red social o sitio web (opcional)',type:'text',ph:'Ej. instagram.com/tunegocio'},
     {k:'rfc',lbl:'RFC (opcional)',type:'text',ph:'Opcional'}
   ]}
 };
@@ -1009,11 +1013,25 @@ function renderAccountSignedIn(acct){
     </div>
     ${biz?`
       <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:4px">
-        <div style="font-size:11px;font-weight:700;color:${biz.status==='published'?'var(--gulf)':'var(--wall-dk)'};text-transform:uppercase;letter-spacing:.04em">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio'}</div>
-        <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(biz.business_name)}</div>
-        <div style="color:var(--ink3);font-size:12.5px;margin-top:2px">${e(biz.category)} · ${e(biz.phone)}</div>
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          ${biz.business_image_url?`<img src="${e(biz.business_image_url)}" style="width:48px;height:48px;object-fit:cover;border-radius:10px;flex-shrink:0">`:''}
+          <div style="min-width:0">
+            <div style="font-size:11px;font-weight:700;color:${biz.status==='published'?'var(--gulf)':'var(--wall-dk)'};text-transform:uppercase;letter-spacing:.04em">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio'}</div>
+            <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(biz.business_name)}</div>
+            <div style="color:var(--ink3);font-size:12.5px;margin-top:2px">${e(biz.category)} · ${e(biz.phone)}</div>
+          </div>
+        </div>
+        ${biz.description?`<div style="color:var(--ink2);font-size:12.5px;margin-top:8px">${e(biz.description)}</div>`:''}
         ${(biz.status==='rejected'&&biz.rejection_reason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">${e(biz.rejection_reason)}</div>`:''}
       </div>
+      <button class="menu-item" onclick="openBusinessEdit()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Editar mi negocio</span>
+          <span class="menu-item-sub">Los cambios se envían a revisión de nuevo</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
       ${(biz.status==='published'&&!biz.is_premium)?`
         <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
           <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
@@ -1025,7 +1043,7 @@ function renderAccountSignedIn(acct){
         </a>
       `:''}
     `:`
-      <button class="menu-item" onclick="openPost('negocio_verificar')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <button class="menu-item" onclick="editingBusinessId=null;openPost('negocio_verificar')" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
         <span class="menu-item-txt">
           <span class="menu-item-lbl">Verificar mi negocio</span>
@@ -1147,7 +1165,7 @@ function renderModerationDetailFields(table,raw){
   fields.forEach(([key,label])=>{
     const val=raw[key];
     if(val===null||val===undefined||val==='')return;
-    if(key==='image_url'||key==='thumbnail_url'){
+    if(key==='image_url'||key==='thumbnail_url'||key==='business_image_url'){
       h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><img src="${e(val)}" style="max-width:100%;border-radius:var(--rs);margin-top:4px;display:block"></div>`;
     } else if(Array.isArray(val)){
       h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="font-size:14px;margin-top:2px">${e(val.join(', '))}</div></div>`;
@@ -1206,6 +1224,33 @@ async function moderateItem(table,id,newStatus,reason){
 // re-checks both gates in order, so this naturally chains: sign-in gate →
 // (now signed in) → business gate if still needed → the real form.
 let pendingPostAfterAuth=null;
+let editingBusinessId=null; // set by openBusinessEdit(), read by submitPost's negocio_verificar branch to route to an UPDATE instead of INSERT
+
+/* Editing reuses the exact same form as first-time verification — same
+   fields, same validation — just pre-filled and routed to an UPDATE.
+   The DB trigger (not this code) is what actually forces the business
+   back to 'pending' on save, so there's nothing extra to enforce here. */
+async function openBusinessEdit(){
+  const biz=await MC.myBusiness();
+  if(!biz)return;
+  editingBusinessId=biz.id;
+  await openPost('negocio_verificar');
+  document.getElementById('modal-title').textContent='Editar mi negocio';
+  const fillMap={name:biz.business_name,desc:biz.description,address:biz.address,phone:biz.phone,cat:biz.category,hours:biz.hours,social:biz.social_url,rfc:biz.rfc};
+  Object.keys(fillMap).forEach(k=>{
+    const el=document.getElementById('pf-'+k);
+    if(el&&fillMap[k])el.value=fillMap[k];
+  });
+  if(biz.business_image_url){
+    uploadedImageUrls.photo=biz.business_image_url;
+    const wrap=document.getElementById('pf-photo-wrap');
+    if(wrap)wrap.innerHTML=`<div style="position:relative;display:inline-block">
+      <img src="${e(biz.business_image_url)}" style="width:72px;height:72px;object-fit:cover;border-radius:var(--rs);display:block">
+      <button type="button" onclick="removePhotoSelection('photo')" aria-label="Quitar foto"
+        style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
+    </div>`;
+  }
+}
 
 function openSignInGate(kind){
   pendingPostAfterAuth=kind;
@@ -1223,6 +1268,7 @@ function openSignInGate(kind){
 
 function openBusinessPrompt(kind){
   pendingPostAfterAuth=kind;
+  editingBusinessId=null; // this is always a first-time verification path, never an edit
   document.getElementById('modal-title').textContent='Verifica tu negocio';
   document.getElementById('modal-body').innerHTML=`
     <div style="text-align:center;padding:16px 10px 6px">
@@ -1303,15 +1349,17 @@ async function submitPost(kind){
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
 
   if(kind==='negocio_verificar'){
-    if(!data.name||!data.address||!data.phone||!data.cat){
+    if(!data.name||!data.desc||!data.address||!data.phone||!data.cat){
       if(btn){btn.disabled=false;btn.textContent=originalLabel;}
-      toast('Completa nombre, dirección, teléfono y categoría');
+      toast('Completa nombre, descripción, dirección, teléfono y categoría');
       return;
     }
-    const {error}=await MC.verifyBusiness(data);
+    const isEditing=!!editingBusinessId;
+    const {error}=isEditing?await MC.updateBusiness(editingBusinessId,data):await MC.verifyBusiness(data);
+    editingBusinessId=null;
     if(btn){btn.disabled=false;btn.textContent=originalLabel;}
-    if(error){toast(pgErrorToast(error,'No se pudo verificar tu negocio.'));return;}
-    toast('Tu negocio fue enviado para revisión ✓');
+    if(error){toast(pgErrorToast(error,isEditing?'No se pudieron guardar los cambios.':'No se pudo verificar tu negocio.'));return;}
+    toast(isEditing?'Cambios guardados — tu negocio vuelve a revisión ✓':'Tu negocio fue enviado para revisión ✓');
     const next=pendingPostAfterAuth;
     pendingPostAfterAuth=null;
     if(next){await openPost(next);} else {closeModal();}
