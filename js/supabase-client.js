@@ -186,17 +186,33 @@ function authErrorToast(error){
    rows into one unified list instead of clicking through Studio's Table
    Editor nine times. */
 const CONTENT_TABLES=[
-  {table:'noticias',label:'Noticia',titleField:'headline'},
-  {table:'eventos',label:'Evento',titleField:'title'},
-  {table:'productos',label:'Producto (Tienda)',titleField:'title'},
-  {table:'clasificados',label:'Clasificado',titleField:'title'},
-  {table:'ofertas',label:'Oferta',titleField:'title'},
-  {table:'perdidos',label:'Perdido/Encontrado',titleField:'title'},
-  {table:'empleos',label:'Empleo',titleField:'title'},
-  {table:'reportes',label:'Reporte',titleField:'title'},
-  {table:'avisos',label:'Aviso',titleField:'title'},
-  {table:'businesses',label:'Verificación de negocio',titleField:'business_name'}
+  {table:'noticias',label:'Noticia',titleField:'headline',ownerField:'submitted_by'},
+  {table:'eventos',label:'Evento',titleField:'title',ownerField:'submitted_by'},
+  {table:'productos',label:'Producto (Tienda)',titleField:'title',ownerField:'submitted_by'},
+  {table:'clasificados',label:'Clasificado',titleField:'title',ownerField:'submitted_by'},
+  {table:'ofertas',label:'Oferta',titleField:'title',ownerField:'submitted_by'},
+  {table:'perdidos',label:'Perdido/Encontrado',titleField:'title',ownerField:'submitted_by'},
+  {table:'empleos',label:'Empleo',titleField:'title',ownerField:'submitted_by'},
+  {table:'reportes',label:'Reporte',titleField:'title',ownerField:'submitted_by'},
+  {table:'avisos',label:'Aviso',titleField:'title',ownerField:'submitted_by'},
+  {table:'businesses',label:'Verificación de negocio',titleField:'business_name',ownerField:'profile_id'}
 ];
+
+/* Detail-view fields per table — label + which raw column to show, in
+   display order. Used to render the FULL submission before an admin
+   decides, instead of approving/rejecting blind. */
+const MODERATION_DETAIL_FIELDS={
+  noticias:[['headline','Titular'],['summary','Resumen'],['source_name','Fuente'],['source_url','Enlace'],['thumbnail_url','Imagen']],
+  eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['description','Descripción'],['image_url','Imagen']],
+  productos:[['title','Producto'],['category','Categoría'],['price_mxn','Precio (MXN)'],['description','Descripción'],['image_url','Imagen'],['featured','Destacado']],
+  clasificados:[['title','Artículo'],['category','Categoría'],['price_mxn','Precio (MXN)'],['description','Descripción'],['image_url','Imagen']],
+  ofertas:[['title','Oferta'],['business_name_snapshot','Negocio'],['description','Descripción'],['terms','Condiciones'],['price_was','Precio normal'],['price_now','Precio con descuento'],['quantity_total','Cantidad disponible'],['image_url','Imagen']],
+  perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['description','Descripción'],['image_url','Imagen']],
+  empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas']],
+  reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
+  avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto']],
+  businesses:[['business_name','Nombre del negocio'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['rfc','RFC']]
+};
 
 MC.fetchPendingQueue=async function(){
   const results=await Promise.all(CONTENT_TABLES.map(async ({table,label,titleField})=>{
@@ -206,14 +222,30 @@ MC.fetchPendingQueue=async function(){
       table,label,id:r.id,
       title:r[titleField]||'(sin título)',
       submittedBy:(r.profiles&&r.profiles.display_name)||'Vecino',
-      createdAt:r.created_at
+      createdAt:r.created_at,
+      raw:r // full row, for the detail view — nothing hidden from the reviewer
     }));
   }));
   return results.flat().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
 };
 
-MC.moderatePost=async function(table,id,newStatus){
-  return sb.from(table).update({status:newStatus}).eq('id',id);
+MC.moderatePost=async function(table,id,newStatus,reason){
+  const patch={status:newStatus};
+  if(newStatus==='rejected')patch.rejection_reason=reason||null;
+  return sb.from(table).update(patch).eq('id',id);
+};
+
+/* So a rejection reason isn't just stored and forgotten — a submitter can
+   see their own rejected items and why, surfaced in their account view. */
+MC.fetchMyRejections=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const results=await Promise.all(CONTENT_TABLES.map(async ({table,label,titleField,ownerField})=>{
+    const {data,error}=await sb.from(table).select('*').eq(ownerField,uid).eq('status','rejected').not('rejection_reason','is',null);
+    if(error){console.error(error);return [];}
+    return (data||[]).map(r=>({table,label,id:r.id,title:r[titleField]||'(sin título)',reason:r.rejection_reason,createdAt:r.created_at}));
+  }));
+  return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
 };
 
 MC.fetchNoticias=async function(){

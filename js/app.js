@@ -988,7 +988,11 @@ const COUNTRY_CODES=[
 let accountMode='signup';
 async function openAccount(){
   const acct=await MC.currentAccount();
-  if(acct.signedIn){renderAccountSignedIn(acct);return;}
+  if(acct.signedIn){
+    acct.rejections=await MC.fetchMyRejections();
+    renderAccountSignedIn(acct);
+    return;
+  }
   accountMode='signup';
   renderAccountForm();
 }
@@ -1008,6 +1012,7 @@ function renderAccountSignedIn(acct){
         <div style="font-size:11px;font-weight:700;color:${biz.status==='published'?'var(--gulf)':'var(--wall-dk)'};text-transform:uppercase;letter-spacing:.04em">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio'}</div>
         <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(biz.business_name)}</div>
         <div style="color:var(--ink3);font-size:12.5px;margin-top:2px">${e(biz.category)} · ${e(biz.phone)}</div>
+        ${(biz.status==='rejected'&&biz.rejection_reason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">${e(biz.rejection_reason)}</div>`:''}
       </div>
       ${(biz.status==='published'&&!biz.is_premium)?`
         <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
@@ -1029,6 +1034,18 @@ function renderAccountSignedIn(acct){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `}
+    ${(acct.rejections&&acct.rejections.length)?`
+      <div style="margin-top:4px;margin-bottom:4px">
+        <div class="fl" style="margin-bottom:6px">Publicaciones no aprobadas</div>
+        ${acct.rejections.map(r=>`
+          <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:10px 12px;margin-bottom:8px">
+            <div style="font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">${e(r.label)}</div>
+            <div style="font-weight:700;font-size:13.5px;margin-top:2px">${e(r.title)}</div>
+            <div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(r.reason)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `:''}
     ${acct.isAdmin?`<button class="submit-btn" onclick="openModeration()">${svgIco('checkBadge')} Moderación</button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
@@ -1090,11 +1107,12 @@ async function doSignOut(){
 }
 
 /* ══════════════ ADMIN: moderation queue ══════════════
-   Reuses the same #modal-bg/#modal-body infrastructure as everything
-   else — a real screen would be nicer long-term, but the modal already
-   scrolls (max-height:88vh, overflow-y:auto), so it genuinely works fine
-   for a list, not just short forms. Real RLS backs every action here —
-   this UI is convenience, not the security boundary. */
+   Three screens: list (tap to open) → detail (every field the submitter
+   sent, then Aprobar/Rechazar) → reject reason (required context sent
+   back to the submitter, not just a silent decline). Reuses the same
+   #modal-bg/#modal-body infrastructure as everything else. Real RLS
+   backs every action here — this UI is convenience, not the security
+   boundary. */
 let moderationQueue=[];
 async function openModeration(){
   document.getElementById('modal-title').textContent='Moderación';
@@ -1111,24 +1129,75 @@ function renderModerationQueue(){
   }
   let h='';
   moderationQueue.forEach(item=>{
-    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;cursor:pointer" onclick="openModerationDetail('${item.table}','${item.id}')">
       <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(item.label)}</div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(item.title)}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1" onclick="moderateItem('${item.table}','${item.id}','published')">Aprobar</button>
-        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1;background:var(--paper2);color:var(--ink)" onclick="moderateItem('${item.table}','${item.id}','rejected')">Rechazar</button>
-      </div>
     </div>`;
   });
   document.getElementById('modal-body').innerHTML=h;
 }
-async function moderateItem(table,id,newStatus){
-  const {error}=await MC.moderatePost(table,id,newStatus);
-  if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));return;}
+
+/* Renders every field the submitter actually sent, per MODERATION_DETAIL_FIELDS
+   — nothing hidden, no deciding blind. Blank/null fields are skipped
+   rather than shown as empty rows. */
+function renderModerationDetailFields(table,raw){
+  const fields=MODERATION_DETAIL_FIELDS[table]||[];
+  let h='';
+  fields.forEach(([key,label])=>{
+    const val=raw[key];
+    if(val===null||val===undefined||val==='')return;
+    if(key==='image_url'||key==='thumbnail_url'){
+      h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><img src="${e(val)}" style="max-width:100%;border-radius:var(--rs);margin-top:4px;display:block"></div>`;
+    } else if(Array.isArray(val)){
+      h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="font-size:14px;margin-top:2px">${e(val.join(', '))}</div></div>`;
+    } else {
+      h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="font-size:14px;margin-top:2px;white-space:pre-wrap">${e(String(val))}</div></div>`;
+    }
+  });
+  return h||'<div style="color:var(--ink3);font-size:13px">Sin detalles adicionales.</div>';
+}
+
+function openModerationDetail(table,id){
+  const item=moderationQueue.find(i=>i.table===table&&i.id===id);
+  if(!item)return;
+  document.getElementById('modal-title').textContent=item.label;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Enviado por ${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
+    ${renderModerationDetailFields(table,item.raw)}
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="submit-btn" style="margin-top:0;flex:1" onclick="moderateItem('${table}','${id}','published')">Aprobar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openRejectReasonPrompt('${table}','${id}')">Rechazar</button>
+    </div>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderModerationQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+  `;
+}
+
+function openRejectReasonPrompt(table,id){
+  document.getElementById('modal-title').textContent='Motivo del rechazo';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Este mensaje se guarda junto con la publicación para que la persona que la envió sepa por qué no se publicó — lo verá en su cuenta.</div>
+    <textarea class="ft" id="reject-reason-input" placeholder="Ej. La foto no es clara, o el precio no coincide con la descripción..."></textarea>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openModerationDetail('${table}','${id}')">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1" id="confirm-reject-btn" onclick="confirmReject('${table}','${id}')">Rechazar</button>
+    </div>
+  `;
+}
+async function confirmReject(table,id){
+  const reason=(document.getElementById('reject-reason-input').value||'').trim();
+  if(!reason){toast('Escribe un motivo breve antes de rechazar');return;}
+  await moderateItem(table,id,'rejected',reason);
+}
+
+async function moderateItem(table,id,newStatus,reason){
+  const btn=document.getElementById('confirm-reject-btn');
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {error}=await MC.moderatePost(table,id,newStatus,reason);
+  if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));if(btn){btn.disabled=false;btn.textContent='Rechazar';}return;}
   moderationQueue=moderationQueue.filter(i=>!(i.table===table&&i.id===id));
   renderModerationQueue();
-  toast(newStatus==='published'?'Publicado ✓':'Rechazado');
+  toast(newStatus==='published'?'Publicado ✓':'Rechazado — el motivo quedó guardado');
 }
 
 

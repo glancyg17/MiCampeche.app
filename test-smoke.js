@@ -57,7 +57,7 @@ const SAMPLE = {
   empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'] }],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
-  avisos: [{ id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } }],
+  avisos: [{ id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' }],
 };
 
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
@@ -500,23 +500,54 @@ const fakeClient = {
     await window.openModeration();
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Moderación (10)', 'queue aggregates one pending item from each of the 9 content tables plus business verification requests');
-    assert(text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'each queue item has approve/reject actions');
+    assert(!text('modal-body').includes('Aprobar') && !text('modal-body').includes('Rechazar'), 'the LIST no longer has blind approve/reject buttons — reviewing detail is required first');
 
-    await window.moderateItem('avisos', 'av1', 'published');
+    // Tapping an item opens its full detail — real submitted fields, not
+    // just the title, so a decision can actually be informed.
+    window.openModerationDetail('avisos', 'av1');
+    assert(text('modal-title') === 'Aviso', 'opening an item shows its detail screen');
+    assert(text('modal-body').includes('desc') && text('modal-body').includes('981 000 0000'), 'the detail view shows the REAL submitted fields (description, contact), not just the title from the list');
+    assert(text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'approve/reject actions live on the detail screen now, after review');
+
+    // Reject without a reason must be blocked — the whole point is that a
+    // reason always reaches the submitter, not sometimes.
+    window.openRejectReasonPrompt('avisos', 'av1');
+    assert(text('modal-title') === 'Motivo del rechazo', 'rejecting opens a dedicated reason screen instead of rejecting immediately');
+    await window.confirmReject('avisos', 'av1');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === 'Publicado ✓', 'approving an item shows the right confirmation toast');
-    assert(text('modal-title') === 'Moderación (9)', 'approved item is removed from the queue and the count updates');
-    assert(lastUpdate.avisos && lastUpdate.avisos.status === 'published', 'approval actually sent status: published to Supabase');
+    assert(text('toast') === 'Escribe un motivo breve antes de rechazar', 'an empty rejection reason is blocked, not silently accepted');
+    assert(text('modal-title') === 'Motivo del rechazo', 'blocked rejection stays on the reason screen rather than proceeding anyway');
+
+    doc.getElementById('reject-reason-input').value = 'La foto no es clara';
+    await window.confirmReject('avisos', 'av1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
+    assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
+    assert(text('modal-title') === 'Moderación (9)', 'rejected item is removed from the queue and the count updates');
+
+    // Approve, now via the detail screen (not the list).
+    window.openModerationDetail('noticias', 'n1');
+    await window.moderateItem('noticias', 'n1', 'published');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Publicado ✓', 'approving from the detail screen shows the right confirmation toast');
+    assert(lastUpdate.noticias && lastUpdate.noticias.status === 'published', 'approval actually sent status: published to Supabase');
 
     // Reject, with a genuinely forced failure — item must stay in the
     // queue and show the real error, not silently vanish either way.
-    forcedErrors.update.noticias = { code: '42501', message: 'simulated failure' };
+    forcedErrors.update.eventos = { code: '42501', message: 'simulated failure' };
     const beforeCount = moderationQueueCountFromTitle(text('modal-title'));
-    await window.moderateItem('noticias', 'n1', 'rejected');
+    await window.moderateItem('eventos', 'e1', 'rejected', 'motivo de prueba');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'No tienes permiso para hacer esto — intenta de nuevo en un momento.', 'a failed reject shows the real error toast');
     assert(moderationQueueCountFromTitle(text('modal-title')) === beforeCount, 'a failed reject leaves the item in the queue rather than removing it anyway');
-    forcedErrors.update.noticias = null;
+    forcedErrors.update.eventos = null;
+
+    // The submitter should actually be able to see why something was
+    // rejected — surfaced in their own account view, not just stored and
+    // forgotten in the database.
+    await window.openAccount();
+    assert(text('modal-body').includes('Publicaciones no aprobadas'), 'account view surfaces rejected submissions to the person who sent them');
+    assert(text('modal-body').includes('La descripción no es clara'), 'the actual rejection reason text is shown, not just that something was rejected');
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
