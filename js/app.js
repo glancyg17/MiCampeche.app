@@ -63,6 +63,87 @@ function contactUs(){
    forces the check right now and reuses the exact same showUpdateBanner()
    flow (defined in index.html's inline script) if one's actually found,
    rather than duplicating that logic here. */
+/* ══════════════ PULL TO REFRESH ══════════════
+   Standard mobile pattern: pull down while already at the top of the
+   active screen, release past a threshold, and it refreshes BOTH the
+   app's content (real Supabase data) and checks for a new app version —
+   reusing refreshContent() and checkForUpdates() exactly as they already
+   exist, not a separate implementation of either.
+   Not unit-tested: real touch gestures aren't meaningfully simulatable in
+   the jsdom test environment (no real finger, no real rendering engine
+   to verify the visual pull). Verified by code review here; wants a real
+   on-device check after deploying. */
+let pullStartY=0,pullActive=false,pullDistance=0,pullRefreshing=false;
+const PULL_THRESHOLD=70,PULL_MAX=100;
+
+function initPullToRefresh(){
+  const screens=document.querySelector('.screens');
+  const indicator=document.getElementById('pull-indicator');
+  if(!screens||!indicator)return;
+
+  screens.addEventListener('touchstart',e=>{
+    if(pullRefreshing)return;
+    const activeScr=document.querySelector('.scr.on');
+    if(!activeScr||activeScr.scrollTop>0)return;
+    pullStartY=e.touches[0].clientY;
+    pullActive=true;
+    activeScr.classList.add('pull-active');
+    activeScr.classList.remove('pull-snap');
+  },{passive:true});
+
+  screens.addEventListener('touchmove',e=>{
+    if(!pullActive||pullRefreshing)return;
+    const activeScr=document.querySelector('.scr.on');
+    if(!activeScr){pullActive=false;return;}
+    if(activeScr.scrollTop>0){ // scrolled away from the top mid-gesture
+      pullActive=false;
+      activeScr.style.transform='';
+      indicator.style.opacity=0;
+      pullDistance=0;
+      return;
+    }
+    const dy=e.touches[0].clientY-pullStartY;
+    if(dy<=0){
+      pullDistance=0;activeScr.style.transform='';indicator.style.opacity=0;
+      return;
+    }
+    e.preventDefault(); // stop native overscroll/bounce fighting the custom pull
+    pullDistance=Math.min(dy*0.45,PULL_MAX);
+    activeScr.style.transform=`translateY(${pullDistance}px)`;
+    const progress=Math.min(pullDistance/PULL_THRESHOLD,1);
+    indicator.style.opacity=String(progress);
+    indicator.style.transform=`translate(-50%,-50%) scale(${(0.6+0.4*progress).toFixed(2)}) rotate(${Math.round(progress*180)}deg)`;
+  },{passive:false});
+
+  screens.addEventListener('touchend',async()=>{
+    if(!pullActive)return;
+    pullActive=false;
+    const activeScr=document.querySelector('.scr.on');
+    if(!activeScr)return;
+    activeScr.classList.add('pull-snap');
+    if(pullDistance>=PULL_THRESHOLD){
+      pullRefreshing=true;
+      activeScr.style.transform=`translateY(${PULL_THRESHOLD}px)`;
+      indicator.classList.add('spinning');
+      indicator.style.opacity='1';
+      indicator.style.transform='translate(-50%,-50%) scale(1) rotate(0deg)';
+      try{
+        await Promise.all([refreshContent(),checkForUpdates()]);
+      } finally {
+        activeScr.style.transform='';
+        indicator.classList.remove('spinning');
+        indicator.style.opacity='0';
+        pullRefreshing=false;
+        pullDistance=0;
+      }
+    } else {
+      activeScr.style.transform='';
+      indicator.style.opacity='0';
+      pullDistance=0;
+    }
+  });
+}
+
 async function checkForUpdates(){
   closeMenu();
   if(!('serviceWorker' in navigator)){toast('Este navegador no soporta actualizaciones automáticas');return;}
@@ -1458,17 +1539,30 @@ async function checkPaymentReturn(){
   }
 }
 
+/* Data reload + re-render only — deliberately does NOT touch which
+   sub-tab mode is active (Mercado vs Clasificados, etc.), so calling this
+   again later (pull-to-refresh) can't silently kick someone back to a
+   default tab they'd already navigated away from. Render functions use
+   whatever mode is currently set; only init() sets the initial default. */
+async function refreshContent(){
+  await loadAllData();
+  renderInicio();
+  renderNoticias();
+  renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();
+  renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
+  renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
+}
+
 async function init(){
   if(isMobile()){document.getElementById('app').classList.add('on');}
   else{document.getElementById('desktop-gate').classList.add('on');}
   renderBottomNav();
   renderHeaderWeather();
-  await loadAllData();
+  await refreshContent();
   await checkPaymentReturn();
-  renderInicio();
-  renderNoticias();
-  renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();setTiendaMode('mercado');
-  renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();setAnunciosMode('eventos');
-  renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();setReportarMode('avisos');
+  setTiendaMode('mercado');
+  setAnunciosMode('eventos');
+  setReportarMode('avisos');
+  initPullToRefresh();
 }
 init();

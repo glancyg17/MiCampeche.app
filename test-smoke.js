@@ -188,6 +188,48 @@ const fakeClient = {
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
 
+  // ── Pull to refresh: real simulated touch gestures (jsdom dispatches
+  // the events fine; the code only reads e.touches[...] as plain
+  // properties, so a constructed Event with a manually-attached .touches
+  // array exercises the exact same code path a real finger would). ──
+  try {
+    const screensEl = doc.querySelector('.screens');
+    const inicioScr = doc.getElementById('scr-inicio');
+    const indicator = doc.getElementById('pull-indicator');
+
+    function touch(type, clientY, cancelable) {
+      const ev = new window.Event(type, { bubbles: true, cancelable: !!cancelable });
+      ev.touches = [{ clientY }];
+      screensEl.dispatchEvent(ev);
+    }
+
+    // A small pull (below the 70px threshold) should visually respond but
+    // snap back WITHOUT triggering any refresh.
+    touch('touchstart', 100);
+    touch('touchmove', 140, true); // dy=40 → pullDistance=18, well under threshold
+    assert(inicioScr.style.transform.includes('translateY'), 'a small pull down visibly moves the active screen (real gesture feedback, not just internal state)');
+    assert(parseFloat(indicator.style.opacity) > 0, 'the pull indicator becomes visible during the gesture');
+    touch('touchend', 140);
+    await new Promise(r => setTimeout(r, 20));
+    assert(inicioScr.style.transform === '', 'releasing below the threshold snaps back without refreshing');
+    assert(!indicator.classList.contains('spinning'), 'no refresh was triggered by the small pull');
+
+    // A real pull past the threshold should actually refresh — change the
+    // underlying data first so a real re-fetch is provably what happened,
+    // not just that some function got called.
+    SAMPLE.noticias[0].headline = 'Titular actualizado por pull-to-refresh';
+    touch('touchstart', 100);
+    touch('touchmove', 300, true); // dy=200 → pullDistance capped at 100, over threshold
+    assert(parseFloat(indicator.style.opacity) === 1, 'a strong pull shows the indicator at full opacity');
+    touch('touchend', 300);
+    await new Promise(r => setTimeout(r, 30));
+    assert(text('news-list').includes('Titular actualizado por pull-to-refresh'), 'releasing past the threshold genuinely re-fetched content — the NEW headline actually appears, not the old cached one');
+    assert(text('toast') === 'Este navegador no soporta actualizaciones automáticas', 'the update-check (checkForUpdates) genuinely ran too, as its own real code path (jsdom has no navigator.serviceWorker, so this specific toast is only reachable by actually calling it)');
+    assert(inicioScr.style.transform === '', 'the screen resets cleanly after a completed refresh');
+  } catch (err) {
+    assert(false, 'pull-to-refresh threw: ' + err.stack);
+  }
+
   // Anonymous visitors must be gated before ANY posting or interactive
   // action — no more silent "ride the anonymous session" behavior.
   try {

@@ -78,6 +78,14 @@ svg{display:block}
 .screens{flex:1;overflow:hidden;position:relative;z-index:5}
 .scr{display:none;flex-direction:column;overflow-y:auto;height:100%;-webkit-overflow-scrolling:touch;position:relative;z-index:5}
 .scr.on{display:flex}
+.scr.pull-active{transition:none}
+.scr.pull-snap{transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+
+/* ═══ PULL TO REFRESH ═══ */
+.pull-indicator{position:absolute;top:14px;left:50%;transform:translate(-50%,-50%) scale(.6) rotate(0deg);width:36px;height:36px;border-radius:50%;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;opacity:0;z-index:4;pointer-events:none}
+.pull-indicator .ico{width:18px;height:18px;color:var(--gulf)}
+.pull-indicator.spinning .ico{animation:pull-spin .7s linear infinite}
+@keyframes pull-spin{to{transform:rotate(360deg)}}
 
 /* ═══ SHARED ═══ */
 .pad{padding:18px 18px 0}
