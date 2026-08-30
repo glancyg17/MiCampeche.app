@@ -233,12 +233,24 @@ MC.myBusiness=async function(){
   return data||null;
 };
 
+/* Shared map from the negocio_verificar form payload to business columns,
+   used by both insert (verify) and update (edit) so the two never drift.
+   payment_methods arrives as an array from the multi-select; delivers as
+   the 'si'/'no' string from the seg control. */
+function businessPayloadFromForm(d){
+  return {
+    business_name:d.name,description:d.desc,address:d.address,phone:d.phone,category:d.cat,
+    business_image_url:d.photo||null,hours:d.hours||null,social_url:d.social||null,rfc:d.rfc||null,
+    payment_methods:Array.isArray(d.payment_methods)?d.payment_methods:[],
+    delivers:d.delivers===true||d.delivers==='si',
+    delivery_info:d.delivery_info||null,
+    pickup_address:d.pickup_address||null
+  };
+}
+
 MC.verifyBusiness=async function(d){
   const uid=await MC.ready;
-  return sb.from('businesses').insert({
-    profile_id:uid,business_name:d.name,description:d.desc,address:d.address,phone:d.phone,category:d.cat,
-    business_image_url:d.photo||null,hours:d.hours||null,social_url:d.social||null,rfc:d.rfc||null
-  });
+  return sb.from('businesses').insert({profile_id:uid,...businessPayloadFromForm(d)});
 };
 
 /* Editing an existing business — a real DB trigger (not this function)
@@ -246,10 +258,7 @@ MC.verifyBusiness=async function(d){
    any owner-driven update, so this never needs to touch status itself;
    it also can't be bypassed by sending status in the payload anyway. */
 MC.updateBusiness=async function(id,d){
-  return sb.from('businesses').update({
-    business_name:d.name,description:d.desc,address:d.address,phone:d.phone,category:d.cat,
-    business_image_url:d.photo||null,hours:d.hours||null,social_url:d.social||null,rfc:d.rfc||null
-  }).eq('id',id);
+  return sb.from('businesses').update(businessPayloadFromForm(d)).eq('id',id);
 };
 
 /* ── HELPERS ── */
@@ -338,14 +347,14 @@ const CONTENT_TABLES=[
 const MODERATION_DETAIL_FIELDS={
   noticias:[['headline','Titular'],['summary','Resumen'],['source_name','Fuente'],['source_url','Enlace'],['thumbnail_url','Imagen']],
   eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['description','Descripción'],['image_url','Imagen']],
-  productos:[['title','Producto'],['category','Categoría'],['price_mxn','Precio (MXN)'],['description','Descripción'],['image_url','Imagen'],['featured','Destacado']],
-  clasificados:[['title','Artículo'],['category','Categoría'],['price_mxn','Precio (MXN)'],['description','Descripción'],['image_url','Imagen']],
+  productos:[['title','Producto'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['availability','Disponibilidad'],['lead_time','Anticipación'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['seller_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['featured','Destacado']],
+  clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['zone','Zona'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   ofertas:[['title','Oferta'],['business_name_snapshot','Negocio'],['description','Descripción'],['terms','Condiciones'],['price_was','Precio normal'],['price_now','Precio con descuento'],['quantity_total','Cantidad disponible'],['image_url','Imagen']],
   perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['description','Descripción'],['image_url','Imagen']],
   empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas']],
   reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
   avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto']],
-  businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC']]
+  businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC'],['payment_methods','Métodos de pago'],['delivers','Entrega a domicilio'],['delivery_info','Zonas y costo de entrega'],['pickup_address','Dirección para recoger']]
 };
 
 MC.fetchPendingQueue=async function(){
@@ -419,8 +428,18 @@ MC.fetchTienda=async function(){
   ]);
   if(prod.error)console.error(prod.error);
   if(clas.error)console.error(clas.error);
-  const negocios=(prod.data||[]).map(r=>({id:r.id,cat:r.category||'Otro',name:r.title,price:fmtMXN(r.price_mxn),seller:r.business_name_snapshot,img:r.image_url||'',featured:!!r.featured,sellerType:'negocio'}));
-  const personales=(clas.data||[]).map(r=>({id:r.id,cat:r.category||'Otro',name:r.title,price:fmtMXN(r.price_mxn),seller:(r.profiles&&r.profiles.display_name)||'Vecino',img:r.image_url||'',featured:false,sellerType:'personal'}));
+  const negocios=(prod.data||[]).map(r=>({
+    id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
+    seller:r.business_name_snapshot,img:r.image_url||'',featured:!!r.featured,sellerType:'negocio',
+    desc:r.description||'',condition:r.item_condition||'nuevo',availability:r.availability||'ahora',leadTime:r.lead_time||'',
+    fulfillment:r.fulfillment||'',phone:r.seller_phone||'',contactMethods:r.contact_methods||[]
+  }));
+  const personales=(clas.data||[]).map(r=>({
+    id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
+    seller:(r.profiles&&r.profiles.display_name)||'Vecino',img:r.image_url||'',featured:false,sellerType:'personal',
+    desc:r.description||'',condition:r.item_condition||'nuevo',availability:'ahora',leadTime:'',
+    fulfillment:r.fulfillment||'',zone:r.zone||'',phone:r.contact_phone||'',contactMethods:r.contact_methods||[]
+  }));
   return [...negocios,...personales];
 };
 
@@ -533,7 +552,15 @@ MC.submitProducto=async function(d){
   const uid=await MC.ready;
   const biz=await MC.myBusiness();
   if(!biz)return {needsBusiness:true};
-  return sb.from('productos').insert({business_id:biz.id,business_name_snapshot:biz.business_name,title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,image_url:d.photo||null,submitted_by:uid});
+  const onOrder=d.availability==='pedido';
+  return sb.from('productos').insert({
+    business_id:biz.id,business_name_snapshot:biz.business_name,title:d.name,category:d.cat||null,
+    price_mxn:parseMoney(d.price),price_text:d.price||null,description:d.desc||null,image_url:d.photo||null,submitted_by:uid,
+    availability:onOrder?'pedido':'ahora',lead_time:onOrder?(d.lead_time||null):null,
+    fulfillment:d.fulfillment||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
+    seller_phone:biz.phone||null,
+    contact_methods:(Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms']
+  });
 };
 
 /* Clasificados stays open to every account — no business needed, matches
@@ -541,7 +568,13 @@ MC.submitProducto=async function(d){
    existing unique index). */
 MC.submitClasificado=async function(d){
   const uid=await MC.ready;
-  return sb.from('clasificados').insert({title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),description:d.desc||null,image_url:d.photo||null,submitted_by:uid});
+  return sb.from('clasificados').insert({
+    title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),price_text:d.price||null,
+    description:d.desc||null,image_url:d.photo||null,submitted_by:uid,
+    fulfillment:d.fulfillment||null,zone:d.zone||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
+    contact_phone:d.contact_phone||null,
+    contact_methods:(Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms']
+  });
 };
 
 /* Perdidos/Empleos have no manual contact field in the UI — phone is now

@@ -584,20 +584,63 @@ function setTiendaMode(mode){
 
 /* Shared card markup for both Mercado and Clasificados grids — same visual
    language, different underlying filter (sellerType negocio vs personal). */
+const FULFILLMENT_LABEL={entrega:'Entrega a domicilio',recoger:'Recoger',ambos:'Entrega o recoger'};
 function prodCardHtml(x){
+  const tags=[];
+  if(x.condition==='usado')tags.push('<span class="prod-tag">Usado</span>');
+  if(x.availability==='pedido')tags.push('<span class="prod-tag">Sobre pedido</span>');
+  if(FULFILLMENT_LABEL[x.fulfillment])tags.push(`<span class="prod-tag">${FULFILLMENT_LABEL[x.fulfillment]}</span>`);
   return `
     <div class="prod-wrap">
       ${x.featured?'<span class="prod-badge">Destacado</span>':''}
-      <div class="prod-card" onclick="toast('Vista de producto — próximamente')">
+      <div class="prod-card" onclick="openProdView('${x.sellerType}','${e(String(x.id))}')">
         <div class="prod-img" style="background-image:url('${x.img}')"></div>
         <div class="prod-body">
           <div class="prod-name">${e(x.name)}</div>
-          <div class="prod-price">${x.price}</div>
+          <div class="prod-price">${e(x.price)}</div>
           <div class="prod-seller">${e(x.seller)}</div>
+          ${tags.length?`<div class="prod-tags">${tags.join('')}</div>`:''}
         </div>
       </div>
     </div>
   `;
+}
+
+/* Full listing view — replaces the old "próximamente" stub. Shows the
+   description and every transaction detail, then the direct-contact CTAs
+   the seller opted into. MiCampeche is never in the loop: WhatsApp / call
+   / SMS all hand straight off to the seller's own number. */
+function openProdView(sellerType,id){
+  const x=TIENDA.find(i=>i.sellerType===sellerType&&String(i.id)===String(id));
+  if(!x)return;
+  const rows=[];
+  if(x.condition==='usado')rows.push(['Estado','Usado']);
+  if(x.availability==='pedido')rows.push(['Disponibilidad',x.leadTime?`Sobre pedido · ${x.leadTime}`:'Sobre pedido']);
+  if(FULFILLMENT_LABEL[x.fulfillment])rows.push(['Entrega',FULFILLMENT_LABEL[x.fulfillment]]);
+  if(x.zone)rows.push(['Zona',x.zone]);
+  const num=digitsOnly(x.phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const methods=Array.isArray(x.contactMethods)?x.contactMethods:[];
+  const noun=sellerType==='negocio'?'producto':'anuncio';
+  const msg=encodeURIComponent(`Hola, vi tu ${noun} "${x.name}" en MiCampeche y me interesa.`);
+  let cta='';
+  if(intl&&methods.length){
+    if(methods.includes('whatsapp'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">Contactar por WhatsApp</a>`;
+    if(methods.includes('llamada'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center;background:var(--paper2);color:var(--ink)" href="tel:+${intl}">Llamar</a>`;
+    if(methods.includes('sms'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center;background:var(--paper2);color:var(--ink)" href="sms:+${intl}">Enviar mensaje</a>`;
+  }else{
+    cta=`<div class="field-note">Este vendedor no dejó datos de contacto.</div>`;
+  }
+  document.getElementById('modal-title').textContent=x.name;
+  document.getElementById('modal-body').innerHTML=`
+    ${x.img?`<div class="pv-hero" style="background-image:url('${e(x.img)}')"></div>`:''}
+    <div style="font-size:20px;font-weight:800;color:var(--palm)">${e(x.price||'')}</div>
+    <div style="font-size:13px;color:var(--ink3)">${e(x.seller)}</div>
+    ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${e(x.desc)}</div>`:''}
+    ${rows.length?`<div class="pv-rows">${rows.map(r=>`<div class="pv-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>`:''}
+    ${cta}
+  `;
+  document.getElementById('modal-bg').classList.add('on');
 }
 
 let mktFilter='all';
@@ -846,14 +889,24 @@ const POST_FORMS={
   producto:{title:'Publicar un producto',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Pastel de tres leches'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Otro']},
+    {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'text',ph:'$'},
+    {k:'availability',lbl:'Disponibilidad',type:'seg',opts:[['ahora','Disponible ahora'],['pedido','Sobre pedido']]},
+    {k:'lead_time',lbl:'¿Con cuánta anticipación?',type:'text',ph:'Ej. 2 días',showIf:{field:'availability',val:'pedido'}},
+    {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega a domicilio'],['ambos','Ambos']]},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
     {k:'photo',lbl:'Foto del producto',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, tamaño, disponibilidad...'}
   ]},
   clasificado:{title:'Publicar en Clasificados',note:'Un artículo por persona. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Bicicleta usada'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Otro']},
+    {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'text',ph:'$'},
+    {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega'],['ambos','Ambos']]},
+    {k:'zone',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
+    {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',note:'Los interesados te contactarán a este número por los medios que elijas.'},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
     {k:'photo',lbl:'Foto del artículo',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
   ]},
@@ -899,6 +952,10 @@ const POST_FORMS={
     {k:'photo',lbl:'Logo o foto del negocio',type:'imgupload'},
     {k:'address',lbl:'Dirección',type:'text',ph:'Calle, número, colonia'},
     {k:'phone',lbl:'Teléfono del negocio',type:'tel',ph:'981 000 0000'},
+    {k:'payment_methods',lbl:'Métodos de pago que aceptas',type:'multi',opts:[['efectivo','Efectivo'],['transferencia','Transferencia'],['terminal','Terminal']],def:[]},
+    {k:'delivers',lbl:'¿Entregas a domicilio?',type:'seg',opts:[['no','No'],['si','Sí']]},
+    {k:'delivery_info',lbl:'Zonas y costo de entrega',type:'text',ph:'Ej. Centro y San Román · $30, gratis desde $300',showIf:{field:'delivers',val:'si'}},
+    {k:'pickup_address',lbl:'Dirección para recoger',type:'text',ph:'Si es distinta a la dirección de tu negocio'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Servicios','Otro']},
     {k:'hours',lbl:'Horario de atención',type:'text',ph:'Ej. Lun-Sáb 9am-8pm'},
     {k:'social',lbl:'Red social o sitio web',type:'text',ph:'Ej. instagram.com/tunegocio'},
@@ -933,13 +990,16 @@ async function openPost(kind){
   document.getElementById('modal-title').textContent=form.title;
   let h='';
   form.fields.forEach(f=>{
-    h+=`<div><label class="fl">${f.lbl}</label>`;
+    if(f.type==='note'){h+=`<div class="field-note" id="row-${f.k}">${f.text||''}</div>`;return;}
+    h+=`<div class="form-row" id="row-${f.k}"><label class="fl">${f.lbl}</label>`;
     if(f.type==='textarea')h+=`<textarea class="ft" id="pf-${f.k}" placeholder="${f.ph||''}"></textarea>`;
     else if(f.type==='select')h+=`<select class="fs" id="pf-${f.k}"><option value="">Selecciona...</option>${f.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;
     else if(f.type==='seg')h+=`<div class="seg" id="pf-${f.k}">${f.opts.map((o,i)=>`<div class="seg-btn${i===0?' on':''}" data-v="${o[0]}" onclick="segPick(this)">${o[1]}</div>`).join('')}</div>`;
+    else if(f.type==='multi')h+=`<div class="fmulti" id="pf-${f.k}">${f.opts.map(o=>`<button type="button" class="mchip${(f.def||[]).includes(o[0])?' on':''}" data-v="${o[0]}" onclick="multiPick(this)">${o[1]}</button>`).join('')}</div>`;
     else if(f.type==='calendar')h+=`<div id="pf-${f.k}">${slotCalendarHtml()}</div>`;
     else if(f.type==='imgupload')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else h+=`<input class="fi" id="pf-${f.k}" type="${f.type}" placeholder="${f.ph||''}">`;
+    if(f.note)h+=`<div class="field-note">${f.note}</div>`;
     h+=`</div>`;
   });
   h+=`<div class="submit-note">${svgIco('alertas')}${form.note||'Todas las publicaciones se revisan antes de mostrarse a los demás, para mantener MiCampeche libre de spam.'}</div>`;
@@ -949,6 +1009,30 @@ async function openPost(kind){
   selectedSlotDate=null;
   uploadedImageUrls={};
   form.fields.forEach(f=>{if(f.type==='imgupload')renderPhotoUploadButton(f.k);});
+  applyConditionalRows(form);
+  if(kind==='producto'&&acct.business){
+    // A business can only offer fulfillment methods it actually supports —
+    // disable the delivery options if the business profile says it doesn't
+    // deliver, and point back there to change it.
+    if(!acct.business.delivers){
+      document.querySelectorAll('#pf-fulfillment .seg-btn').forEach(b=>{
+        if(b.dataset.v==='entrega'||b.dataset.v==='ambos')b.classList.add('seg-btn-off');
+      });
+      const fr=document.getElementById('row-fulfillment');
+      if(fr)fr.insertAdjacentHTML('beforeend','<div class="field-note">Activa la entrega a domicilio en el perfil de tu negocio para ofrecerla aquí.</div>');
+    }
+    // Buyers reach a business on its business line, not a per-post number.
+    const cr=document.getElementById('row-contact_methods');
+    if(cr&&acct.business.phone)cr.insertAdjacentHTML('beforeend',`<div class="field-note">Los clientes te contactarán al número de tu negocio: ${e(acct.business.phone)}.</div>`);
+  }
+  if(kind==='clasificado'){
+    // Prefill the contact number from the account so a real account holder
+    // doesn't retype it; they can still overwrite it for this one post.
+    if(acct.signedIn&&acct.phone){
+      const cp=document.getElementById('pf-contact_phone');
+      if(cp&&!cp.value)cp.value=acct.phone;
+    }
+  }
   if(kind==='avisos'){
     // Convenience only — anonymous visitors without an account yet can
     // still type their own contact info manually; this just saves a real
@@ -1010,9 +1094,33 @@ function pickSlotDay(el,isFull){
   }
 }
 function segPick(el){
+  if(el.classList.contains('seg-btn-off'))return;
   el.parentElement.querySelectorAll('.seg-btn').forEach(b=>b.classList.remove('on'));
   el.classList.add('on');
 }
+/* Multi-select chips (payment_methods, contact_methods) — just a visual
+   toggle; submitPost() reads the .on set into an array. */
+function multiPick(el){el.classList.toggle('on');}
+
+/* Rows flagged with showIf:{field,val} appear only while the controlling
+   seg holds that value, and re-sync whenever it changes. Safe to call for
+   any form — a no-op when nothing is conditional. */
+function applyConditionalRows(form){
+  const conds=(form.fields||[]).filter(f=>f.showIf);
+  if(!conds.length)return;
+  const sync=()=>conds.forEach(f=>{
+    const on=document.querySelector(`#pf-${f.showIf.field} .seg-btn.on`);
+    const row=document.getElementById('row-'+f.k);
+    if(row)row.style.display=(on&&on.dataset.v===f.showIf.val)?'':'none';
+  });
+  sync();
+  [...new Set(conds.map(f=>f.showIf.field))].forEach(fk=>{
+    const seg=document.getElementById('pf-'+fk);
+    if(seg)seg.addEventListener('click',sync);
+  });
+}
+function digitsOnly(p){return String(p||'').replace(/\D/g,'');}
+
 function closeModal(){document.getElementById('modal-bg').classList.remove('on');}
 
 /* ══════════════ ACCOUNT (login / signup / signed-in view) ══════════════
@@ -1551,6 +1659,8 @@ function renderModerationDetailFields(table,raw){
     if(val===null||val===undefined||val==='')return;
     if(key==='image_url'||key==='thumbnail_url'||key==='business_image_url'){
       h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><img src="${e(val)}" style="max-width:100%;border-radius:var(--rs);margin-top:4px;display:block"></div>`;
+    } else if(typeof val==='boolean'){
+      h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="font-size:14px;margin-top:2px">${val?'Sí':'No'}</div></div>`;
     } else if(Array.isArray(val)){
       h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="font-size:14px;margin-top:2px">${e(val.join(', '))}</div></div>`;
     } else {
@@ -1621,11 +1731,20 @@ async function openBusinessEdit(){
   editingBusinessId=biz.id;
   await openPost('negocio_verificar');
   document.getElementById('modal-title').textContent='Editar mi negocio';
-  const fillMap={name:biz.business_name,desc:biz.description,address:biz.address,phone:biz.phone,cat:biz.category,hours:biz.hours,social:biz.social_url,rfc:biz.rfc};
+  const fillMap={name:biz.business_name,desc:biz.description,address:biz.address,phone:biz.phone,cat:biz.category,hours:biz.hours,social:biz.social_url,rfc:biz.rfc,delivery_info:biz.delivery_info,pickup_address:biz.pickup_address};
   Object.keys(fillMap).forEach(k=>{
     const el=document.getElementById('pf-'+k);
     if(el&&fillMap[k])el.value=fillMap[k];
   });
+  // seg + multi controls aren't <input>s — restore them by class, then
+  // re-run the conditional-row visibility now that delivers may be 'si'.
+  const deliversBtn=document.querySelector(`#pf-delivers .seg-btn[data-v="${biz.delivers?'si':'no'}"]`);
+  if(deliversBtn)segPick(deliversBtn);
+  (biz.payment_methods||[]).forEach(v=>{
+    const chip=document.querySelector(`#pf-payment_methods .mchip[data-v="${v}"]`);
+    if(chip)chip.classList.add('on');
+  });
+  applyConditionalRows(POST_FORMS.negocio_verificar);
   if(biz.business_image_url){
     uploadedImageUrls.photo=biz.business_image_url;
     const wrap=document.getElementById('pf-photo-wrap');
@@ -1723,7 +1842,9 @@ async function submitPost(kind){
   const form=POST_FORMS[kind];
   const data={};
   form.fields.forEach(f=>{
+    if(f.type==='note')return;
     if(f.type==='seg'){const sel=document.querySelector(`#pf-${f.k} .seg-btn.on`);data[f.k]=sel?sel.dataset.v:'';}
+    else if(f.type==='multi'){data[f.k]=[...document.querySelectorAll(`#pf-${f.k} .mchip.on`)].map(b=>b.dataset.v);}
     else if(f.type==='calendar'){data[f.k]=selectedSlotDate;}
     else if(f.type==='imgupload'){data[f.k]=uploadedImageUrls[f.k]||null;}
     else{const el=document.getElementById('pf-'+f.k);data[f.k]=el?el.value:'';}
@@ -1732,6 +1853,13 @@ async function submitPost(kind){
   const btn=document.getElementById('post-submit-btn');
   const originalLabel=btn?btn.textContent:'';
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const stop=()=>{if(btn){btn.disabled=false;btn.textContent=originalLabel;}};
+
+  if(kind==='producto'||kind==='clasificado'){
+    if(!(data.name||'').trim()){stop();toast('Escribe qué vendes');return;}
+    if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
+  }
+  if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
 
   if(kind==='negocio_verificar'){
     if(!data.name||!data.desc||!data.address||!data.phone||!data.cat){

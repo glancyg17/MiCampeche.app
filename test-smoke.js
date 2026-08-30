@@ -49,8 +49,8 @@ const SAMPLE = {
   // approve/reject/edit-account testing.
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', status: 'published' }],
-  productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, image_url: '', featured: true, status: 'published' }],
-  clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' } }],
+  productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
+  clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
   ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
   ofertas_redemptions: [],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
@@ -815,6 +815,118 @@ const fakeClient = {
     assert(text('modal-title') === 'Actualiza a Premium', 'product cap error opens the real Premium upgrade prompt instead of a dead-end toast');
     assert(text('modal-body').includes('749'), 'the Premium prompt shows the real $749 MXN price');
     forcedErrors.insert.productos = null;
+
+    // ── Tienda transaction + contact fields: delivery/collection, the
+    //    exact-typed price, item condition, and the per-listing contact
+    //    methods that drive the WhatsApp/call/SMS handoff on the card. ──
+    {
+      // A business that doesn't deliver can't offer "entrega" on a product.
+      currentBusiness.delivers = false;
+      await window.openPost('producto');
+      assert(doc.querySelector('#pf-fulfillment .seg-btn[data-v="entrega"]').classList.contains('seg-btn-off'),
+        'a non-delivering business has the "entrega" fulfillment option disabled in the producto form');
+
+      currentBusiness.delivers = true;
+      await window.openPost('producto');
+      assert(!!doc.getElementById('pf-item_condition') && !!doc.getElementById('pf-availability') && !!doc.getElementById('pf-fulfillment'),
+        'the producto form now carries estado / disponibilidad / entrega controls');
+      assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 3,
+        'all three contact methods are pre-selected by default');
+
+      doc.getElementById('pf-name').value = 'Pan artesanal';
+      doc.getElementById('pf-price').value = '$45 la pieza';
+      window.segPick(doc.querySelector('#pf-item_condition .seg-btn[data-v="usado"]'));
+      window.segPick(doc.querySelector('#pf-availability .seg-btn[data-v="pedido"]'));
+      doc.getElementById('pf-lead_time').value = '2 días';
+      window.segPick(doc.querySelector('#pf-fulfillment .seg-btn[data-v="ambos"]'));
+      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="sms"]')); // drop SMS, keep WhatsApp + Llamada
+      delete lastInsert.productos;
+      await window.submitPost('producto');
+      await new Promise(r => setTimeout(r, 20));
+      const p = lastInsert.productos;
+      assert(!!p, 'the producto submission reached Supabase');
+      assert(p.price_text === '$45 la pieza' && p.price_mxn === 45,
+        'the exact typed price is kept in price_text while price_mxn still holds the parsed number');
+      assert(p.item_condition === 'usado' && p.availability === 'pedido' && p.lead_time === '2 días' && p.fulfillment === 'ambos',
+        'the chosen transaction fields are all sent');
+      assert(Array.isArray(p.contact_methods) && p.contact_methods.includes('whatsapp') && p.contact_methods.includes('llamada') && !p.contact_methods.includes('sms'),
+        'only the still-selected contact methods are sent');
+      assert(p.seller_phone === currentBusiness.phone,
+        'the business phone is snapshotted onto the product row so the public card can build the wa.me link without reading the private businesses table');
+
+      // A listing nobody can respond to is blocked.
+      await window.openPost('producto');
+      doc.getElementById('pf-name').value = 'Sin contacto';
+      doc.querySelectorAll('#pf-contact_methods .mchip.on').forEach(c => window.multiPick(c));
+      delete lastInsert.productos;
+      await window.submitPost('producto');
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('toast') === 'Elige al menos una forma de contacto', 'a producto with no contact method selected is blocked client-side');
+      assert(!lastInsert.productos, 'the blocked producto never reached Supabase');
+
+      // Clasificado: contact number pre-fills from the account, is
+      // required, and the new fields ride along on submit.
+      await window.openPost('clasificado');
+      assert(doc.getElementById('pf-contact_phone').value === currentProfile.phone,
+        'the clasificado contact number pre-fills from the signed-in account');
+      doc.getElementById('pf-name').value = 'Bici de montaña';
+      doc.getElementById('pf-contact_phone').value = '';
+      delete lastInsert.clasificados;
+      await window.submitPost('clasificado');
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('toast') === 'Escribe tu número de contacto', 'a clasificado with the contact number cleared is blocked');
+      assert(!lastInsert.clasificados, 'the blocked clasificado never reached Supabase');
+
+      doc.getElementById('pf-contact_phone').value = '981 222 3333';
+      doc.getElementById('pf-zone').value = 'San Román';
+      window.segPick(doc.querySelector('#pf-fulfillment .seg-btn[data-v="recoger"]'));
+      window.segPick(doc.querySelector('#pf-item_condition .seg-btn[data-v="usado"]'));
+      await window.submitPost('clasificado');
+      await new Promise(r => setTimeout(r, 20));
+      const c = lastInsert.clasificados;
+      assert(!!c && c.contact_phone === '981 222 3333' && c.zone === 'San Román' && c.fulfillment === 'recoger' && c.item_condition === 'usado',
+        'the clasificado transaction + contact fields are all sent');
+      assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'a complete clasificado submits successfully');
+    }
+
+    // Business profile carries the payment/delivery settings on submit.
+    {
+      await window.openBusinessEdit();
+      window.multiPick(doc.querySelector('#pf-payment_methods .mchip[data-v="efectivo"]'));
+      window.multiPick(doc.querySelector('#pf-payment_methods .mchip[data-v="transferencia"]'));
+      window.segPick(doc.querySelector('#pf-delivers .seg-btn[data-v="si"]'));
+      assert(doc.getElementById('row-delivery_info').style.display !== 'none',
+        'choosing "Sí" for delivery reveals the zones/cost row');
+      doc.getElementById('pf-delivery_info').value = 'Centro · $30';
+      delete lastUpdate.businesses;
+      await window.submitPost('negocio_verificar');
+      await new Promise(r => setTimeout(r, 20));
+      const b = lastUpdate.businesses;
+      assert(!!b && Array.isArray(b.payment_methods) && b.payment_methods.includes('efectivo') && b.payment_methods.includes('transferencia'),
+        'the selected payment methods are sent as an array');
+      assert(b.delivers === true && b.delivery_info === 'Centro · $30',
+        'the delivery toggle and free-text zones/cost are sent');
+    }
+
+    // The Tienda card now opens a real detail view (not the old stub) with
+    // direct-contact links built from the seller's number — driven through
+    // the real fetch → map → render pipeline, using the fixture rows.
+    {
+      window.openProdView('negocio', 'p1');
+      assert(text('modal-title') === 'Producto test', 'tapping a product opens its detail view, not a "próximamente" toast');
+      const links = [...doc.querySelectorAll('#modal-body a')];
+      const waLink = links.find(a => a.href.includes('wa.me'));
+      assert(!!waLink && waLink.href.includes('529811002000') && waLink.href.includes(encodeURIComponent('Producto test')),
+        'the detail view has a WhatsApp link to the snapshotted seller number with a pre-filled message');
+      assert(links.some(a => a.href.startsWith('tel:+52')), 'a call link is present since "llamada" was one of the seller\'s methods');
+      assert(!links.some(a => a.href.startsWith('sms:')), 'no SMS link, because the seller did not select "mensaje de texto"');
+
+      window.openProdView('personal', 'c1');
+      const links2 = [...doc.querySelectorAll('#modal-body a')];
+      assert(links2.length === 1 && links2[0].href.includes('wa.me') && links2[0].href.includes('529813004000'),
+        'a clasificado that only chose WhatsApp shows exactly one contact button, to its own per-post number');
+      assert(text('modal-body').includes('Centro'), 'the clasificado detail view shows its zone');
+    }
 
     // Ofertas: submitting a real (non-full) slot should NOT book
     // immediately anymore — it persists the pending submission and sends
