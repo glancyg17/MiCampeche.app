@@ -81,12 +81,72 @@ MC.signOut=async function(){
   await MC.ready;
 };
 
+/* Password reset — genuinely requires real email delivery to work
+   (Supabase's built-in sender only reaches pre-authorized team members,
+   same limitation already documented for signup confirmation). This is
+   built and ready; it just can't actually deliver anything until real
+   SMTP is configured in the Supabase dashboard, which isn't something
+   reachable through this connector — that's a founder-side step. */
+MC.requestPasswordReset=async function(email){
+  return sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});
+};
+
+MC.setNewPassword=async function(newPassword){
+  return sb.auth.updateUser({password:newPassword});
+};
+
+/* Supabase's password-recovery link redirects back here carrying a
+   special recovery session; the client library detects it automatically
+   and fires this event — no URL parsing needed on our side. */
+sb.auth.onAuthStateChange((event)=>{
+  if(event==='PASSWORD_RECOVERY'&&typeof openSetNewPassword==='function')openSetNewPassword();
+});
+
+/* ── WhatsApp-mediated password reset — no email required ──
+   Every step is a narrowly-scoped SECURITY DEFINER database function,
+   never a raw client-side auth.users write. request/complete are
+   callable with no session at all (that's the whole point — the person
+   can't log in); approve/reject check is_admin internally. See the
+   'whatsapp_password_reset' migration for the real security properties
+   (30-minute code expiry, 5-attempt lockout, generic failure messages
+   that never reveal which specific check failed). */
+MC.requestPasswordResetWhatsApp=async function(email){
+  return sb.rpc('request_password_reset',{p_email:email});
+};
+
+MC.completePasswordResetWhatsApp=async function(email,code,newPassword){
+  return sb.rpc('complete_password_reset',{p_email:email,p_code:code,p_new_password:newPassword});
+};
+
+MC.fetchPasswordResetRequests=async function(){
+  const {data,error}=await sb.from('password_reset_requests').select('*, profiles(display_name,phone)').eq('status','pending').order('requested_at',{ascending:true});
+  if(error){console.error(error);return [];}
+  return (data||[]).map(r=>({
+    id:r.id,claimedEmail:r.claimed_email,requestedAt:r.requested_at,
+    matchedName:(r.profiles&&r.profiles.display_name)||null,
+    matchedPhone:(r.profiles&&r.profiles.phone)||null
+  }));
+};
+
+MC.approvePasswordReset=async function(requestId){
+  return sb.rpc('approve_password_reset',{p_request_id:requestId});
+};
+
+MC.rejectPasswordReset=async function(requestId,reason){
+  return sb.rpc('reject_password_reset',{p_request_id:requestId,p_reason:reason});
+};
+
 MC.currentAccount=async function(){
   const {data:{session}}=await sb.auth.getSession();
   if(!session||session.user.is_anonymous)return {signedIn:false};
-  const {data:prof}=await sb.from('profiles').select('display_name,phone,is_admin').eq('id',session.user.id).single();
+  const {data:prof}=await sb.from('profiles').select('display_name,phone,is_admin,phone_verification_status,phone_verification_reason').eq('id',session.user.id).single();
   const business=await MC.myBusiness();
-  return {signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',phone:(prof&&prof.phone)||null,isAdmin:!!(prof&&prof.is_admin),business};
+  return {
+    signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',phone:(prof&&prof.phone)||null,
+    isAdmin:!!(prof&&prof.is_admin),business,
+    phoneVerificationStatus:(prof&&prof.phone_verification_status)||'pending',
+    phoneVerificationReason:(prof&&prof.phone_verification_reason)||null
+  };
 };
 
 MC.myProfile=async function(){
@@ -94,6 +154,34 @@ MC.myProfile=async function(){
   if(!uid)return {display_name:'Vecino',phone:null};
   const {data}=await sb.from('profiles').select('display_name,phone').eq('id',uid).single();
   return data||{display_name:'Vecino',phone:null};
+};
+
+/* ── PHONE VERIFICATION (WhatsApp-mediated, security signal only — does
+   NOT gate login or posting, per the founder's own call. Login stays
+   normal email+password on any device; this only affects the account's
+   verified badge and the uniqueness guarantee below.) ──
+   The founder receives a WhatsApp from the number claimed at signup and
+   compares it manually — same human-review pattern as everything else
+   here. Editing your own phone (see updateMyAccount below) resets this
+   to pending automatically via a real DB trigger, not app logic, so it
+   can't be bypassed by skipping this function. */
+MC.updateMyAccount=async function(d){
+  const uid=await MC.ready;
+  return sb.from('profiles').update({display_name:d.name,phone:d.phone}).eq('id',uid);
+};
+
+MC.fetchPendingPhoneVerifications=async function(){
+  const {data,error}=await sb.from('profiles').select('id,display_name,phone,created_at').eq('phone_verification_status','pending').not('phone','is',null).order('created_at',{ascending:true});
+  if(error){console.error(error);return [];}
+  return data||[];
+};
+
+MC.approvePhoneVerification=async function(profileId){
+  return sb.from('profiles').update({phone_verification_status:'verified'}).eq('id',profileId);
+};
+
+MC.rejectPhoneVerification=async function(profileId,reason){
+  return sb.from('profiles').update({phone_verification_status:'rejected',phone_verification_reason:reason}).eq('id',profileId);
 };
 
 /* ── BUSINESS VERIFICATION ──

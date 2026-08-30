@@ -1082,16 +1082,22 @@ async function openAccount(){
   renderAccountForm();
 }
 function renderAccountSignedIn(acct){
+  lastFetchedAccount=acct;
   const biz=acct.business;
+  const pvs=acct.phoneVerificationStatus;
   document.getElementById('modal-title').textContent='Tu cuenta';
   document.getElementById('modal-body').innerHTML=`
     <div style="text-align:center;padding:8px 0 4px">
       <div style="width:56px;height:56px;border-radius:50%;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:22px;font-weight:700">${e((acct.displayName||'V')[0].toUpperCase())}</div>
       <div style="font-weight:700;font-size:16px">${e(acct.displayName)}</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(acct.email)}</div>
-      <div style="color:var(--ink3);font-size:13px;margin-top:1px">${e(acct.phone||'')}</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:1px">${e(acct.phone||'')}${pvs==='verified'?' <span style="color:var(--gulf)">✓ verificado</span>':pvs==='pending'?' <span style="color:var(--wall-dk)">· en revisión</span>':''}</div>
+      ${(pvs==='rejected'&&acct.phoneVerificationReason)?`<div style="color:var(--signal);font-size:12px;margin-top:4px">${e(acct.phoneVerificationReason)}</div>`:''}
       ${acct.isAdmin?'<div style="color:var(--ink3);font-size:12px;margin-top:6px">Admin</div>':''}
     </div>
+    <button class="menu-item" onclick="openEditAccount()" style="border:1.5px solid var(--line2);margin-bottom:4px;justify-content:center">
+      <span class="menu-item-lbl">Editar mi cuenta</span>
+    </button>
     ${biz?`
       <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:4px">
         <div style="display:flex;gap:10px;align-items:flex-start">
@@ -1146,6 +1152,8 @@ function renderAccountSignedIn(acct){
       </div>
     `:''}
     ${acct.isAdmin?`<button class="submit-btn" onclick="openModeration()">${svgIco('checkBadge')} Moderación</button>`:''}
+    ${acct.isAdmin?`<button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="openPasswordResetRequests()">Solicitudes de contraseña</button>`:''}
+    ${acct.isAdmin?`<button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="openPhoneVerifications()">Verificación de teléfono</button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -1165,13 +1173,260 @@ function renderAccountForm(){
       <input class="fi" id="acct-phone" type="tel" placeholder="981 000 0000" style="flex:1;min-width:0">
     </div>
   </div>`;
-  h+=`<div><label class="fl">Contraseña</label><input class="fi" id="acct-password" type="password" placeholder="Mínimo 6 caracteres"></div>`;
+  h+=`<div><label class="fl">Contraseña</label>${passwordFieldHtml('acct-password','Mínimo 6 caracteres')}</div>`;
+  if(!isSignup)h+=`<div style="text-align:right;margin-top:-8px"><a href="#" onclick="openForgotPassword();return false;" style="font-size:12.5px;color:var(--gulf);text-decoration:none">¿Olvidaste tu contraseña?</a></div>`;
   h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Usamos tu teléfono para tus publicaciones (contacto) y avisos importantes — nunca lo compartimos ni lo vendemos.':'Usa el correo y contraseña con los que creaste tu cuenta.'}</div>`;
   h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
 }
 function setAccountMode(mode){accountMode=mode;renderAccountForm();}
+
+/* Real show/hide toggle, reused everywhere a password is typed (login,
+   signup, and the new-password screen below) — one implementation, one
+   pair of icons, parameterized by input id so it works wherever it's used. */
+function passwordFieldHtml(id,placeholder){
+  return `<div style="position:relative">
+    <input class="fi" id="${id}" type="password" placeholder="${placeholder}" style="padding-right:44px">
+    <button type="button" onclick="togglePasswordVisibility('${id}',this)" aria-label="Mostrar contraseña"
+      style="position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;padding:9px;cursor:pointer;color:var(--ink3);display:flex;align-items:center">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+  </div>`;
+}
+function togglePasswordVisibility(id,btn){
+  const input=document.getElementById(id);
+  if(!input)return;
+  const showing=input.type==='text';
+  input.type=showing?'password':'text';
+  btn.innerHTML=showing
+    ?'<svg class="ico" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+    :'<svg class="ico" viewBox="0 0 24 24"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+}
+
+/* Forgot password — WhatsApp-mediated, no email required. Submitting
+   creates a real request row (best-effort matched to an account by
+   email) and opens WhatsApp with the account details pre-filled, so the
+   founder can verify the incoming message's phone number against what's
+   on file before approving. The email-link version above stays in place,
+   dormant, ready for whenever real SMTP makes it usable — this is the
+   flow actually in use right now. */
+function openForgotPassword(){
+  document.getElementById('modal-title').textContent='Recuperar contraseña';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe el correo de tu cuenta. Te llevaremos a WhatsApp para confirmar tu identidad — revisamos cada solicitud personalmente, sin necesidad de correo.</div>
+    <div><label class="fl">Correo de tu cuenta</label><input class="fi" id="forgot-email" type="email" placeholder="tu@correo.com"></div>
+    <button class="submit-btn" id="forgot-submit-btn" onclick="submitForgotPassword()">Continuar por WhatsApp</button>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="setAccountMode('login')">Volver a iniciar sesión</button>
+    <button class="menu-item" style="margin-top:6px;justify-content:center" onclick="openCompletePasswordReset()">Ya tengo un código de restablecimiento</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function submitForgotPassword(){
+  const email=(document.getElementById('forgot-email').value||'').trim();
+  if(!email){toast('Escribe tu correo');return;}
+  const btn=document.getElementById('forgot-submit-btn');
+  const original=btn.textContent;
+  btn.disabled=true;btn.textContent='Enviando…';
+  const {error}=await MC.requestPasswordResetWhatsApp(email);
+  btn.disabled=false;btn.textContent=original;
+  if(error){toast('No se pudo enviar tu solicitud — intenta de nuevo.');return;}
+  const msg='Hola, olvidé mi contraseña de MiCampeche. Mi correo registrado es: '+email;
+  window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(msg));
+  toast('Solicitud enviada — completa tu mensaje en WhatsApp ✓');
+  setAccountMode('login');
+}
+
+/* Once the founder has verified the WhatsApp message and approved the
+   request, they relay a 6-digit code manually — this is where the
+   requester enters it (with their email and new password) to actually
+   complete the reset. */
+function openCompletePasswordReset(){
+  document.getElementById('modal-title').textContent='Ingresa tu código';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe el correo de tu cuenta, el código de 6 dígitos que te dimos por WhatsApp, y tu nueva contraseña.</div>
+    <div><label class="fl">Correo de tu cuenta</label><input class="fi" id="reset-complete-email" type="email" placeholder="tu@correo.com"></div>
+    <div><label class="fl">Código de 6 dígitos</label><input class="fi" id="reset-complete-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+    <div><label class="fl">Nueva contraseña</label>${passwordFieldHtml('reset-complete-password','Mínimo 6 caracteres')}</div>
+    <button class="submit-btn" id="reset-complete-btn" onclick="submitCompletePasswordReset()">Guardar nueva contraseña</button>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="setAccountMode('login')">Volver a iniciar sesión</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function submitCompletePasswordReset(){
+  const email=(document.getElementById('reset-complete-email').value||'').trim();
+  const code=(document.getElementById('reset-complete-code').value||'').trim();
+  const pw=document.getElementById('reset-complete-password').value||'';
+  if(!email||!code){toast('Completa tu correo y código');return;}
+  if(pw.length<6){toast('La contraseña debe tener al menos 6 caracteres');return;}
+  const btn=document.getElementById('reset-complete-btn');
+  const original=btn.textContent;
+  btn.disabled=true;btn.textContent='Guardando…';
+  const {data,error}=await MC.completePasswordResetWhatsApp(email,code,pw);
+  btn.disabled=false;btn.textContent=original;
+  if(error||data!=='ok'){
+    toast(data==='password_too_short'?'La contraseña debe tener al menos 6 caracteres':'Código inválido o vencido — pide uno nuevo por WhatsApp');
+    return;
+  }
+  toast('¡Contraseña actualizada! Ya puedes iniciar sesión ✓');
+  setAccountMode('login');
+}
+
+/* Admin side: reviewing and acting on reset requests. A distinct screen
+   from the content moderation queue — the actions here (approve/reject)
+   mean something different (unlocking a password entry, not publishing
+   content), so it isn't folded into the same generic list/detail flow. */
+let passwordResetRequests=[];
+async function openPasswordResetRequests(){
+  document.getElementById('modal-title').textContent='Solicitudes de contraseña';
+  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
+  document.getElementById('modal-bg').classList.add('on');
+  passwordResetRequests=await MC.fetchPasswordResetRequests();
+  renderPasswordResetRequests();
+}
+function renderPasswordResetRequests(){
+  document.getElementById('modal-title').textContent=`Solicitudes de contraseña (${passwordResetRequests.length})`;
+  if(!passwordResetRequests.length){
+    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay solicitudes pendientes.</div></div>`;
+    return;
+  }
+  let h='';
+  passwordResetRequests.forEach(r=>{
+    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:14.5px">${e(r.claimedEmail)}</div>
+      <div style="color:var(--ink3);font-size:12.5px;margin-top:4px">${r.matchedName
+        ?`Cuenta encontrada: <b>${e(r.matchedName)}</b> · teléfono en archivo: <b>${e(r.matchedPhone||'—')}</b>`
+        :'⚠️ No se encontró una cuenta con este correo — verifica antes de aprobar'}</div>
+      <div style="color:var(--ink3);font-size:11.5px;margin-top:4px">Pedido ${relTimeEs(r.requestedAt)}</div>
+      <div style="color:var(--ink3);font-size:11.5px;margin-top:6px;font-style:italic">Compara el número desde el que te escribieron en WhatsApp con el teléfono en archivo antes de aprobar.</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1" onclick="approvePasswordResetRequest('${r.id}')">Aprobar</button>
+        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPasswordResetRequest('${r.id}')">Rechazar</button>
+      </div>
+    </div>`;
+  });
+  document.getElementById('modal-body').innerHTML=h;
+}
+async function approvePasswordResetRequest(id){
+  const {data:code,error}=await MC.approvePasswordReset(id);
+  if(error){toast(pgErrorToast(error,'No se pudo aprobar.'));return;}
+  passwordResetRequests=passwordResetRequests.filter(r=>r.id!==id);
+  renderPasswordResetRequests();
+  toast('Aprobado — código: '+code+' (compártelo por WhatsApp, válido 30 min)');
+}
+async function rejectPasswordResetRequest(id){
+  const {error}=await MC.rejectPasswordReset(id,'No se pudo verificar la identidad');
+  if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
+  passwordResetRequests=passwordResetRequests.filter(r=>r.id!==id);
+  renderPasswordResetRequests();
+  toast('Rechazado');
+}
+
+/* Admin: reviewing phone verification requests — same list/approve/reject
+   pattern as password reset requests. This is a security signal only
+   (see MC.updateMyAccount's comment) — approving/rejecting never blocks
+   the account from logging in or posting, only affects its verified
+   badge and whether that phone number can ever be verified elsewhere. */
+let phoneVerificationRequests=[];
+async function openPhoneVerifications(){
+  document.getElementById('modal-title').textContent='Verificación de teléfono';
+  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
+  document.getElementById('modal-bg').classList.add('on');
+  phoneVerificationRequests=await MC.fetchPendingPhoneVerifications();
+  renderPhoneVerifications();
+}
+function renderPhoneVerifications(){
+  document.getElementById('modal-title').textContent=`Verificación de teléfono (${phoneVerificationRequests.length})`;
+  if(!phoneVerificationRequests.length){
+    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay solicitudes pendientes.</div></div>`;
+    return;
+  }
+  let h='';
+  phoneVerificationRequests.forEach(p=>{
+    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:14.5px">${e(p.display_name||'Vecino')}</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(p.phone||'—')}</div>
+      <div style="color:var(--ink3);font-size:11.5px;margin-top:4px">Creada ${relTimeEs(p.created_at)}</div>
+      <div style="color:var(--ink3);font-size:11.5px;margin-top:6px;font-style:italic">Compara este número con el que te escribió por WhatsApp antes de aprobar.</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1" onclick="approvePhoneVerification('${p.id}')">Aprobar</button>
+        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPhoneVerification('${p.id}')">Rechazar</button>
+      </div>
+    </div>`;
+  });
+  document.getElementById('modal-body').innerHTML=h;
+}
+async function approvePhoneVerification(profileId){
+  const {error}=await MC.approvePhoneVerification(profileId);
+  if(error){toast(pgErrorToast(error,'No se pudo aprobar — puede que ese número ya esté verificado en otra cuenta.'));return;}
+  phoneVerificationRequests=phoneVerificationRequests.filter(p=>p.id!==profileId);
+  renderPhoneVerifications();
+  toast('Teléfono verificado ✓');
+}
+async function rejectPhoneVerification(profileId){
+  const {error}=await MC.rejectPhoneVerification(profileId,'No se pudo confirmar el número por WhatsApp');
+  if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
+  phoneVerificationRequests=phoneVerificationRequests.filter(p=>p.id!==profileId);
+  renderPhoneVerifications();
+  toast('Rechazado');
+}
+
+/* User-facing: editing your own name/phone. Changing the phone always
+   sends it back for re-verification (a real DB trigger enforces this,
+   not this code) — matches exactly how editing a business resets it to
+   pending too. */
+let lastFetchedAccount=null;
+function openEditAccount(){
+  const acct=lastFetchedAccount;
+  if(!acct)return;
+  document.getElementById('modal-title').textContent='Editar mi cuenta';
+  document.getElementById('modal-body').innerHTML=`
+    <div><label class="fl">Tu nombre</label><input class="fi" id="edit-acct-name" type="text" value="${e(acct.displayName||'')}"></div>
+    <div><label class="fl">Teléfono / WhatsApp</label><input class="fi" id="edit-acct-phone" type="tel" value="${e(acct.phone||'')}" placeholder="+52 981 000 0000"></div>
+    <div class="submit-note">${svgIco('alertas')}Si cambias tu número, tendrá que verificarse de nuevo por WhatsApp.</div>
+    <button class="submit-btn" id="edit-acct-btn" onclick="submitEditAccount()">Guardar cambios</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function submitEditAccount(){
+  const name=(document.getElementById('edit-acct-name').value||'').trim();
+  const phone=(document.getElementById('edit-acct-phone').value||'').trim();
+  if(!name||!phone){toast('Completa tu nombre y teléfono');return;}
+  const btn=document.getElementById('edit-acct-btn');
+  const original=btn.textContent;
+  btn.disabled=true;btn.textContent='Guardando…';
+  const {error}=await MC.updateMyAccount({name,phone});
+  btn.disabled=false;btn.textContent=original;
+  if(error){toast(pgErrorToast(error,'No se pudieron guardar los cambios.'));return;}
+  toast('Cambios guardados ✓');
+  await openAccount();
+}
+
+/* Set new password — shown automatically when Supabase's recovery-link
+   redirect lands back on the app (see the onAuthStateChange listener in
+   supabase-client.js), not something the user navigates to directly.
+   Belongs to the EMAIL-link flow above, dormant until real SMTP exists. */
+function openSetNewPassword(){
+  document.getElementById('modal-title').textContent='Crea una nueva contraseña';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe tu nueva contraseña para tu cuenta.</div>
+    <div><label class="fl">Nueva contraseña</label>${passwordFieldHtml('new-password-input','Mínimo 6 caracteres')}</div>
+    <button class="submit-btn" id="new-password-btn" onclick="submitNewPassword()">Guardar contraseña</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function submitNewPassword(){
+  const pw=document.getElementById('new-password-input').value||'';
+  if(pw.length<6){toast('La contraseña debe tener al menos 6 caracteres');return;}
+  const btn=document.getElementById('new-password-btn');
+  const original=btn.textContent;
+  btn.disabled=true;btn.textContent='Guardando…';
+  const {error}=await MC.setNewPassword(pw);
+  btn.disabled=false;btn.textContent=original;
+  if(error){toast(authErrorToast(error));return;}
+  toast('¡Contraseña actualizada! ✓');
+  closeModal();
+}
 
 async function submitAuth(){
   const email=(document.getElementById('acct-email').value||'').trim();
@@ -1180,6 +1435,7 @@ async function submitAuth(){
   const btn=document.getElementById('acct-submit-btn');
   const original=btn.textContent;
   let result;
+  let signedUpName=null,signedUpPhone=null;
   if(accountMode==='signup'){
     const name=(document.getElementById('acct-name').value||'').trim()||'Vecino';
     const dialCode=document.getElementById('acct-phone-cc').value;
@@ -1188,6 +1444,7 @@ async function submitAuth(){
     const fullPhone='+'+dialCode+phoneDigits;
     btn.disabled=true;btn.textContent='Un momento…';
     result=await MC.signUp(email,password,name,fullPhone);
+    signedUpName=name;signedUpPhone=fullPhone;
   } else {
     btn.disabled=true;btn.textContent='Un momento…';
     result=await MC.signIn(email,password);
@@ -1195,6 +1452,13 @@ async function submitAuth(){
   btn.disabled=false;btn.textContent=original;
   if(result.error){toast(authErrorToast(result.error));return;}
   toast(accountMode==='signup'?'¡Cuenta creada! Ya tienes sesión iniciada ✓':'Sesión iniciada ✓');
+  if(accountMode==='signup'&&signedUpPhone){
+    // Verifying the phone is a security signal, not a login gate — this
+    // never blocks anything the account can already do; it's purely so
+    // the founder can confirm the number is real and genuinely theirs.
+    const msg='Hola, acabo de crear mi cuenta en MiCampeche. Mi nombre es '+signedUpName+' y mi número es: '+signedUpPhone;
+    window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(msg));
+  }
   const next=pendingPostAfterAuth;
   pendingPostAfterAuth=null;
   if(next){await openPost(next);} else {closeModal();}

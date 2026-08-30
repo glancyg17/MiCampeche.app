@@ -44,7 +44,9 @@ function makeChain(getResult) {
 }
 
 const SAMPLE = {
-  profiles: [{ id: 'uid-1', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true }],
+  // profiles moved to a stateful currentProfile object below — see the
+  // special-cased 'profiles' handling in from(), needed for real
+  // approve/reject/edit-account testing.
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', status: 'published' }],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, image_url: '', featured: true, status: 'published' }],
@@ -64,6 +66,7 @@ const SAMPLE = {
 // "has a business" after a real verifyBusiness() insert) — unlike the other
 // tables above, which are static read-only fixtures for these tests.
 let currentBusiness = null;
+let currentProfile = { id: 'uid-1', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true, phone_verification_status: 'pending', phone_verification_reason: null };
 
 // Mutable from outside the eval'd scope (unlike `MC`/`sb`, which are
 // let/const bindings private to that eval call and unreachable as
@@ -72,10 +75,13 @@ let currentBusiness = null;
 // lets the error-path tests below force a real Postgres-shaped error
 // through the REAL MC.submitAviso/claimOferta code, rather than
 // monkey-patching those functions out of the test.
-const forcedErrors = { insert: {}, delete: {}, update: {} };
+const forcedErrors = { insert: {}, delete: {}, update: {}, resetPassword: null, requestPasswordReset: null };
 
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
 let refreshSessionCallCount = 0;
+let authStateChangeCallback = null;
+let fakePasswordResetRequests = [];
+let fakeResetIdCounter = 0;
 Object.assign(forcedErrors, { updateUser: null, signIn: null });
 
 const lastInsert = {};
@@ -90,7 +96,11 @@ const fakeClient = {
     },
     updateUser: async ({ email, password, data }) => {
       if (forcedErrors.updateUser) return { data: null, error: forcedErrors.updateUser };
-      currentSession = { user: { id: 'uid-1', is_anonymous: false, email } };
+      // Preserve the existing email when only a password is sent (the
+      // real password-reset-completion flow does exactly this) — only
+      // overwrite it when a new one is actually provided (real signup).
+      const existingEmail = currentSession && currentSession.user ? currentSession.user.email : null;
+      currentSession = { user: { id: 'uid-1', is_anonymous: false, email: email !== undefined ? email : existingEmail } };
       return { data: { user: currentSession.user }, error: null };
     },
     refreshSession: async () => { refreshSessionCallCount++; return { data: { session: currentSession }, error: null }; },
@@ -100,6 +110,11 @@ const fakeClient = {
       return { data: { user: currentSession.user }, error: null };
     },
     signOut: async () => { currentSession = null; return { error: null }; },
+    resetPasswordForEmail: async (_email, _opts) => {
+      if (forcedErrors.resetPassword) return { data: null, error: forcedErrors.resetPassword };
+      return { data: {}, error: null };
+    },
+    onAuthStateChange: (cb) => { authStateChangeCallback = cb; return { data: { subscription: { unsubscribe: () => {} } } }; },
   },
   from(table) {
     if (table === 'businesses') {
@@ -117,6 +132,37 @@ const fakeClient = {
         }); },
       };
     }
+    if (table === 'password_reset_requests') {
+      return {
+        select: (..._a) => makeChain(() => ({
+          data: fakePasswordResetRequests.filter(r => r.status === 'pending').map(r => ({
+            ...r,
+            profiles: r.claimed_email === 'ricardo@example.com' ? { display_name: 'Ricardo Martín', phone: '+529811234567' } : null,
+          })),
+          error: null,
+        })),
+      };
+    }
+    if (table === 'profiles') {
+      return {
+        select: (...selectArgs) => {
+          const chain = makeChain(() => {
+            // fetchPendingPhoneVerifications filters by status — honor
+            // that specifically so the admin list can be tested for real
+            // (approve/reject actually removing the item), unlike most
+            // other tables here which intentionally ignore filters.
+            const wantsPendingOnly = selectArgs[0] && String(selectArgs[0]).includes('created_at');
+            const matches = wantsPendingOnly ? (currentProfile.phone_verification_status === 'pending') : true;
+            return { data: matches ? [currentProfile] : [], error: null };
+          });
+          return chain;
+        },
+        update: (row) => { lastUpdate.profiles = row; return makeChain(() => {
+          Object.assign(currentProfile, row);
+          return { data: [currentProfile], error: null };
+        }); },
+      };
+    }
     return {
       select: (..._a) => makeChain(() => ({ data: SAMPLE[table] || [], error: null })),
       insert: (row) => { lastInsert[table] = row; return makeChain(() => forcedErrors.insert[table]
@@ -130,7 +176,39 @@ const fakeClient = {
         : { data: [row], error: null }); },
     };
   },
-  rpc: async (_name, args) => ({ data: (args.p_oferta_ids || []).map(id => ({ oferta_id: id, claimed: 2 })), error: null }),
+  rpc: async (name, args) => {
+    if (name === 'get_ofertas_claim_counts') {
+      return { data: (args.p_oferta_ids || []).map(id => ({ oferta_id: id, claimed: 2 })), error: null };
+    }
+    if (name === 'request_password_reset') {
+      if (forcedErrors.requestPasswordReset) return { data: null, error: forcedErrors.requestPasswordReset };
+      fakeResetIdCounter++;
+      const id = 'reset-req-' + fakeResetIdCounter;
+      fakePasswordResetRequests.push({ id, claimed_email: args.p_email, status: 'pending', reset_code: null, attempt_count: 0 });
+      return { data: id, error: null };
+    }
+    if (name === 'approve_password_reset') {
+      const req = fakePasswordResetRequests.find(r => r.id === args.p_request_id);
+      if (!req || req.status !== 'pending') return { data: null, error: { message: 'request_not_pending' } };
+      req.reset_code = '123456';
+      req.status = 'approved';
+      return { data: req.reset_code, error: null };
+    }
+    if (name === 'reject_password_reset') {
+      const req = fakePasswordResetRequests.find(r => r.id === args.p_request_id);
+      if (req) req.status = 'rejected';
+      return { data: null, error: null };
+    }
+    if (name === 'complete_password_reset') {
+      const req = fakePasswordResetRequests.find(r => r.claimed_email === args.p_email && r.status === 'approved');
+      if (!req) return { data: 'invalid_or_expired_code', error: null };
+      if (req.reset_code !== args.p_code) { req.attempt_count++; return { data: 'invalid_or_expired_code', error: null }; }
+      if (args.p_new_password.length < 6) return { data: 'password_too_short', error: null };
+      req.status = 'completed';
+      return { data: 'ok', error: null };
+    }
+    return { data: null, error: null };
+  },
   storage: {
     from: (bucket) => ({
       upload: async (uploadPath, blob, opts) => {
@@ -152,6 +230,8 @@ const fakeClient = {
   // JSDOM's fetch/geolocation/etc aren't needed by our code; navigator.userAgent
   // defaults to jsdom's own UA, which isMobile() will read as "desktop" — fine,
   // both branches of that logic are trivial and not what we're testing here.
+  let lastWindowOpenUrl = null;
+  window.open = (url) => { lastWindowOpenUrl = url; return null; }; // jsdom's real open() just logs a warning and can't be inspected
 
   const clientCode = fs.readFileSync(path.join(__dirname, 'js/supabase-client.js'), 'utf8');
   const appCode = fs.readFileSync(path.join(__dirname, 'js/app.js'), 'utf8');
@@ -312,11 +392,146 @@ const fakeClient = {
     assert(text('toast') === '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'submitAuth() in signup mode → real MC.signUp → success toast');
     assert(lastUpdate.profiles && lastUpdate.profiles.phone === '+529811234567', 'Mexico (+52) default combines correctly too');
     assert(refreshSessionCallCount >= 1, 'signup forces a session refresh so the JWT drops the stale is_anonymous:true claim — without this, every new signup would fail on their very first authenticated action afterward (e.g. verifying a business) with a permission error');
+    assert(lastWindowOpenUrl && lastWindowOpenUrl.includes('wa.me') && lastWindowOpenUrl.includes(encodeURIComponent('+529811234567')), 'a successful signup opens WhatsApp with the REAL registered phone number in the message — this is the actual security signal the founder compares against the incoming sender number, not just a UI gesture');
+    assert(lastWindowOpenUrl.includes(encodeURIComponent('Ricardo')), 'the WhatsApp message also includes the real name, not a placeholder');
+
+    // ── Show/hide password toggle — a real DOM interaction, not just a
+    // cosmetic detail: confirm the input type actually changes. ──
+    await window.doSignOut();
+    await new Promise(r => setTimeout(r, 20));
+    await window.openAccount();
+    window.setAccountMode('login');
+    assert(doc.getElementById('acct-password').type === 'password', 'password field starts masked');
+    const toggleBtn = doc.querySelector('#acct-password + button, #acct-password ~ button');
+    window.togglePasswordVisibility('acct-password', toggleBtn);
+    assert(doc.getElementById('acct-password').type === 'text', 'toggling reveals the real password as plain text, not just a visual change');
+    window.togglePasswordVisibility('acct-password', toggleBtn);
+    assert(doc.getElementById('acct-password').type === 'password', 'toggling again re-masks it');
+
+    // ── Forgot password: WhatsApp-mediated request step ──
+    window.openForgotPassword();
+    assert(text('modal-title') === 'Recuperar contraseña', 'the forgot-password link opens a dedicated request screen');
+    await window.submitForgotPassword(); // no email typed yet
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Escribe tu correo', 'submitting with no email is blocked client-side, not sent to Supabase');
+
+    window.openForgotPassword();
+    doc.getElementById('forgot-email').value = 'ricardo@example.com';
+    await window.submitForgotPassword();
+    await new Promise(r => setTimeout(r, 30));
+    assert(text('toast') === 'Solicitud enviada — completa tu mensaje en WhatsApp ✓', 'a real request creates a record and confirms WhatsApp was opened');
+    assert(fakePasswordResetRequests.some(r => r.claimed_email === 'ricardo@example.com'), 'the request genuinely exists in the (fake) database, not just a client-side illusion');
+    assert(text('modal-title') === 'Iniciar sesión', 'after requesting, it returns to the login screen');
+
+    // Forced failure on the request itself must still surface a real error.
+    forcedErrors.requestPasswordReset = { message: 'simulated failure' };
+    window.openForgotPassword();
+    doc.getElementById('forgot-email').value = 'otra-persona@example.com';
+    await window.submitForgotPassword();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') !== 'Solicitud enviada — completa tu mensaje en WhatsApp ✓', 'a genuinely failed request does not show the success message');
+    forcedErrors.requestPasswordReset = null;
+
+    // ── Admin side: reviewing the request ──
+    await window.openPasswordResetRequests();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('ricardo@example.com'), 'admin sees the real requested email');
+    assert(text('modal-body').includes('Ricardo Martín') && text('modal-body').includes('+529811234567'), 'admin sees the matched account\'s real name and on-file phone — the actual thing they compare against the incoming WhatsApp number');
+
+    const beforeApproveCount = moderationQueueCountFromTitle(text('modal-title'));
+    const theRequest = fakePasswordResetRequests.find(r => r.claimed_email === 'ricardo@example.com');
+    await window.approvePasswordResetRequest(theRequest.id);
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast').includes('Aprobado — código:'), 'approving shows the real generated code so the admin can relay it manually');
+    assert(moderationQueueCountFromTitle(text('modal-title')) === beforeApproveCount - 1, 'approved request is removed from the pending list');
+    assert(theRequest.status === 'approved' && /^\d{6}$/.test(theRequest.reset_code), 'the request now genuinely holds a real 6-digit code, not a placeholder');
+
+    // ── Completing the reset with that real code ──
+    window.openCompletePasswordReset();
+    assert(text('modal-title') === 'Ingresa tu código', 'the "I have a code" screen is reachable from the login flow');
+    doc.getElementById('reset-complete-email').value = 'ricardo@example.com';
+    doc.getElementById('reset-complete-code').value = '000000'; // deliberately wrong
+    doc.getElementById('reset-complete-password').value = 'nuevaClaveSegura1';
+    await window.submitCompletePasswordReset();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Código inválido o vencido — pide uno nuevo por WhatsApp', 'a wrong code is rejected with a generic message, not revealing why');
+
+    doc.getElementById('reset-complete-code').value = theRequest.reset_code; // the real one
+    await window.submitCompletePasswordReset();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Contraseña actualizada! Ya puedes iniciar sesión ✓', 'the REAL code genuinely completes the reset');
+    assert(theRequest.status === 'completed', 'the request is marked completed, so this same code can never be reused');
+
+    // ── The recovery-link return: Supabase fires a real auth event when
+    // the link redirect lands back on the app — confirmed by actually
+    // invoking the captured callback, the same one supabase-js would call. ──
+    assert(typeof authStateChangeCallback === 'function', 'the app registered a real onAuthStateChange listener on load, not just planned to');
+    authStateChangeCallback('PASSWORD_RECOVERY', currentSession);
+    assert(text('modal-title') === 'Crea una nueva contraseña', 'a real PASSWORD_RECOVERY event opens the set-new-password screen automatically');
+
+    doc.getElementById('new-password-input').value = '123'; // too short
+    await window.submitNewPassword();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'La contraseña debe tener al menos 6 caracteres', 'a too-short new password is blocked, not sent to Supabase');
+
+    doc.getElementById('new-password-input').value = 'nuevaClave123';
+    await window.submitNewPassword();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Contraseña actualizada! ✓', 'a real valid new password succeeds with the right confirmation');
+
+    // Restore the signed-in-as-Ricardo state the rest of this test block
+    // expects — this section signed out on purpose to reach the login
+    // form; restoring directly (same uid) rather than via signIn, which
+    // would introduce a different fake session id and risk confusing
+    // later assertions that assume continuity with the same account.
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
 
     await window.openAccount();
     assert(text('modal-body').includes('ricardo@example.com'), 'openAccount() after signup shows the signed-in view with the real email');
     assert(text('modal-body').includes('+529811234567'), 'signed-in view shows the phone in international (+52…) format');
     assert(text('modal-body').includes('Cerrar sesión'), 'signed-in view offers sign-out');
+    assert(text('modal-body').includes('en revisión'), 'account view shows the phone as pending verification by default, not silently trusted');
+
+    // ── Editing my own account ──
+    window.openEditAccount();
+    assert(text('modal-title') === 'Editar mi cuenta', 'the edit-account screen opens from the account view');
+    assert(doc.getElementById('edit-acct-name').value === 'Ricardo Martín', 'edit form is pre-filled with the real current name (from the actual signup, now that profile updates genuinely persist)');
+    assert(doc.getElementById('edit-acct-phone').value === '+529811234567', 'edit form is pre-filled with the real current phone');
+    doc.getElementById('edit-acct-name').value = 'Ricardo Editado';
+    doc.getElementById('edit-acct-phone').value = '+529810009999';
+    await window.submitEditAccount();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Cambios guardados ✓', 'a real account edit succeeds with the right confirmation');
+    assert(lastUpdate.profiles && lastUpdate.profiles.phone === '+529810009999' && lastUpdate.profiles.display_name === 'Ricardo Editado', 'the real edited name and phone were sent to Supabase (the actual DB trigger — tested separately at the database level — is what resets verification to pending on a phone change)');
+
+    // ── Admin: reviewing phone verification requests ──
+    currentProfile.phone_verification_status = 'pending'; // simulate the reset the real DB trigger performs
+    await window.openPhoneVerifications();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Ricardo Editado'), 'admin sees the real (edited) name');
+    assert(text('modal-body').includes('+529810009999'), 'admin sees the real current phone to compare against the incoming WhatsApp sender');
+
+    await window.approvePhoneVerification('uid-1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Teléfono verificado ✓', 'approving shows the right confirmation');
+    assert(currentProfile.phone_verification_status === 'verified', 'the real status was actually updated, not just the UI');
+    assert(text('modal-body').includes('No hay solicitudes pendientes'), 'the approved request is removed from the admin list');
+
+    await window.openAccount();
+    assert(text('modal-body').includes('✓ verificado'), 'account view now shows the real verified badge');
+
+    // Reset to test the reject path too.
+    currentProfile.phone_verification_status = 'pending';
+    await window.openPhoneVerifications();
+    await window.rejectPhoneVerification('uid-1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Rechazado', 'rejecting shows the right confirmation');
+    assert(currentProfile.phone_verification_status === 'rejected' && currentProfile.phone_verification_reason, 'a real rejection reason was actually saved, not just a status flip');
+
+    await window.openAccount();
+    assert(text('modal-body').includes(currentProfile.phone_verification_reason), 'the account view shows the real rejection reason back to the account owner');
+    currentProfile.phone_verification_status = 'verified'; currentProfile.phone_verification_reason = null; // leave in a clean state for later tests
+    currentProfile.display_name = 'Ricardo Martín'; currentProfile.phone = '+529811234567'; // undo the edit-account test's change so downstream assertions (Perdidos/Avisos auto-fill) see the expected original value
 
     // Now that a real account exists, exercise the actual submit path
     // (real MC.submitAviso → fake insert → real toast handling) — these
