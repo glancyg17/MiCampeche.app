@@ -42,8 +42,9 @@
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <button class="tb-wx" id="tb-weather" onclick="openWeatherLightbox()"></button>
-        <div class="tb-icon" onclick="openAccount()">
+        <div class="tb-icon" id="tb-icon" onclick="openAccount()" style="position:relative">
           <svg class="ico" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
+          <span class="tb-badge" id="tb-badge"></span>
         </div>
       </div>
     </div>

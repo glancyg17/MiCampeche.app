@@ -1119,7 +1119,7 @@ function renderAccountSignedIn(acct){
         </span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      ${(biz.status==='published'&&!biz.is_premium)?`
+      ${(biz.status==='published'&&!biz.is_premium&&!acct.isAdmin)?`
         <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
           <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
           <span class="menu-item-txt">
@@ -1151,9 +1151,7 @@ function renderAccountSignedIn(acct){
         `).join('')}
       </div>
     `:''}
-    ${acct.isAdmin?`<button class="submit-btn" onclick="openModeration()">${svgIco('checkBadge')} Moderación</button>`:''}
-    ${acct.isAdmin?`<button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="openPasswordResetRequests()">Solicitudes de contraseña</button>`:''}
-    ${acct.isAdmin?`<button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="openPhoneVerifications()">Verificación de teléfono</button>`:''}
+    ${acct.isAdmin?`<button class="submit-btn" onclick="openPending()">${svgIco('checkBadge')} Pendiente</button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -1276,100 +1274,84 @@ async function submitCompletePasswordReset(){
    from the content moderation queue — the actions here (approve/reject)
    mean something different (unlocking a password entry, not publishing
    content), so it isn't folded into the same generic list/detail flow. */
-let passwordResetRequests=[];
-async function openPasswordResetRequests(){
-  document.getElementById('modal-title').textContent='Solicitudes de contraseña';
-  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
-  document.getElementById('modal-bg').classList.add('on');
-  passwordResetRequests=await MC.fetchPasswordResetRequests();
-  renderPasswordResetRequests();
-}
-function renderPasswordResetRequests(){
-  document.getElementById('modal-title').textContent=`Solicitudes de contraseña (${passwordResetRequests.length})`;
-  if(!passwordResetRequests.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay solicitudes pendientes.</div></div>`;
-    return;
-  }
-  let h='';
-  passwordResetRequests.forEach(r=>{
-    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
-      <div style="font-weight:700;font-size:14.5px">${e(r.claimedEmail)}</div>
-      <div style="color:var(--ink3);font-size:12.5px;margin-top:4px">${r.matchedName
-        ?`Cuenta encontrada: <b>${e(r.matchedName)}</b> · teléfono en archivo: <b>${e(r.matchedPhone||'—')}</b>`
-        :'⚠️ No se encontró una cuenta con este correo — verifica antes de aprobar'}</div>
-      <div style="color:var(--ink3);font-size:11.5px;margin-top:4px">Pedido ${relTimeEs(r.requestedAt)}</div>
-      <div style="color:var(--ink3);font-size:11.5px;margin-top:6px;font-style:italic">Compara el número desde el que te escribieron en WhatsApp con el teléfono en archivo antes de aprobar.</div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1" onclick="approvePasswordResetRequest('${r.id}')">Aprobar</button>
-        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPasswordResetRequest('${r.id}')">Rechazar</button>
-      </div>
-    </div>`;
-  });
-  document.getElementById('modal-body').innerHTML=h;
+/* ══════════════ ADMIN: unified "Pendiente" queue ══════════════
+   Combines content moderation, phone verification, and password reset
+   requests into ONE list — tapping an item routes to the right
+   detail/action screen based on its kind. Replaces three separate admin
+   buttons with one, since they're all really the same thing: something
+   waiting on the founder's personal review. */
+async function openPasswordResetDetail(requestId){
+  const item=moderationQueue.find(i=>i.kind==='password'&&i.id===requestId);
+  if(!item)return;
+  const r=item.raw;
+  document.getElementById('modal-title').textContent='Restablecer contraseña';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="margin-bottom:12px"><div class="fl">Correo solicitado</div><div style="font-size:14px;margin-top:2px">${e(r.claimedEmail)}</div></div>
+    <div style="margin-bottom:12px"><div class="fl">Cuenta</div><div style="font-size:14px;margin-top:2px">${r.matchedName?e(r.matchedName)+' · '+e(r.matchedPhone||'—'):'⚠️ No se encontró una cuenta con este correo'}</div></div>
+    <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Pedido ${relTimeEs(r.requestedAt)}</div>
+    <div style="color:var(--ink3);font-size:11.5px;margin-bottom:12px;font-style:italic">Compara el número desde el que te escribieron en WhatsApp con el teléfono en archivo antes de aprobar.</div>
+    <div style="display:flex;gap:8px">
+      <button class="submit-btn" style="margin-top:0;flex:1" onclick="approvePasswordResetRequest('${requestId}')">Aprobar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPasswordResetRequest('${requestId}')">Rechazar</button>
+    </div>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+  `;
 }
 async function approvePasswordResetRequest(id){
   const {data:code,error}=await MC.approvePasswordReset(id);
   if(error){toast(pgErrorToast(error,'No se pudo aprobar.'));return;}
-  passwordResetRequests=passwordResetRequests.filter(r=>r.id!==id);
-  renderPasswordResetRequests();
+  moderationQueue=moderationQueue.filter(i=>!(i.kind==='password'&&i.id===id));
+  renderPendingQueue();
   toast('Aprobado — código: '+code+' (compártelo por WhatsApp, válido 30 min)');
+  refreshPendingBadge();
 }
 async function rejectPasswordResetRequest(id){
   const {error}=await MC.rejectPasswordReset(id,'No se pudo verificar la identidad');
   if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
-  passwordResetRequests=passwordResetRequests.filter(r=>r.id!==id);
-  renderPasswordResetRequests();
+  moderationQueue=moderationQueue.filter(i=>!(i.kind==='password'&&i.id===id));
+  renderPendingQueue();
   toast('Rechazado');
+  refreshPendingBadge();
 }
 
-/* Admin: reviewing phone verification requests — same list/approve/reject
-   pattern as password reset requests. This is a security signal only
-   (see MC.updateMyAccount's comment) — approving/rejecting never blocks
-   the account from logging in or posting, only affects its verified
-   badge and whether that phone number can ever be verified elsewhere. */
-let phoneVerificationRequests=[];
-async function openPhoneVerifications(){
+/* This is a security signal only (see MC.updateMyAccount's comment) —
+   approving/rejecting never blocks the account from logging in or
+   posting, only affects its verified badge and whether that phone
+   number can ever be verified elsewhere. */
+function openPhoneVerificationDetail(profileId){
+  const item=moderationQueue.find(i=>i.kind==='phone'&&i.id===profileId);
+  if(!item)return;
+  const p=item.raw;
   document.getElementById('modal-title').textContent='Verificación de teléfono';
-  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
-  document.getElementById('modal-bg').classList.add('on');
-  phoneVerificationRequests=await MC.fetchPendingPhoneVerifications();
-  renderPhoneVerifications();
-}
-function renderPhoneVerifications(){
-  document.getElementById('modal-title').textContent=`Verificación de teléfono (${phoneVerificationRequests.length})`;
-  if(!phoneVerificationRequests.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay solicitudes pendientes.</div></div>`;
-    return;
-  }
-  let h='';
-  phoneVerificationRequests.forEach(p=>{
-    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
-      <div style="font-weight:700;font-size:14.5px">${e(p.display_name||'Vecino')}</div>
-      <div style="color:var(--ink3);font-size:13px;margin-top:2px">${e(p.phone||'—')}</div>
-      <div style="color:var(--ink3);font-size:11.5px;margin-top:4px">Creada ${relTimeEs(p.created_at)}</div>
-      <div style="color:var(--ink3);font-size:11.5px;margin-top:6px;font-style:italic">Compara este número con el que te escribió por WhatsApp antes de aprobar.</div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1" onclick="approvePhoneVerification('${p.id}')">Aprobar</button>
-        <button class="submit-btn" style="margin-top:0;padding:10px;font-size:13px;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPhoneVerification('${p.id}')">Rechazar</button>
-      </div>
-    </div>`;
-  });
-  document.getElementById('modal-body').innerHTML=h;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="margin-bottom:12px"><div class="fl">Nombre</div><div style="font-size:14px;margin-top:2px">${e(p.display_name||'Vecino')}</div></div>
+    <div style="margin-bottom:12px"><div class="fl">Teléfono</div><div style="font-size:14px;margin-top:2px">${e(p.phone||'—')}</div></div>
+    <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Creada ${relTimeEs(p.created_at)}</div>
+    <div style="color:var(--ink3);font-size:11.5px;margin-bottom:12px;font-style:italic">Compara este número con el que te escribió por WhatsApp antes de aprobar.</div>
+    <div style="display:flex;gap:8px">
+      <button class="submit-btn" style="margin-top:0;flex:1" onclick="approvePhoneVerification('${profileId}')">Aprobar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPhoneVerification('${profileId}')">Rechazar</button>
+    </div>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+  `;
 }
 async function approvePhoneVerification(profileId){
   const {error}=await MC.approvePhoneVerification(profileId);
   if(error){toast(pgErrorToast(error,'No se pudo aprobar — puede que ese número ya esté verificado en otra cuenta.'));return;}
-  phoneVerificationRequests=phoneVerificationRequests.filter(p=>p.id!==profileId);
-  renderPhoneVerifications();
+  moderationQueue=moderationQueue.filter(i=>!(i.kind==='phone'&&i.id===profileId));
+  renderPendingQueue();
   toast('Teléfono verificado ✓');
+  refreshPendingBadge();
 }
 async function rejectPhoneVerification(profileId){
   const {error}=await MC.rejectPhoneVerification(profileId,'No se pudo confirmar el número por WhatsApp');
   if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
-  phoneVerificationRequests=phoneVerificationRequests.filter(p=>p.id!==profileId);
-  renderPhoneVerifications();
+  moderationQueue=moderationQueue.filter(i=>!(i.kind==='phone'&&i.id===profileId));
+  renderPendingQueue();
   toast('Rechazado');
+  refreshPendingBadge();
 }
+
 
 /* User-facing: editing your own name/phone. Changing the phone always
    sends it back for re-verification (a real DB trigger enforces this,
@@ -1459,12 +1441,14 @@ async function submitAuth(){
     const msg='Hola, acabo de crear mi cuenta en MiCampeche. Mi nombre es '+signedUpName+' y mi número es: '+signedUpPhone;
     window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(msg));
   }
+  refreshPendingBadge();
   const next=pendingPostAfterAuth;
   pendingPostAfterAuth=null;
   if(next){await openPost(next);} else {closeModal();}
 }
 async function doSignOut(){
   await MC.signOut();
+  refreshPendingBadge();
   closeModal();
   toast('Sesión cerrada ✓');
 }
@@ -1477,22 +1461,34 @@ async function doSignOut(){
    backs every action here — this UI is convenience, not the security
    boundary. */
 let moderationQueue=[];
-async function openModeration(){
-  document.getElementById('modal-title').textContent='Moderación';
+async function openPending(){
+  document.getElementById('modal-title').textContent='Pendiente';
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
-  moderationQueue=await MC.fetchPendingQueue();
-  renderModerationQueue();
+  const [content,phone,password]=await Promise.all([
+    MC.fetchPendingQueue(),
+    MC.fetchPendingPhoneVerifications(),
+    MC.fetchPasswordResetRequests()
+  ]);
+  moderationQueue=[
+    ...content.map(c=>({kind:'content',...c})),
+    ...phone.map(p=>({kind:'phone',id:p.id,label:'Verificación de teléfono',title:p.display_name||'Vecino',submittedBy:p.phone||'—',createdAt:p.created_at,raw:p})),
+    ...password.map(r=>({kind:'password',id:r.id,label:'Restablecer contraseña',title:r.claimedEmail,submittedBy:r.matchedName?('Cuenta: '+r.matchedName):'⚠️ Sin cuenta encontrada',createdAt:r.requestedAt,raw:r}))
+  ].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  renderPendingQueue();
 }
-function renderModerationQueue(){
-  document.getElementById('modal-title').textContent=`Moderación (${moderationQueue.length})`;
+function renderPendingQueue(){
+  document.getElementById('modal-title').textContent=`Pendiente (${moderationQueue.length})`;
   if(!moderationQueue.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay nada pendiente de revisión.</div></div>`;
+    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay nada pendiente.</div></div>`;
     return;
   }
   let h='';
   moderationQueue.forEach(item=>{
-    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;cursor:pointer" onclick="openModerationDetail('${item.table}','${item.id}')">
+    const onclick=item.kind==='content'?`openModerationDetail('${item.table}','${item.id}')`
+      :item.kind==='phone'?`openPhoneVerificationDetail('${item.id}')`
+      :`openPasswordResetDetail('${item.id}')`;
+    h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;cursor:pointer" onclick="${onclick}">
       <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(item.label)}</div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(item.title)}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
@@ -1532,7 +1528,7 @@ function openModerationDetail(table,id){
       <button class="submit-btn" style="margin-top:0;flex:1" onclick="moderateItem('${table}','${id}','published')">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openRejectReasonPrompt('${table}','${id}')">Rechazar</button>
     </div>
-    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderModerationQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
 }
 
@@ -1559,8 +1555,9 @@ async function moderateItem(table,id,newStatus,reason){
   const {error}=await MC.moderatePost(table,id,newStatus,reason);
   if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));if(btn){btn.disabled=false;btn.textContent='Rechazar';}return;}
   moderationQueue=moderationQueue.filter(i=>!(i.table===table&&i.id===id));
-  renderModerationQueue();
+  renderPendingQueue();
   toast(newStatus==='published'?'Publicado ✓':'Rechazado — el motivo quedó guardado');
+  refreshPendingBadge();
 }
 
 
@@ -1815,6 +1812,23 @@ async function refreshContent(){
   renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();
   renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
   renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
+  refreshPendingBadge();
+}
+
+/* Header notification badge — admin-only for now (per the founder's own
+   scoping: regular accounts may get their own notifications later, but
+   this is just the admin's "Pendiente" count today). Called on load,
+   after sign-in/out (admin status can change), after pull-to-refresh,
+   and after every approve/reject action so the count stays live without
+   needing to close and reopen anything. */
+async function refreshPendingBadge(){
+  const badge=document.getElementById('tb-badge');
+  if(!badge)return;
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn||!acct.isAdmin){badge.classList.remove('on');badge.textContent='';return;}
+  const count=await MC.fetchPendingCount();
+  if(count>0){badge.textContent=count>99?'99+':String(count);badge.classList.add('on');}
+  else{badge.classList.remove('on');badge.textContent='';}
 }
 
 async function init(){

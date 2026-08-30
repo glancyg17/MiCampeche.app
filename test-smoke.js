@@ -75,7 +75,7 @@ let currentProfile = { id: 'uid-1', display_name: 'Vecino Test', phone: '+529811
 // lets the error-path tests below force a real Postgres-shaped error
 // through the REAL MC.submitAviso/claimOferta code, rather than
 // monkey-patching those functions out of the test.
-const forcedErrors = { insert: {}, delete: {}, update: {}, resetPassword: null, requestPasswordReset: null };
+const forcedErrors = { insert: {}, delete: {}, update: {}, resetPassword: null, requestPasswordReset: null, profilesUpdateFailOnce: false, profilesUpdateAlways: false };
 
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
 let refreshSessionCallCount = 0;
@@ -158,6 +158,13 @@ const fakeClient = {
           return chain;
         },
         update: (row) => { lastUpdate.profiles = row; return makeChain(() => {
+          if (forcedErrors.profilesUpdateFailOnce) {
+            forcedErrors.profilesUpdateFailOnce = false; // simulates a transient failure that succeeds on retry
+            return { data: null, error: { message: 'simulated transient failure' } };
+          }
+          if (forcedErrors.profilesUpdateAlways) {
+            return { data: null, error: { message: 'simulated persistent failure' } };
+          }
           Object.assign(currentProfile, row);
           return { data: [currentProfile], error: null };
         }); },
@@ -367,6 +374,36 @@ const fakeClient = {
     assert(text('toast') === 'Ingresa un número de teléfono válido', 'signup with too-short phone is blocked, not silently accepted');
     assert(text('modal-title') === 'Crear cuenta', 'blocked signup leaves the form open rather than closing the modal');
 
+    // ── The real production bug: MC.signUp()'s profile-update call had
+    // zero error handling, so a transient failure silently looked like
+    // success while real name/phone never actually persisted. Now it
+    // retries once, and genuinely surfaces the error if it still fails. ──
+    forcedErrors.profilesUpdateFailOnce = true;
+    doc.getElementById('acct-name').value = 'Reintento Exitoso';
+    doc.getElementById('acct-email').value = 'reintento@example.com';
+    doc.getElementById('acct-phone').value = '981 555 1212';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'a transient failure on the FIRST attempt still results in overall success, thanks to the retry');
+    assert(currentProfile.display_name === 'Reintento Exitoso' && currentProfile.phone === '+529815551212', 'the retry genuinely persisted the real data — this is exactly what was silently failing in production before the fix');
+
+    await window.doSignOut();
+    await new Promise(r => setTimeout(r, 20));
+
+    forcedErrors.profilesUpdateAlways = true;
+    doc.getElementById('acct-name').value = 'Fallo Persistente';
+    doc.getElementById('acct-email').value = 'fallopersistente@example.com';
+    doc.getElementById('acct-phone').value = '981 555 3434';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') !== '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'a failure that persists through the retry is now genuinely surfaced as an error — this is the actual fix: no more silent false-success');
+    forcedErrors.profilesUpdateAlways = false;
+
+    await window.doSignOut();
+    await new Promise(r => setTimeout(r, 20));
+
     // Switching the country selector should change the combined number
     // actually sent to Supabase, not just be cosmetic. Checked directly
     // against what MC.signUp really sent, not a fixture guess.
@@ -432,18 +469,21 @@ const fakeClient = {
     assert(text('toast') !== 'Solicitud enviada — completa tu mensaje en WhatsApp ✓', 'a genuinely failed request does not show the success message');
     forcedErrors.requestPasswordReset = null;
 
-    // ── Admin side: reviewing the request ──
-    await window.openPasswordResetRequests();
+    // ── Admin side: reviewing the request via the unified Pendiente queue ──
+    await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('ricardo@example.com'), 'admin sees the real requested email');
+    assert(text('modal-body').includes('ricardo@example.com'), 'admin sees the real requested email in the unified Pendiente list');
+    const beforeApproveCount = moderationQueueCountFromTitle(text('modal-title'));
+
+    const theRequest = fakePasswordResetRequests.find(r => r.claimed_email === 'ricardo@example.com');
+    window.openPasswordResetDetail(theRequest.id);
+    assert(text('modal-title') === 'Restablecer contraseña', 'tapping the password-reset item in the list opens its own detail screen');
     assert(text('modal-body').includes('Ricardo Martín') && text('modal-body').includes('+529811234567'), 'admin sees the matched account\'s real name and on-file phone — the actual thing they compare against the incoming WhatsApp number');
 
-    const beforeApproveCount = moderationQueueCountFromTitle(text('modal-title'));
-    const theRequest = fakePasswordResetRequests.find(r => r.claimed_email === 'ricardo@example.com');
     await window.approvePasswordResetRequest(theRequest.id);
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast').includes('Aprobado — código:'), 'approving shows the real generated code so the admin can relay it manually');
-    assert(moderationQueueCountFromTitle(text('modal-title')) === beforeApproveCount - 1, 'approved request is removed from the pending list');
+    assert(moderationQueueCountFromTitle(text('modal-title')) === beforeApproveCount - 1, 'approved request is removed from the unified pending list, back on the list view');
     assert(theRequest.status === 'approved' && /^\d{6}$/.test(theRequest.reset_code), 'the request now genuinely holds a real 6-digit code, not a placeholder');
 
     // ── Completing the reset with that real code ──
@@ -504,25 +544,29 @@ const fakeClient = {
     assert(text('toast') === 'Cambios guardados ✓', 'a real account edit succeeds with the right confirmation');
     assert(lastUpdate.profiles && lastUpdate.profiles.phone === '+529810009999' && lastUpdate.profiles.display_name === 'Ricardo Editado', 'the real edited name and phone were sent to Supabase (the actual DB trigger — tested separately at the database level — is what resets verification to pending on a phone change)');
 
-    // ── Admin: reviewing phone verification requests ──
+    // ── Admin: reviewing phone verification requests via unified Pendiente ──
     currentProfile.phone_verification_status = 'pending'; // simulate the reset the real DB trigger performs
-    await window.openPhoneVerifications();
+    await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('Ricardo Editado'), 'admin sees the real (edited) name');
+    assert(text('modal-body').includes('Ricardo Editado'), 'admin sees the real (edited) name in the unified pending list');
     assert(text('modal-body').includes('+529810009999'), 'admin sees the real current phone to compare against the incoming WhatsApp sender');
+
+    window.openPhoneVerificationDetail('uid-1');
+    assert(text('modal-title') === 'Verificación de teléfono', 'tapping the phone item in the list opens its own detail screen');
 
     await window.approvePhoneVerification('uid-1');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Teléfono verificado ✓', 'approving shows the right confirmation');
     assert(currentProfile.phone_verification_status === 'verified', 'the real status was actually updated, not just the UI');
-    assert(text('modal-body').includes('No hay solicitudes pendientes'), 'the approved request is removed from the admin list');
+    assert(!text('modal-body').includes('Ricardo Editado'), 'the approved phone-verification request is removed from the unified pending list (other unrelated pending content remains, since this fake\'s content tables don\'t filter by status)');
 
     await window.openAccount();
     assert(text('modal-body').includes('✓ verificado'), 'account view now shows the real verified badge');
 
     // Reset to test the reject path too.
     currentProfile.phone_verification_status = 'pending';
-    await window.openPhoneVerifications();
+    await window.openPending();
+    window.openPhoneVerificationDetail('uid-1');
     await window.rejectPhoneVerification('uid-1');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado', 'rejecting shows the right confirmation');
@@ -695,7 +739,15 @@ const fakeClient = {
 
     await window.openAccount();
     assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view now shows the verified business');
-    assert(text('modal-body').includes('Actualizar a Premium'), 'Premium upsell now appears since the business is approved');
+    assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell correctly stays hidden for admin accounts — admin already has premium (and more) rights, so there\'s nothing to upgrade to');
+
+    // Prove it's genuinely the admin check gating this, not some other
+    // coincidental condition — same business, same approved status, only
+    // is_admin changes.
+    currentProfile.is_admin = false;
+    await window.openAccount();
+    assert(text('modal-body').includes('Actualizar a Premium'), 'a non-admin with the exact same approved, non-premium business DOES see the upsell — confirming is_admin is what specifically gates it');
+    currentProfile.is_admin = true; // restore — later tests (Moderación/Pendiente access) need this fixture to stay admin
 
     // ── Editing an existing (approved) business ──
     await window.openBusinessEdit();
@@ -780,13 +832,13 @@ const fakeClient = {
     assert(text('toast') === '¡Pago recibido! Activaremos tu cuenta Premium en breve.', 'Premium payment return shows a confirmation, not an immediate upgrade');
     assert(!lastUpdate.businesses, 'returning from a Premium payment never calls a client-side update to is_premium — that stays a manual, founder-verified step');
 
-    // ── Admin moderation queue (this fixture account is_admin: true) ──
+    // ── Admin unified Pendiente queue (this fixture account is_admin: true) ──
     await window.openAccount();
-    assert(text('modal-body').includes('Moderación'), 'signed-in admin sees the Moderación entry point (a non-admin would not)');
+    assert(text('modal-body').includes('Pendiente'), 'signed-in admin sees the unified Pendiente entry point (a non-admin would not)');
 
-    await window.openModeration();
+    await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Moderación (10)', 'queue aggregates one pending item from each of the 9 content tables plus business verification requests');
+    assert(text('modal-title') === 'Pendiente (10)', 'queue aggregates one pending item from each of the 9 content tables plus business verification requests (phone/password requests from earlier tests are already resolved by this point, so the count matches the content-only total)');
 
     // The whole point of this change: a business verification request
     // should show enough to actually review, not just a name.
@@ -794,7 +846,7 @@ const fakeClient = {
     assert(text('modal-body').includes('Tacos al pastor'), 'business detail view shows the real description, not just the business name');
     assert(text('modal-body').includes('Lun-Sáb 9am-8pm'), 'business detail view shows hours');
     assert(text('modal-body').includes('instagram.com/tacolocotest'), 'business detail view shows the social/website link');
-    window.renderModerationQueue();
+    window.renderPendingQueue();
     assert(!text('modal-body').includes('Aprobar') && !text('modal-body').includes('Rechazar'), 'the LIST no longer has blind approve/reject buttons — reviewing detail is required first');
 
     // Tapping an item opens its full detail — real submitted fields, not
@@ -818,7 +870,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Moderación (9)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (9)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list).
     window.openModerationDetail('noticias', 'n1');

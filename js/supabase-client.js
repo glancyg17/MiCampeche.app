@@ -65,7 +65,21 @@ MC.signUp=async function(email,password,displayName,phone){
   // and phone. Phone is required at signup (per the founder's own call —
   // more durably useful than email for this community, and it's what
   // makes contact-info auto-fill on posts possible).
-  await sb.from('profiles').update({display_name:displayName,phone}).eq('id',data.user.id);
+  //
+  // Real bug found in production: this call previously had NO error
+  // checking at all — real signups were silently keeping the placeholder
+  // "Vecino" name and a null phone while still reporting success to the
+  // person signing up. Retries once against an explicitly re-fetched
+  // session before giving up, since even after refreshSession() above,
+  // the very next request can still occasionally race against the
+  // refreshed token actually being live client-side — the same class of
+  // issue refreshSession() itself exists to guard against.
+  let {error:profileErr}=await sb.from('profiles').update({display_name:displayName,phone}).eq('id',data.user.id);
+  if(profileErr){
+    await sb.auth.getSession();
+    ({error:profileErr}=await sb.from('profiles').update({display_name:displayName,phone}).eq('id',data.user.id));
+  }
+  if(profileErr)return {error:profileErr};
   return {error:null};
 };
 
@@ -119,7 +133,12 @@ MC.completePasswordResetWhatsApp=async function(email,code,newPassword){
 };
 
 MC.fetchPasswordResetRequests=async function(){
-  const {data,error}=await sb.from('password_reset_requests').select('*, profiles(display_name,phone)').eq('status','pending').order('requested_at',{ascending:true});
+  // Real bug found in production: password_reset_requests has TWO foreign
+  // keys to profiles (profile_id and approved_by) — a plain "profiles(...)"
+  // embed is ambiguous to PostgREST and fails outright, which is why this
+  // admin list was silently showing nothing despite real pending requests
+  // existing. profiles!profile_id explicitly names which relationship to embed.
+  const {data,error}=await sb.from('password_reset_requests').select('*, profiles!profile_id(display_name,phone)').eq('status','pending').order('requested_at',{ascending:true});
   if(error){console.error(error);return [];}
   return (data||[]).map(r=>({
     id:r.id,claimedEmail:r.claimed_email,requestedAt:r.requested_at,
@@ -327,6 +346,19 @@ MC.fetchPendingQueue=async function(){
     }));
   }));
   return results.flat().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+};
+
+/* For the header badge — combines all three "waiting on the founder"
+   sources into one count, same three sources openPending() itself
+   fetches. A little redundant when Pendiente is actually opened right
+   after, but simple and this app's scale makes that redundancy cheap. */
+MC.fetchPendingCount=async function(){
+  const [content,phone,password]=await Promise.all([
+    MC.fetchPendingQueue(),
+    MC.fetchPendingPhoneVerifications(),
+    MC.fetchPasswordResetRequests()
+  ]);
+  return content.length+phone.length+password.length;
 };
 
 MC.moderatePost=async function(table,id,newStatus,reason){
