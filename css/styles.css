@@ -52,7 +52,7 @@ svg{display:block}
 /* ═══ TOP CHROME (now just a header, no nav) ═══ */
 .chrome{background:linear-gradient(165deg,var(--night3),var(--night));flex-shrink:0;padding-top:env(safe-area-inset-top);position:relative;z-index:1}
 .topbar{padding:16px 18px 15px;display:flex;align-items:center;justify-content:space-between}
-.brand{display:flex;align-items:center;gap:8px;background:none;border:none;padding:0;cursor:pointer}
+.brand{display:flex;align-items:center;gap:8px;background:transparent;border:none;padding:0;cursor:pointer;-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent}
 .brand-logo{height:26px;width:auto;display:block}
 .menu-hdr .brand-logo{height:24px}
 .tb-icon{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;color:var(--paper);cursor:pointer;text-decoration:none}

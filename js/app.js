@@ -52,7 +52,6 @@ function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
 function goToInfo(){closeMenu();nav('info');}
-function goToAccount(){closeMenu();openAccount();}
 function contactUs(){
   closeMenu();
   window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent('Hola, tengo una pregunta sobre MiCampeche'));
