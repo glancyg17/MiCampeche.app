@@ -189,6 +189,21 @@ MC.updateMyAccount=async function(d){
   return sb.from('profiles').update({display_name:d.name,phone:d.phone}).eq('id',uid);
 };
 
+/* Early, friendly check before someone goes through the whole WhatsApp
+   verification dance for a number that could never actually be verified
+   (the database's partial unique index on verified phones is the real,
+   final backstop against two accounts sharing a number — this just
+   catches the common case earlier, with a clearer message, rather than
+   letting the request fail silently at approval time much later). Fails
+   open (returns false) on a query error so a transient issue never
+   blocks a real signup — the database constraint still protects the
+   actual guarantee either way. */
+MC.isPhoneAlreadyVerified=async function(phone){
+  const {data,error}=await sb.from('profiles').select('id').eq('phone',phone).eq('phone_verification_status','verified').limit(1);
+  if(error){console.error('Phone uniqueness check failed:',error);return false;}
+  return !!(data&&data.length);
+};
+
 MC.fetchPendingPhoneVerifications=async function(){
   const {data,error}=await sb.from('profiles').select('id,display_name,phone,created_at').eq('phone_verification_status','pending').not('phone','is',null).order('created_at',{ascending:true});
   if(error){console.error(error);return [];}

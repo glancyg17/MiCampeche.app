@@ -67,6 +67,7 @@ const SAMPLE = {
 // tables above, which are static read-only fixtures for these tests.
 let currentBusiness = null;
 let currentProfile = { id: 'uid-1', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true, phone_verification_status: 'pending', phone_verification_reason: null };
+let fakePhoneAlreadyVerified = false; // controllable flag for MC.isPhoneAlreadyVerified — defaults to "no match" so normal signup/edit tests aren't blocked by a false positive
 
 // Mutable from outside the eval'd scope (unlike `MC`/`sb`, which are
 // let/const bindings private to that eval call and unreachable as
@@ -147,11 +148,18 @@ const fakeClient = {
       return {
         select: (...selectArgs) => {
           const chain = makeChain(() => {
+            const selectStr = selectArgs[0] ? String(selectArgs[0]) : '';
+            if (selectStr === 'id') {
+              // MC.isPhoneAlreadyVerified's exact shape — a dedicated
+              // controllable flag, defaulting to "no match" so normal
+              // signup/edit tests aren't blocked by a false positive.
+              return { data: fakePhoneAlreadyVerified ? [{ id: 'some-other-uid' }] : [], error: null };
+            }
             // fetchPendingPhoneVerifications filters by status — honor
             // that specifically so the admin list can be tested for real
             // (approve/reject actually removing the item), unlike most
             // other tables here which intentionally ignore filters.
-            const wantsPendingOnly = selectArgs[0] && String(selectArgs[0]).includes('created_at');
+            const wantsPendingOnly = selectStr.includes('created_at');
             const matches = wantsPendingOnly ? (currentProfile.phone_verification_status === 'pending') : true;
             return { data: matches ? [currentProfile] : [], error: null };
           });
@@ -349,7 +357,10 @@ const fakeClient = {
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Publicar un aviso', 'signing up from the gate resumes directly into the originally-requested Avisos form, not just closing');
+    assert(text('modal-title') === 'Un paso más: WhatsApp', 'signup now shows the WhatsApp explanation step first, before resuming anything');
+    window.runWhatsAppStepContinue();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Publicar un aviso', 'tapping through the WhatsApp step resumes directly into the originally-requested Avisos form, not just closing');
     await window.doSignOut(); // back to anonymous for the rest of the account-flow tests below
     await new Promise(r => setTimeout(r, 20));
   } catch (err) {
@@ -374,6 +385,20 @@ const fakeClient = {
     assert(text('toast') === 'Ingresa un número de teléfono válido', 'signup with too-short phone is blocked, not silently accepted');
     assert(text('modal-title') === 'Crear cuenta', 'blocked signup leaves the form open rather than closing the modal');
 
+    // ── Proactive phone-uniqueness check: signup is blocked BEFORE it
+    // ever reaches Supabase if the number is already verified elsewhere,
+    // not just left to fail later at admin-approval time. ──
+    fakePhoneAlreadyVerified = true;
+    doc.getElementById('acct-name').value = 'Numero Duplicado';
+    doc.getElementById('acct-email').value = 'duplicado@example.com';
+    doc.getElementById('acct-phone').value = '981 000 0000';
+    doc.getElementById('acct-password').value = 'secreto123';
+    await window.submitAuth();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Ese número ya está verificado en otra cuenta — usa uno diferente', 'signing up with an already-verified phone number is blocked proactively, with a clear reason');
+    assert(!lastUpdate.profiles || lastUpdate.profiles.phone !== '+529810000000', 'the blocked signup never actually reached Supabase with this number');
+    fakePhoneAlreadyVerified = false;
+
     // ── The real production bug: MC.signUp()'s profile-update call had
     // zero error handling, so a transient failure silently looked like
     // success while real name/phone never actually persisted. Now it
@@ -385,11 +410,15 @@ const fakeClient = {
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'a transient failure on the FIRST attempt still results in overall success, thanks to the retry');
+    assert(text('modal-title') === 'Un paso más: WhatsApp', 'a transient failure on the FIRST attempt still results in overall success, thanks to the retry — reaching the WhatsApp step proves signUp() didn\'t error out');
     assert(currentProfile.display_name === 'Reintento Exitoso' && currentProfile.phone === '+529815551212', 'the retry genuinely persisted the real data — this is exactly what was silently failing in production before the fix');
+    window.runWhatsAppStepContinue();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Cuenta creada! Revisaremos tu número pronto ✓', 'completing the WhatsApp step shows the real post-verification-request confirmation');
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
+    await window.openAccount(); // previous signup closed the modal entirely after the WhatsApp step
 
     forcedErrors.profilesUpdateAlways = true;
     doc.getElementById('acct-name').value = 'Fallo Persistente';
@@ -398,7 +427,8 @@ const fakeClient = {
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') !== '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'a failure that persists through the retry is now genuinely surfaced as an error — this is the actual fix: no more silent false-success');
+    assert(text('modal-title') !== 'Un paso más: WhatsApp', 'a failure that persists through the retry never reaches the WhatsApp step at all — this is the actual fix: no more silent false-success');
+    assert(text('toast') !== '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'and no false-success toast shows either');
     forcedErrors.profilesUpdateAlways = false;
 
     await window.doSignOut();
@@ -418,6 +448,7 @@ const fakeClient = {
 
     await window.doSignOut(); // reset back to a fresh anonymous session before the main signup test below
     await new Promise(r => setTimeout(r, 20));
+    await window.openAccount(); // the previous signup left the modal on the WhatsApp step screen, not the form
 
     doc.getElementById('acct-name').value = 'Ricardo Martín';
     doc.getElementById('acct-email').value = 'ricardo@example.com';
@@ -426,11 +457,16 @@ const fakeClient = {
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'submitAuth() in signup mode → real MC.signUp → success toast');
+    assert(text('modal-title') === 'Un paso más: WhatsApp', 'signup shows the WhatsApp explanation step first, not an immediate success toast');
+    const signupWaLink = doc.querySelector('#modal-body a[href*="wa.me"]');
+    assert(!!signupWaLink, 'a real WhatsApp link is rendered on this screen, not just a description of one');
+    assert(signupWaLink.getAttribute('href').includes(encodeURIComponent('+529811234567')), 'the link includes the REAL registered phone number — the actual security signal the founder compares against the incoming sender, not just a UI gesture');
+    assert(signupWaLink.getAttribute('href').includes(encodeURIComponent('Ricardo')), 'the link also includes the real name, not a placeholder');
+    window.runWhatsAppStepContinue();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === '¡Cuenta creada! Revisaremos tu número pronto ✓', 'completing the WhatsApp step shows the real post-signup confirmation');
     assert(lastUpdate.profiles && lastUpdate.profiles.phone === '+529811234567', 'Mexico (+52) default combines correctly too');
     assert(refreshSessionCallCount >= 1, 'signup forces a session refresh so the JWT drops the stale is_anonymous:true claim — without this, every new signup would fail on their very first authenticated action afterward (e.g. verifying a business) with a permission error');
-    assert(lastWindowOpenUrl && lastWindowOpenUrl.includes('wa.me') && lastWindowOpenUrl.includes(encodeURIComponent('+529811234567')), 'a successful signup opens WhatsApp with the REAL registered phone number in the message — this is the actual security signal the founder compares against the incoming sender number, not just a UI gesture');
-    assert(lastWindowOpenUrl.includes(encodeURIComponent('Ricardo')), 'the WhatsApp message also includes the real name, not a placeholder');
 
     // ── Show/hide password toggle — a real DOM interaction, not just a
     // cosmetic detail: confirm the input type actually changes. ──
@@ -456,9 +492,14 @@ const fakeClient = {
     doc.getElementById('forgot-email').value = 'ricardo@example.com';
     await window.submitForgotPassword();
     await new Promise(r => setTimeout(r, 30));
-    assert(text('toast') === 'Solicitud enviada — completa tu mensaje en WhatsApp ✓', 'a real request creates a record and confirms WhatsApp was opened');
+    assert(text('modal-title') === 'Un paso más: WhatsApp', 'a real request shows the WhatsApp explanation step, not an immediate toast');
+    const resetWaLink = doc.querySelector('#modal-body a[href*="wa.me"]');
+    assert(!!resetWaLink && resetWaLink.getAttribute('href').includes(encodeURIComponent('ricardo@example.com')), 'the link includes the real claimed email');
     assert(fakePasswordResetRequests.some(r => r.claimed_email === 'ricardo@example.com'), 'the request genuinely exists in the (fake) database, not just a client-side illusion');
-    assert(text('modal-title') === 'Iniciar sesión', 'after requesting, it returns to the login screen');
+    window.runWhatsAppStepContinue();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Solicitud enviada — revisaremos tu mensaje pronto ✓', 'completing the WhatsApp step shows the real confirmation');
+    assert(text('modal-title') === 'Iniciar sesión', 'after completing the step, it returns to the login screen');
 
     // Forced failure on the request itself must still surface a real error.
     forcedErrors.requestPasswordReset = { message: 'simulated failure' };
@@ -466,7 +507,7 @@ const fakeClient = {
     doc.getElementById('forgot-email').value = 'otra-persona@example.com';
     await window.submitForgotPassword();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') !== 'Solicitud enviada — completa tu mensaje en WhatsApp ✓', 'a genuinely failed request does not show the success message');
+    assert(text('modal-title') !== 'Un paso más: WhatsApp', 'a genuinely failed request never reaches the WhatsApp step at all');
     forcedErrors.requestPasswordReset = null;
 
     // ── Admin side: reviewing the request via the unified Pendiente queue ──

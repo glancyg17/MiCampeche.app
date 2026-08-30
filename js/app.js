@@ -896,13 +896,13 @@ const POST_FORMS={
   negocio_verificar:{title:'Verifica tu negocio',note:'Esta información se guarda en tu cuenta — no necesitas volver a escribirla en cada publicación.',fields:[
     {k:'name',lbl:'Nombre del negocio',type:'text',ph:'Ej. Repostería Tsuk Tun'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'¿Qué venden o qué servicio ofrecen?'},
-    {k:'photo',lbl:'Logo o foto del negocio (opcional)',type:'imgupload'},
+    {k:'photo',lbl:'Logo o foto del negocio',type:'imgupload'},
     {k:'address',lbl:'Dirección',type:'text',ph:'Calle, número, colonia'},
     {k:'phone',lbl:'Teléfono del negocio',type:'tel',ph:'981 000 0000'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Servicios','Otro']},
-    {k:'hours',lbl:'Horario de atención (opcional)',type:'text',ph:'Ej. Lun-Sáb 9am-8pm'},
-    {k:'social',lbl:'Red social o sitio web (opcional)',type:'text',ph:'Ej. instagram.com/tunegocio'},
-    {k:'rfc',lbl:'RFC (opcional)',type:'text',ph:'Opcional'}
+    {k:'hours',lbl:'Horario de atención',type:'text',ph:'Ej. Lun-Sáb 9am-8pm'},
+    {k:'social',lbl:'Red social o sitio web',type:'text',ph:'Ej. instagram.com/tunegocio'},
+    {k:'rfc',lbl:'RFC',type:'text',ph:''}
   ]}
 };
 
@@ -1209,6 +1209,33 @@ function togglePasswordVisibility(id,btn){
    on file before approving. The email-link version above stays in place,
    dormant, ready for whenever real SMTP makes it usable — this is the
    flow actually in use right now. */
+/* Shown after signup or a forgot-password request, before WhatsApp opens
+   — explains WHY, so tapping the button is an informed choice instead of
+   a surprise app-switch. The actual "continue the app flow" logic only
+   runs once they've tapped through, not the moment this screen appears. */
+let pendingWhatsAppContinue=null;
+function openWhatsAppStep(waMessage,explanation,onContinue){
+  pendingWhatsAppContinue=onContinue;
+  const waUrl='https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(waMessage);
+  document.getElementById('modal-title').textContent='Un paso más: WhatsApp';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:16px 10px 6px">
+      ${svgIco('checkBadge')}
+      <div style="font-weight:700;font-size:15px;margin-top:10px">¿Por qué te pedimos esto?</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">${explanation}</div>
+    </div>
+    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none" href="${waUrl}" target="_blank" rel="noopener" onclick="runWhatsAppStepContinue()">
+      ${svgIco('phone')}Abrir WhatsApp
+    </a>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+function runWhatsAppStepContinue(){
+  const fn=pendingWhatsAppContinue;
+  pendingWhatsAppContinue=null;
+  if(fn)fn();
+}
+
 function openForgotPassword(){
   document.getElementById('modal-title').textContent='Recuperar contraseña';
   document.getElementById('modal-body').innerHTML=`
@@ -1230,9 +1257,10 @@ async function submitForgotPassword(){
   btn.disabled=false;btn.textContent=original;
   if(error){toast('No se pudo enviar tu solicitud — intenta de nuevo.');return;}
   const msg='Hola, olvidé mi contraseña de MiCampeche. Mi correo registrado es: '+email;
-  window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(msg));
-  toast('Solicitud enviada — completa tu mensaje en WhatsApp ✓');
-  setAccountMode('login');
+  openWhatsAppStep(msg,'Para confirmar que fuiste tú quien pidió este cambio — y no alguien más usando tu correo — necesitamos un mensaje tuyo por WhatsApp desde el número registrado en tu cuenta.',()=>{
+    toast('Solicitud enviada — revisaremos tu mensaje pronto ✓');
+    setAccountMode('login');
+  });
 }
 
 /* Once the founder has verified the WhatsApp message and approved the
@@ -1374,6 +1402,11 @@ async function submitEditAccount(){
   const name=(document.getElementById('edit-acct-name').value||'').trim();
   const phone=(document.getElementById('edit-acct-phone').value||'').trim();
   if(!name||!phone){toast('Completa tu nombre y teléfono');return;}
+  const acct=lastFetchedAccount;
+  if(acct&&phone!==acct.phone&&await MC.isPhoneAlreadyVerified(phone)){
+    toast('Ese número ya está verificado en otra cuenta');
+    return;
+  }
   const btn=document.getElementById('edit-acct-btn');
   const original=btn.textContent;
   btn.disabled=true;btn.textContent='Guardando…';
@@ -1424,6 +1457,10 @@ async function submitAuth(){
     const phoneDigits=(document.getElementById('acct-phone').value||'').replace(/\D/g,'');
     if(phoneDigits.length<6||phoneDigits.length>12){toast('Ingresa un número de teléfono válido');return;}
     const fullPhone='+'+dialCode+phoneDigits;
+    if(await MC.isPhoneAlreadyVerified(fullPhone)){
+      toast('Ese número ya está verificado en otra cuenta — usa uno diferente');
+      return;
+    }
     btn.disabled=true;btn.textContent='Un momento…';
     result=await MC.signUp(email,password,name,fullPhone);
     signedUpName=name;signedUpPhone=fullPhone;
@@ -1433,15 +1470,21 @@ async function submitAuth(){
   }
   btn.disabled=false;btn.textContent=original;
   if(result.error){toast(authErrorToast(result.error));return;}
-  toast(accountMode==='signup'?'¡Cuenta creada! Ya tienes sesión iniciada ✓':'Sesión iniciada ✓');
+  refreshPendingBadge();
   if(accountMode==='signup'&&signedUpPhone){
     // Verifying the phone is a security signal, not a login gate — this
     // never blocks anything the account can already do; it's purely so
     // the founder can confirm the number is real and genuinely theirs.
     const msg='Hola, acabo de crear mi cuenta en MiCampeche. Mi nombre es '+signedUpName+' y mi número es: '+signedUpPhone;
-    window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(msg));
+    openWhatsAppStep(msg,'Para comprobar que tu cuenta es única y que el número que diste es real, necesitamos un mensaje tuyo desde ese número — así evitamos cuentas falsas o duplicadas.',async()=>{
+      toast('¡Cuenta creada! Revisaremos tu número pronto ✓');
+      const next=pendingPostAfterAuth;
+      pendingPostAfterAuth=null;
+      if(next){await openPost(next);} else {closeModal();}
+    });
+    return;
   }
-  refreshPendingBadge();
+  toast('Sesión iniciada ✓');
   const next=pendingPostAfterAuth;
   pendingPostAfterAuth=null;
   if(next){await openPost(next);} else {closeModal();}
