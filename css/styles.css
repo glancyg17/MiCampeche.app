@@ -246,7 +246,8 @@ svg{display:block}
 .detail-src{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gulf);margin-bottom:8px}
 .detail-head{font-family:"Fraunces",Georgia,serif;font-size:25px;font-weight:600;line-height:1.28;margin-bottom:10px}
 .detail-meta{font-size:12px;color:var(--ink3);margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--line)}
-.detail-desc{font-size:14.5px;line-height:1.7;color:var(--ink);margin-bottom:22px}
+.detail-desc{font-size:14.5px;line-height:1.7;color:var(--ink);margin-bottom:22px;white-space:pre-wrap}
+.detail-desc a{color:var(--gulf);word-break:break-word}
 .detail-link{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;text-decoration:none;color:var(--ink);box-shadow:var(--sh1)}
 .detail-link-lbl{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
 .detail-link-name{font-size:14px;font-weight:700}
@@ -264,13 +265,15 @@ svg{display:block}
 .chip.on{background:var(--night);border-color:var(--night);color:var(--paper)}
 
 /* ═══ EVENTOS (full page) ═══ */
-.evt-list{padding:0 18px 40px;display:flex;flex-direction:column;gap:11px}
-.evt-card{display:flex;align-items:stretch;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#fff;box-shadow:var(--sh1);cursor:pointer}
+.evt-list{padding:0 18px 40px;display:flex;flex-direction:column;gap:13px}
+.evt-card{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#fff;box-shadow:var(--sh1);cursor:pointer}
 .evt-card:active{transform:translateY(1px)}
-.evt-thumb{width:76px;flex-shrink:0;background-size:cover;background-position:center;background-color:var(--paper2)}
+/* Image sits stacked on top of the text — full width, never squished */
+.evt-thumb{width:100%;height:158px;background-size:cover;background-position:center;background-color:var(--paper2)}
+.evt-body{display:flex;align-items:stretch}
 .evt-arr{width:18px;height:18px;color:var(--ink3);align-self:center;margin-right:8px;flex-shrink:0}
-.evt-date{width:64px;flex-shrink:0;background:linear-gradient(160deg,var(--wall),var(--wall-dk));color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px}
-.evt-date-day{font-family:"Fraunces",Georgia,serif;font-size:25px;font-weight:700;line-height:1}
+.evt-date{width:60px;flex-shrink:0;background:linear-gradient(160deg,var(--wall),var(--wall-dk));color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px}
+.evt-date-day{font-family:"Fraunces",Georgia,serif;font-size:24px;font-weight:700;line-height:1}
 .evt-date-mon{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
 .evt-info{flex:1;padding:13px 15px;min-width:0}
 .evt-cat{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--wall-dk);margin-bottom:3px}

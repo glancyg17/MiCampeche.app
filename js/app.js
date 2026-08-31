@@ -777,17 +777,29 @@ function renderEventos(){
   if(!list.length){el.innerHTML=emptyState('eventos','Nada por aquí todavía','Sé el primero en publicar un evento en esta categoría.');return;}
   el.innerHTML=list.map(x=>`
     <div class="evt-card" onclick="openEvento('${x.id}')">
-      <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
       ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
-      <div class="evt-info">
-        <div class="evt-cat">${e(x.cat)}</div>
-        <div class="evt-name">${e(x.name)}</div>
-        <div class="evt-meta">${svgIco('clock')} ${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
-        ${x.price?`<div class="evt-price">${e(x.price)}</div>`:''}
+      <div class="evt-body">
+        <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
+        <div class="evt-info">
+          <div class="evt-cat">${e(x.cat)}</div>
+          <div class="evt-name">${e(x.name)}</div>
+          <div class="evt-meta">${svgIco('clock')} ${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
+          ${x.price?`<div class="evt-price">${e(x.price)}</div>`:''}
+        </div>
+        ${svgIco('chevronR','evt-arr')}
       </div>
-      ${svgIco('chevronR','evt-arr')}
     </div>
   `).join('');
+}
+
+/* Turn bare URLs in already-HTML-escaped text into real links — event
+   descriptions (esp. the scraped ones) often carry the ticket link inline
+   as plain text. */
+function linkifyEscaped(s){
+  return String(s).replace(/(https?:\/\/[^\s<]+)/g,u=>{
+    const href=u.replace(/&amp;/g,'&');
+    return `<a href="${href}" target="_blank" rel="noopener">${u}</a>`;
+  });
 }
 
 /* Full event view — image, full date/time/place, description, and the
@@ -830,7 +842,7 @@ function openEvento(id){
       <div class="detail-head">${e(x.name)}</div>
       <div class="detail-meta">${e(x.dateLong)}${x.time?' · '+e(x.time):''}</div>
       <div class="detail-rows">${rows.map(r=>`<div class="detail-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>
-      ${x.desc?`<div class="detail-desc">${e(x.desc)}</div>`:''}
+      ${x.desc?`<div class="detail-desc">${linkifyEscaped(e(x.desc))}</div>`:''}
       ${links}
     </div>
   `;

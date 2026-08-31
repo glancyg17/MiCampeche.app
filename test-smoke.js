@@ -49,7 +49,7 @@ const SAMPLE = {
   // approve/reject/edit-account testing.
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [
-    { id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', description: 'Descripción larga del evento de prueba', image_url: 'https://example.com/cartel.jpg', website: 'https://example.com/evento', contact_phone: '981 555 1234', price_text: '$150', source: 'user', status: 'published' },
+    { id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', description: 'Descripción larga del evento de prueba\nBoletos: https://example.com/boletos', image_url: 'https://example.com/cartel.jpg', website: 'https://example.com/evento', contact_phone: '981 555 1234', price_text: '$150', source: 'user', status: 'published' },
     // Second event, SAME day and near the same time — the moderation
     // duplicate-check should surface and flag it when reviewing e1.
     { id: 'e2', title: 'Evento de prueba (posible copia)', category: 'Cultura', event_date: ds(1), event_time: '8:00 PM', location: 'Centro', source: 'user', status: 'pending' },
@@ -295,6 +295,7 @@ const fakeClient = {
   assert(doc.getElementById('scr-evento-detail').classList.contains('on'), 'openEvento navigates to the event detail screen');
   assert(evd.includes('example.com/cartel.jpg'), 'event detail shows the event image');
   assert(evd.includes('Descripción larga del evento de prueba'), 'event detail shows the full description');
+  assert(evd.includes('<a href="https://example.com/boletos"'), 'a bare URL in the description (e.g. the ticket link) renders as a real clickable link, not plain cut-off text');
   assert(evd.includes('de noviembre') || /\bde [a-zé]+ de 20\d\d/.test(evd), 'event detail shows a full human date');
   assert(evd.includes('https://example.com/evento'), 'event detail links out to the organizer website');
   assert(evd.includes('wa.me/529815551234') && evd.includes('tel:+529815551234'), 'event detail offers WhatsApp + call handoff to the organizer number');
