@@ -256,8 +256,10 @@ svg{display:block}
 
 /* News detail */
 .detail-hero{width:100%;height:230px;background-size:cover;background-position:center;background-color:var(--paper2);flex-shrink:0}
-/* Event posters: show the whole image, full width, never cropped */
-.evt-hero-img{display:block;width:100%;height:auto;background:var(--paper2)}
+/* Event posters: the whole image, never cropped. Inset + rounded so it
+   reads as a framed poster — many feed posters have artwork bleeding off
+   their own edges, and full-bleed made that look like the app cut them. */
+.evt-hero-img{display:block;width:calc(100% - 36px);height:auto;margin:16px 18px 2px;border-radius:var(--rs);background:var(--paper2)}
 .detail-body{padding:20px 18px 40px}
 .detail-src{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gulf);margin-bottom:8px}
 .detail-head{font-family:"Fraunces",Georgia,serif;font-size:25px;font-weight:600;line-height:1.28;margin-bottom:10px}
