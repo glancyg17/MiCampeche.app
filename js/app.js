@@ -1239,16 +1239,19 @@ async function openAccount(){
   if(myTurn!==accountViewSeq)return; // a newer openAccount() superseded this one
   if(!acct.signedIn){accountMode='signup';renderAccountForm();return;}
 
-  // Render the account view now; the rejected-submissions list needs a
-  // query per content table, so load it after and re-render when it lands
-  // rather than holding the whole view hostage to it.
+  // Render the account view now; the rejected-submissions list (a query
+  // per content table) and, for admins, the Pendiente count load after
+  // and re-render when they land, rather than holding the view hostage.
   renderAccountSignedIn(acct);
-  MC.fetchMyRejections().then(rej=>{
+  Promise.all([
+    MC.fetchMyRejections(),
+    acct.isAdmin?MC.fetchPendingCount():Promise.resolve(undefined)
+  ]).then(([rej,pendingCount])=>{
     if(myTurn!==accountViewSeq)return;
-    const bg=document.getElementById('modal-bg');
-    if(!bg.classList.contains('on'))return;
+    if(!document.getElementById('modal-bg').classList.contains('on'))return;
     if(document.getElementById('modal-title').textContent!=='Tu cuenta')return; // user navigated on
     acct.rejections=rej;
+    acct.pendingCount=pendingCount;
     renderAccountSignedIn(acct);
   });
 }
@@ -1322,7 +1325,12 @@ function renderAccountSignedIn(acct){
         `).join('')}
       </div>
     `:''}
-    ${acct.isAdmin?`<button class="submit-btn" onclick="openPending()">${svgIco('checkBadge')} Pendiente</button>`:''}
+    ${acct.isAdmin?`<button class="acct-pend-btn" onclick="openPending()">
+      <span>Pendiente</span>
+      ${acct.pendingCount===undefined?''
+        :acct.pendingCount>0?`<span class="acct-pend-count">${acct.pendingCount>99?'99+':acct.pendingCount}</span>`
+        :`<span class="acct-pend-ok">✓ Todo al día</span>`}
+    </button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -2129,13 +2137,14 @@ async function refreshContent(){
    and after every approve/reject action so the count stays live without
    needing to close and reopen anything. */
 async function refreshPendingBadge(){
-  const badge=document.getElementById('tb-badge');
-  if(!badge)return;
+  // Same count on the header burger badge AND the "Mi cuenta" row inside
+  // the menu, so an admin can see which item the header dot is pointing at.
+  const els=[document.getElementById('tb-badge'),document.getElementById('menu-account-badge')];
+  const set=(txt)=>els.forEach(el=>{ if(!el)return; el.textContent=txt; el.classList.toggle('on',!!txt); });
   const acct=await MC.currentAccount();
-  if(!acct.signedIn||!acct.isAdmin){badge.classList.remove('on');badge.textContent='';return;}
+  if(!acct.signedIn||!acct.isAdmin){set('');return;}
   const count=await MC.fetchPendingCount();
-  if(count>0){badge.textContent=count>99?'99+':String(count);badge.classList.add('on');}
-  else{badge.classList.remove('on');badge.textContent='';}
+  set(count>0?(count>99?'99+':String(count)):'');
 }
 
 /* Phone verifications are the time-sensitive queue item now — until the
