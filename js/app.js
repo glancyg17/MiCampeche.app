@@ -175,6 +175,11 @@ window.addEventListener('beforeinstallprompt',(e)=>{
   e.preventDefault();
   deferredInstallPrompt=e;
 });
+window.addEventListener('appinstalled',()=>{
+  deferredInstallPrompt=null;
+  const g=document.getElementById('install-gate');
+  if(g)g.classList.remove('on');
+});
 function triggerInstall(){
   closeMenu();
   if(deferredInstallPrompt){
@@ -186,6 +191,63 @@ function triggerInstall(){
   toast(isIOS
     ? 'Toca Compartir y luego "Agregar a inicio" ✓'
     : 'Abre el menú de tu navegador y elige "Instalar app" ✓');
+}
+
+/* ══════════════ INSTALL GATE (mobile browser) ══════════════
+   Shown to mobile visitors who are still in a browser tab rather than the
+   installed app. Not a hard wall — there's a plain "seguir en el
+   navegador" link — but the default path is to install, so updates,
+   offline use and instant delivery all just work. Skipped entirely once
+   the app runs standalone. Founder bypass: localStorage mc_skip_install_gate=1. */
+function isStandalone(){
+  return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone===true
+      || document.referrer.startsWith('android-app://');
+}
+const GATE_ICO={
+  share:'<svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
+  plus:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
+  check:'<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>'
+};
+function iosAddToHomeStepsHtml(){
+  return `<div class="gate-steps">
+    <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.share}</span><span>Toca <b>Compartir</b> en la barra de Safari — el cuadro con la flecha hacia arriba.</span></div>
+    <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.plus}</span><span>Desliza y elige <b>Agregar a inicio de pantalla</b>.</span></div>
+    <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.check}</span><span>Toca <b>Agregar</b>. Abre MiCampeche desde el nuevo ícono.</span></div>
+  </div>`;
+}
+function showInstallGate(){
+  const ua=navigator.userAgent;
+  const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const iosNoInstall=isIOS&&/CriOS|FxiOS|EdgiOS|OPiOS|GSA|FBAN|FBAV|Instagram|Line|Twitter/.test(ua);
+  const wall='<div class="gate-wall"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>';
+  const escape=`<button class="gate-escape" onclick="dismissInstallGate()">Seguir en el navegador por ahora</button>`;
+  let body;
+  if(iosNoInstall){
+    body=`<h1>Ábrelo en Safari para instalarlo</h1>
+      <p>En iPhone, MiCampeche solo se puede instalar desde Safari. Abre <b>micampeche.app</b> en Safari y luego:</p>
+      ${iosAddToHomeStepsHtml()}`;
+  }else if(isIOS){
+    body=`<h1>Instala MiCampeche en tu iPhone</h1>
+      <p>Se abre más rápido, funciona sin conexión y te llega todo al instante. Toma unos segundos:</p>
+      ${iosAddToHomeStepsHtml()}`;
+  }else{
+    body=`<h1>Instala MiCampeche</h1>
+      <p>Se abre más rápido, funciona sin conexión y te llega todo al instante.</p>
+      <button class="gate-btn" onclick="gateInstall()">Instalar la app</button>
+      <div class="gate-fallback">¿No aparece la opción? Abre el menú de tu navegador y elige <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.</div>`;
+  }
+  document.getElementById('install-gate-card').innerHTML=wall+body+escape;
+  document.getElementById('install-gate').classList.add('on');
+}
+function dismissInstallGate(){
+  try{sessionStorage.setItem('mc_gate_dismissed','1');}catch(e){}
+  document.getElementById('install-gate').classList.remove('on');
+}
+function gateInstall(){
+  if(!deferredInstallPrompt){toast('Abre el menú de tu navegador y elige "Instalar app"');return;}
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(()=>{deferredInstallPrompt=null;});
 }
 
 function openWeatherLightbox(){
@@ -2006,8 +2068,16 @@ async function refreshPendingBadge(){
 }
 
 async function init(){
-  if(isMobile()){document.getElementById('app').classList.add('on');}
-  else{document.getElementById('desktop-gate').classList.add('on');}
+  if(!isMobile()){
+    document.getElementById('desktop-gate').classList.add('on');
+  }else{
+    document.getElementById('app').classList.add('on');
+    if(!isStandalone()
+       && localStorage.getItem('mc_skip_install_gate')!=='1'
+       && sessionStorage.getItem('mc_gate_dismissed')!=='1'){
+      showInstallGate();
+    }
+  }
   renderBottomNav();
   renderHeaderWeather();
   await refreshContent();

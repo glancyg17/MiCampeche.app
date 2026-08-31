@@ -41,6 +41,21 @@ svg{display:block}
 .gate-url{font-size:13.5px;color:#8a978f;letter-spacing:.02em}
 .gate-url b{color:var(--paper);font-weight:600}
 
+/* ═══ INSTALL GATE (mobile browser) ═══ */
+#install-gate{display:none;position:fixed;inset:0;z-index:99998;background:radial-gradient(120% 100% at 50% 0%,#1a3238 0%,var(--night) 62%);overflow-y:auto}
+#install-gate.on{display:block}
+#install-gate .gate-card{min-height:100%;box-sizing:border-box;padding:48px 30px;display:flex;flex-direction:column;justify-content:center;margin:0 auto}
+.gate-card h1+p{margin-bottom:28px}
+.gate-btn{align-self:center;background:var(--wall);color:var(--night);font-family:inherit;font-size:15px;font-weight:700;border:none;border-radius:99px;padding:15px 34px;cursor:pointer;box-shadow:var(--sh2)}
+.gate-steps{text-align:left;display:flex;flex-direction:column;gap:15px;margin:2px auto 4px;max-width:320px}
+.gate-step{display:flex;gap:13px;align-items:flex-start;font-size:13.5px;line-height:1.55;color:#cdd6d1}
+.gate-step b{color:var(--paper);font-weight:600}
+.gate-step-ico{flex-shrink:0;width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.13);display:flex;align-items:center;justify-content:center;color:var(--paper)}
+.gate-step-ico svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.gate-fallback{font-size:12px;line-height:1.55;color:#8a978f;margin:16px auto 0;max-width:300px}
+.gate-fallback b{color:#b9c4bf;font-weight:600}
+.gate-escape{align-self:center;margin-top:26px;background:none;border:none;color:#8a978f;font-family:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:8px 12px}
+
 /* ═══ APP SHELL ═══ */
 .app{max-width:430px;margin:0 auto;height:100vh;height:100svh;display:none;flex-direction:column;background:var(--paper2);position:relative;overflow:hidden}
 .app.on{display:flex}
