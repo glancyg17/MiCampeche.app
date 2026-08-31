@@ -310,6 +310,41 @@ const fakeClient = {
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
 
+  // ── Hardware back button (Android / installed PWA): each press peels one
+  //    UI layer — overlay, then screen — instead of quitting on press one. ──
+  try {
+    const realInnerWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { value: 400, configurable: true }); // make isMobile() true
+    window.mcBackInit();
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    const backPress = () => window.dispatchEvent(new window.PopStateEvent('popstate', { state: window.history.state }));
+
+    window.nav('anuncios');          // peer tab
+    window.openEvento('e1');         // → evento-detail (a sub-screen)
+    await tick();
+    assert(doc.getElementById('scr-evento-detail').classList.contains('on'), 'set-up: sitting on the event detail screen');
+    assert(!!(window.history.state && window.history.state.mcTrap), 'a synthetic history entry is armed while the user is below Inicio');
+
+    window.openMenu();
+    await tick();
+    assert(doc.getElementById('menu-bg').classList.contains('on'), 'set-up: menu drawer open over the detail screen');
+
+    backPress();
+    assert(!doc.getElementById('menu-bg').classList.contains('on'), 'first back press closes the open menu — not the app');
+    assert(doc.getElementById('scr-evento-detail').classList.contains('on'), 'and the screen underneath is left untouched');
+
+    backPress();
+    assert(doc.getElementById('scr-anuncios').classList.contains('on'), 'next back press steps the sub-screen back to its parent');
+
+    backPress();
+    assert(doc.getElementById('scr-inicio').classList.contains('on'), 'next back press returns a peer tab to Inicio');
+
+    assert(window.mcCloseTopLayer() === false, 'at Inicio with nothing open there is no layer left — the next system back press exits the app');
+    Object.defineProperty(window, 'innerWidth', { value: realInnerWidth, configurable: true });
+  } catch (err) {
+    assert(false, 'hardware back button flow threw: ' + err.stack);
+  }
+
   // ── Pull to refresh: real simulated touch gestures (jsdom dispatches
   // the events fine; the code only reads e.touches[...] as plain
   // properties, so a constructed Event with a manually-attached .touches

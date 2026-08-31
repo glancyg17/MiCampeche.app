@@ -501,7 +501,9 @@ function renderBottomNav(){
   ).join('');
 }
 
-function nav(tab){
+let curScreen='inicio';        // the actual visible .scr (tabs AND detail screens)
+let mcScreenStack=[];          // breadcrumb trail for the hardware back button
+function nav(tab,fromBack){
   document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));
   const target=document.getElementById('scr-'+tab);
   if(!target)return;
@@ -509,6 +511,93 @@ function nav(tab){
   if(TABS.indexOf(tab)>-1){curTab=tab;}
   renderBottomNav();
   target.scrollTop=0;
+  if(!fromBack&&tab!==curScreen){
+    if(tab==='inicio')mcScreenStack=[];
+    // A peer bottom-nav tab is a lateral move, not "deeper" — back from any
+    // of them returns to Inicio, and bouncing between tabs never piles up.
+    else if(TABS.indexOf(tab)>-1)mcScreenStack=['inicio'];
+    else{
+      // A sub-screen (detail view, "Cómo funciona", "Pagar servicios").
+      // Landing on one already in the trail = stepping back up it; anything
+      // else is going deeper, so remember where we came from.
+      const i=mcScreenStack.lastIndexOf(tab);
+      if(i>-1)mcScreenStack.length=i;
+      else mcScreenStack.push(curScreen);
+    }
+  }
+  curScreen=tab;
+  mcSyncBackTrap();
+}
+
+/* ══════════════ HARDWARE BACK BUTTON (Android / installed PWA) ══════════════
+   Without this, the system back button / gesture walks straight out of the
+   PWA on the first press — even with a menu or modal open, or two screens
+   deep. We keep exactly one synthetic history entry alive whenever *any*
+   dismissible layer is showing (open modal, open menu, open weather card,
+   or a screen that isn't Inicio). Each back press then peels one layer via
+   mcCloseTopLayer(); only a press with nothing left to peel exits the app.
+   Dormant on desktop (isMobile() false) — nothing there "closes the app". */
+let mcHistoryOn=false,mcBackWired=false,mcSelfPop=false,mcSyncQueued=false;
+
+function mcTopLayer(){
+  const on=id=>{const el=document.getElementById(id);return el&&el.classList.contains('on');};
+  if(on('modal-bg'))return 'modal';
+  if(on('menu-bg'))return 'menu';
+  if(on('wx-lb-bg'))return 'weather';
+  if(curScreen!=='inicio')return 'screen';
+  return null;
+}
+
+// Peel exactly one layer. Returns false when there was nothing to peel
+// (the caller / OS may then let the app exit). Pure UI — no history.
+function mcCloseTopLayer(){
+  switch(mcTopLayer()){
+    case 'modal':document.getElementById('modal-bg').classList.remove('on');return true;
+    case 'menu':document.getElementById('menu-bg').classList.remove('on');return true;
+    case 'weather':document.getElementById('wx-lb-bg').classList.remove('on');return true;
+    case 'screen':nav(mcScreenStack.pop()||'inicio',true);return true;
+    default:return false;
+  }
+}
+
+// In-app back affordances (the "‹" back-bars) route here too, so the
+// synthetic history entry is unwound in lock-step with the OS button.
+function mcGoBack(){
+  const peeled=mcCloseTopLayer();
+  if(peeled&&mcHistoryOn){mcSelfPop=true;history.back();}
+  return peeled;
+}
+
+// Re-arm (or release) the single trap entry to match the current UI depth.
+// Debounced to a microtask so a burst of sync UI changes (closeMenu();
+// openAccount()) collapses into one decision.
+function mcSyncBackTrap(){
+  if(!mcHistoryOn||mcSyncQueued)return;
+  mcSyncQueued=true;
+  Promise.resolve().then(()=>{
+    mcSyncQueued=false;
+    const deep=mcTopLayer()!==null;
+    const trapped=!!(history.state&&history.state.mcTrap);
+    if(deep&&!trapped)history.pushState({mcTrap:true},'');
+    else if(!deep&&trapped){mcSelfPop=true;history.back();}
+  });
+}
+
+function mcBackInit(){
+  if(mcBackWired||!isMobile())return;
+  mcBackWired=mcHistoryOn=true;
+  if(!history.state||!history.state.mcTrap)history.replaceState({mcRoot:true},'');
+  const obs=new MutationObserver(()=>mcSyncBackTrap());
+  ['modal-bg','menu-bg','wx-lb-bg'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)obs.observe(el,{attributes:true,attributeFilter:['class']});
+  });
+  window.addEventListener('popstate',()=>{
+    if(!mcHistoryOn)return;
+    if(mcSelfPop){mcSelfPop=false;return;}   // our own history.back() — UI already updated
+    if(mcCloseTopLayer())mcSyncBackTrap();    // real back press: peel a layer, then re-arm
+    // nothing to peel → don't re-push; the next press exits, as intended
+  });
 }
 
 /* ══════════════ RENDER: INICIO (DASHBOARD / HUB) ══════════════ */
@@ -2398,5 +2487,6 @@ async function init(){
   setAnunciosMode('eventos');
   setReportarMode('avisos');
   initPullToRefresh();
+  mcBackInit();
 }
 init();
