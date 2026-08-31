@@ -771,6 +771,30 @@ function showNoticia(id){
   nav('noticia-detail');
 }
 
+/* ══════════════ ONBOARDING CARDS ══════════════
+   A pinned "how to use this section" card at the top of each user-postable
+   list, while people are still learning the app. Master switch below; each
+   card is also dismissible per-device (localStorage). Flip ONBOARDING_ENABLED
+   to false (or delete these) once the app is familiar. */
+const ONBOARDING_ENABLED=true;
+function onboardCard(key,icoName,title,bodyHtml,ctaLabel,ctaOnclick){
+  if(!ONBOARDING_ENABLED)return '';
+  try{if(localStorage.getItem('mc_onboard_'+key)==='1')return '';}catch(_){}
+  return `<div class="onboard-card">
+    <button class="onboard-card-x" aria-label="Ocultar" onclick="dismissOnboard('${key}')">${svgIco('close')}</button>
+    <div class="onboard-card-hd">
+      <div class="onboard-card-ico">${svgIco(icoName)}</div>
+      <div class="onboard-card-ttl">${title}</div>
+    </div>
+    <div class="onboard-card-body">${bodyHtml}</div>
+    ${ctaLabel?`<button class="onboard-card-cta" onclick="${ctaOnclick}">${ctaLabel}${svgIco('chevronR')}</button>`:''}
+  </div>`;
+}
+function dismissOnboard(key){
+  try{localStorage.setItem('mc_onboard_'+key,'1');}catch(_){}
+  ({eventos:renderEventos,perdidos:renderPerdidos,empleos:renderEmpleos,avisos:renderAvisos,reportes:renderReportes,alertas:renderAlertas}[key]||function(){})();
+}
+
 /* ══════════════ RENDER: EVENTOS (sub-view inside Anuncios) ══════════════ */
 let evtFilter='all';
 function renderEvtChips(){
@@ -783,8 +807,15 @@ function setEvtFilter(c){evtFilter=c;renderEvtChips();renderEventos();}
 function renderEventos(){
   const list=EVENTOS.filter(x=>evtFilter==='all'||x.cat===evtFilter);
   const el=document.getElementById('evt-list');
-  if(!list.length){el.innerHTML=emptyState('eventos','Nada por aquí todavía','Sé el primero en publicar un evento en esta categoría.');return;}
-  el.innerHTML=list.map(x=>`
+  const pin=onboardCard('eventos','eventos','Publica tu propio evento',
+    `¿Organizas algo en Campeche? Compártelo aquí gratis.
+     <ol><li>Toca el botón <b>+</b> abajo a la derecha.</li>
+     <li>Escribe nombre, fecha, hora y lugar.</li>
+     <li>Agrega una foto o cartel, un precio y un contacto (opcional).</li>
+     <li>Envíalo: lo revisamos y se publica para toda la ciudad.</li></ol>`,
+    'Publicar un evento',"openPost('eventos')");
+  if(!list.length){el.innerHTML=pin+emptyState('eventos','Nada por aquí todavía','Sé el primero en publicar un evento en esta categoría.');return;}
+  el.innerHTML=pin+list.map(x=>`
     <div class="evt-card" onclick="openEvento('${x.id}')">
       ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
       <div class="evt-body">
@@ -1039,7 +1070,14 @@ async function toggleClaim(id){
 
 function renderEmpleos(){
   const el=document.getElementById('job-list');
-  el.innerHTML=EMPLEOS.map(x=>`
+  const pin=onboardCard('empleos','empleos','¿Ofreces trabajo? Publícalo aquí',
+    `Llega a vecinos que buscan empleo en Campeche.
+     <ol><li>Toca el botón <b>+</b> abajo a la derecha.</li>
+     <li>Escribe el puesto, el negocio y el pago.</li>
+     <li>Agrega el horario y los requisitos.</li>
+     <li>Envíalo: quien busca trabajo te contacta directo.</li></ol>`,
+    'Publicar una vacante',"openPost('empleos')");
+  el.innerHTML=pin+EMPLEOS.map(x=>`
     <div class="job-card">
       <div class="job-top"><div class="job-title">${e(x.title)}</div><div class="job-pay">${e(x.pay)}</div></div>
       <div class="job-co">${e(x.co)}</div>
@@ -1060,8 +1098,15 @@ function setPfFilter(v){pfFilter=v;renderPfChips();renderPerdidos();}
 function renderPerdidos(){
   const list=PERDIDOS.filter(x=>pfFilter==='all'||x.tag===pfFilter);
   const el=document.getElementById('pf-list');
-  if(!list.length){el.innerHTML=emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
-  el.innerHTML=list.map(x=>`
+  const pin=onboardCard('perdidos','perdidos','¿Perdiste o encontraste algo?',
+    `Una mascota, unas llaves, una cartera… tus vecinos te ayudan.
+     <ol><li>Toca el botón <b>+</b> abajo a la derecha.</li>
+     <li>Elige <b>Perdido</b> o <b>Encontrado</b>.</li>
+     <li>Describe qué es y en qué zona, con una foto si puedes.</li>
+     <li>Envíalo: aparece aquí para que la ciudad esté atenta.</li></ol>`,
+    'Reportar perdido o encontrado',"openPost('perdidos')");
+  if(!list.length){el.innerHTML=pin+emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
+  el.innerHTML=pin+list.map(x=>`
     <div class="pf-card">
       <div class="pf-img" style="${x.img?`background-image:url('${x.img}')`:''}">${!x.img?svgIco('pin'):''}</div>
       <div class="pf-body">
@@ -1096,8 +1141,15 @@ function setRepFilter(c){repFilter=c;renderRepChips();renderReportes();}
 function renderReportes(){
   const list=REPORTES.filter(x=>repFilter==='all'||x.cat===repFilter);
   const el=document.getElementById('rep-list');
-  if(!list.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
-  el.innerHTML=list.map(x=>{
+  const pin=onboardCard('reportes','reportar','Reporta un problema de tu calle',
+    `Bache, fuga de agua, alumbrado, árbol caído, basura acumulada…
+     <ol><li>Toca el botón <b>+</b> abajo a la derecha.</li>
+     <li>Elige el tipo de problema y dónde está.</li>
+     <li>Agrega una foto para que se entienda mejor.</li>
+     <li>Envíalo: otros vecinos lo confirman para darle peso.</li></ol>`,
+    'Reportar un problema',"openPost('reportar')");
+  if(!list.length){el.innerHTML=pin+emptyState('reportar','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
+  el.innerHTML=pin+list.map(x=>{
     const isResolved=x.status==='resuelto';
     const iConfirmed=!!confirmedByMe[x.id];
     return `
@@ -1136,8 +1188,15 @@ async function toggleConfirm(id){
 }
 function renderAvisos(){
   const el=document.getElementById('av-list');
-  if(!AVISOS.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía','Sé el primero en publicar un aviso para tus vecinos.');return;}
-  el.innerHTML=AVISOS.map(a=>`
+  const pin=onboardCard('avisos','message','Avísale a tu colonia',
+    `Se busca a un familiar, junta vecinal, cuidado con un perro suelto…
+     <ol><li>Toca el botón <b>+</b> abajo a la derecha.</li>
+     <li>Elige el tipo de aviso y escribe tu mensaje.</li>
+     <li>Deja un número de contacto.</li>
+     <li>Envíalo: un aviso por persona al día, revisado antes de publicarse.</li></ol>`,
+    'Publicar un aviso',"openPost('avisos')");
+  if(!AVISOS.length){el.innerHTML=pin+emptyState('reportar','Nada por aquí todavía','Sé el primero en publicar un aviso para tus vecinos.');return;}
+  el.innerHTML=pin+AVISOS.map(a=>`
     <div class="av-card">
       <div class="av-top"><span class="av-cat">${e(a.cat)}</span><span class="av-time">${a.time}</span></div>
       <div class="av-title">${e(a.title)}</div>
@@ -1151,7 +1210,13 @@ function renderAvisos(){
 }
 function renderAlertas(){
   const el=document.getElementById('alert-list');
-  el.innerHTML=ALERTAS.map(x=>`
+  const pin=onboardCard('alertas','alertas','Qué son las Alertas',
+    `Aquí verás <b>alertas oficiales</b> para toda la ciudad: cortes de agua, clima
+     fuerte, cierres de calles, emergencias. Las publica MiCampeche —
+     no necesitas hacer nada, solo revisa aquí cuando algo esté pasando.
+     ¿Un problema de tu calle (bache, fuga, alumbrado)? Eso va en <b>Reportes</b>.`,
+    'Ir a Reportes',"setReportarMode('reportes')");
+  el.innerHTML=pin+ALERTAS.map(x=>`
     <div class="alert-card ${x.cls}">
       <div class="alert-top"><span class="alert-type">${x.cls==='resolved'?'✓ Resuelto — ':''}${e(x.type)}</span><span class="alert-time">${x.time}</span></div>
       <div class="alert-zone">${e(x.zone)}</div>

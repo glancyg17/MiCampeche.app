@@ -318,6 +318,21 @@ const fakeClient = {
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
 
+  // ── Onboarding: a pinned "how to use this section" card at the top of
+  //    each user-postable list, dismissible per device. ──
+  assert(text('evt-list').includes('onboard-card') && text('evt-list').includes('Publica tu propio evento'), 'Eventos list shows the pinned how-to card');
+  assert(text('pf-list').includes('¿Perdiste o encontraste algo?'), 'Perdidos shows its pinned how-to card');
+  assert(text('job-list').includes('¿Ofreces trabajo? Publícalo aquí'), 'Empleos shows its pinned how-to card');
+  assert(text('av-list').includes('Avísale a tu colonia'), 'Avisos shows its pinned how-to card');
+  assert(text('rep-list').includes('Reporta un problema de tu calle'), 'Reportes shows its pinned how-to card');
+  assert(text('alert-list').includes('Qué son las Alertas'), 'Alertas shows its pinned explainer card');
+  assert(text('evt-list').includes("openPost('eventos')"), 'the Eventos card leads into the real publish form');
+  window.dismissOnboard('eventos');
+  assert(!text('evt-list').includes('onboard-card'), 'dismissing the card removes it right away');
+  window.renderEventos();
+  assert(!text('evt-list').includes('onboard-card') && text('evt-list').includes('Evento de prueba'), 'and it stays dismissed on later renders, without hiding the real events');
+  try { window.localStorage.removeItem('mc_onboard_eventos'); } catch (_) {}
+
   // ── Hardware back button (Android / installed PWA): each press peels one
   //    UI layer — overlay, then screen — instead of quitting on press one. ──
   try {
