@@ -89,6 +89,21 @@ MC.signIn=async function(email,password){
   return {error};
 };
 
+/* Login is by phone number. Supabase Auth is still email+password
+   underneath, so resolve the typed phone to the account's email first
+   (email_for_phone RPC — digits-only match), then sign in normally. */
+MC.emailForPhone=async function(phone){
+  const {data,error}=await sb.rpc('email_for_phone',{p_phone:phone});
+  if(error){console.error('email_for_phone failed:',error);return null;}
+  return data||null;
+};
+
+MC.signInWithPhone=async function(phone,password){
+  const email=await MC.emailForPhone(phone);
+  if(!email)return {error:{message:'no_account_for_phone'}};
+  return MC.signIn(email,password);
+};
+
 MC.signOut=async function(){
   await sb.auth.signOut();
   MC.ready=ensureSession(); // immediately re-establish anonymous browsing, same as a fresh visit
@@ -316,8 +331,9 @@ function pgErrorToast(error,fallback){
 function authErrorToast(error){
   if(!error)return null;
   const m=(error.message||'').toLowerCase();
+  if(m.includes('no_account_for_phone'))return 'No encontramos una cuenta con ese número. Si creaste tu cuenta antes, escríbenos por WhatsApp.';
   if(m.includes('already registered')||m.includes('already exists'))return 'Ya existe una cuenta con ese correo — intenta iniciar sesión en vez de crear una nueva.';
-  if(m.includes('invalid login credentials'))return 'Correo o contraseña incorrectos.';
+  if(m.includes('invalid login credentials'))return 'Número o contraseña incorrectos.';
   if(m.includes('password')&&(m.includes('6 character')||m.includes('at least')))return 'La contraseña debe tener al menos 6 caracteres.';
   if(m.includes('invalid') && m.includes('email'))return 'Ese correo no parece válido — revísalo e intenta de nuevo.';
   if(m.includes('email not confirmed'))return 'Este correo aún no está confirmado.';

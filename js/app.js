@@ -1329,6 +1329,25 @@ function renderAccountSignedIn(acct){
   `;
   document.getElementById('modal-bg').classList.add('on');
 }
+/* Country-code select + phone input pair. Reused by signup, login, and
+   both password-reset screens — one markup, one place to change it. */
+function phoneFieldHtml(ccId,numId,label){
+  return `<div><label class="fl">${label}</label>
+    <div style="display:flex;gap:8px">
+      <select class="fs" id="${ccId}" style="flex:0 0 138px">${COUNTRY_CODES.map(([iso,name,code])=>`<option value="${code}"${iso==='MX'?' selected':''}>+${code} ${name}</option>`).join('')}</select>
+      <input class="fi" id="${numId}" type="tel" inputmode="numeric" placeholder="981 000 0000" style="flex:1;min-width:0">
+    </div>
+  </div>`;
+}
+/* Reads a phoneFieldHtml pair into { cc, digits, full } where full is the
+   stored form: "+" + dial code + digits (e.g. +52981XXXXXXX). */
+function readPhone(ccId,numId){
+  const ccEl=document.getElementById(ccId), numEl=document.getElementById(numId);
+  const cc=(ccEl&&ccEl.value)||'52';
+  const digits=((numEl&&numEl.value)||'').replace(/\D/g,'');
+  return {cc,digits,full:'+'+cc+digits};
+}
+
 function renderAccountForm(){
   const isSignup=accountMode==='signup';
   document.getElementById('modal-title').textContent=isSignup?'Crear cuenta':'Iniciar sesión';
@@ -1337,16 +1356,11 @@ function renderAccountForm(){
     <button class="subtog-btn${isSignup?'':' on'}" onclick="setAccountMode('login')">Iniciar sesión</button>
   </div>`;
   if(isSignup)h+=`<div><label class="fl">Tu nombre</label><input class="fi" id="acct-name" type="text" placeholder="Ej. Ricardo Martín"></div>`;
-  h+=`<div><label class="fl">Correo</label><input class="fi" id="acct-email" type="email" placeholder="tu@correo.com"></div>`;
-  if(isSignup)h+=`<div><label class="fl">Teléfono / WhatsApp</label>
-    <div style="display:flex;gap:8px">
-      <select class="fs" id="acct-phone-cc" style="flex:0 0 138px">${COUNTRY_CODES.map(([iso,name,code])=>`<option value="${code}"${iso==='MX'?' selected':''}>+${code} ${name}</option>`).join('')}</select>
-      <input class="fi" id="acct-phone" type="tel" placeholder="981 000 0000" style="flex:1;min-width:0">
-    </div>
-  </div>`;
+  if(isSignup)h+=`<div><label class="fl">Correo</label><input class="fi" id="acct-email" type="email" placeholder="tu@correo.com"></div>`;
+  h+=phoneFieldHtml('acct-phone-cc','acct-phone',isSignup?'Teléfono / WhatsApp':'Tu número de teléfono');
   h+=`<div><label class="fl">Contraseña</label>${passwordFieldHtml('acct-password','Mínimo 6 caracteres')}</div>`;
   if(!isSignup)h+=`<div style="text-align:right;margin-top:-8px"><a href="#" onclick="openForgotPassword();return false;" style="font-size:12.5px;color:var(--gulf);text-decoration:none">¿Olvidaste tu contraseña?</a></div>`;
-  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Usamos tu teléfono para tus publicaciones (contacto) y avisos importantes — nunca lo compartimos ni lo vendemos.':'Usa el correo y contraseña con los que creaste tu cuenta.'}</div>`;
+  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Usamos tu teléfono para tus publicaciones (contacto) y avisos importantes — nunca lo compartimos ni lo vendemos.':'Inicia sesión con tu número de teléfono y contraseña.'}</div>`;
   h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
@@ -1412,8 +1426,8 @@ function runWhatsAppStepContinue(){
 function openForgotPassword(){
   document.getElementById('modal-title').textContent='Recuperar contraseña';
   document.getElementById('modal-body').innerHTML=`
-    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe el correo de tu cuenta. Te llevaremos a WhatsApp para confirmar tu identidad — revisamos cada solicitud personalmente, sin necesidad de correo.</div>
-    <div><label class="fl">Correo de tu cuenta</label><input class="fi" id="forgot-email" type="email" placeholder="tu@correo.com"></div>
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe el número de tu cuenta. Te llevaremos a WhatsApp para confirmar tu identidad — revisamos cada solicitud personalmente.</div>
+    ${phoneFieldHtml('forgot-phone-cc','forgot-phone','Número de tu cuenta')}
     <button class="submit-btn" id="forgot-submit-btn" onclick="submitForgotPassword()">Continuar por WhatsApp</button>
     <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="setAccountMode('login')">Volver a iniciar sesión</button>
     <button class="menu-item" style="margin-top:6px;justify-content:center" onclick="openCompletePasswordReset()">Ya tengo un código de restablecimiento</button>
@@ -1421,16 +1435,22 @@ function openForgotPassword(){
   document.getElementById('modal-bg').classList.add('on');
 }
 async function submitForgotPassword(){
-  const email=(document.getElementById('forgot-email').value||'').trim();
-  if(!email){toast('Escribe tu correo');return;}
+  const {digits,full:phone}=readPhone('forgot-phone-cc','forgot-phone');
+  if(digits.length<6){toast('Escribe tu número');return;}
   const btn=document.getElementById('forgot-submit-btn');
   const original=btn.textContent;
   btn.disabled=true;btn.textContent='Enviando…';
+  const email=await MC.emailForPhone(phone);
+  if(!email){
+    btn.disabled=false;btn.textContent=original;
+    toast('No encontramos una cuenta con ese número.');
+    return;
+  }
   const {error}=await MC.requestPasswordResetWhatsApp(email);
   btn.disabled=false;btn.textContent=original;
   if(error){toast('No se pudo enviar tu solicitud — intenta de nuevo.');return;}
-  const msg='Hola, olvidé mi contraseña de MiCampeche. Mi correo registrado es: '+email;
-  openWhatsAppStep(msg,'Para confirmar que fuiste tú quien pidió este cambio — y no alguien más usando tu correo — necesitamos un mensaje tuyo por WhatsApp desde el número registrado en tu cuenta.',()=>{
+  const msg='Hola, olvidé mi contraseña de MiCampeche. Mi número registrado es: '+phone;
+  openWhatsAppStep(msg,'Para confirmar que fuiste tú quien pidió este cambio, necesitamos un mensaje tuyo por WhatsApp desde el número registrado en tu cuenta.',()=>{
     toast('Solicitud enviada — revisaremos tu mensaje pronto ✓');
     setAccountMode('login');
   });
@@ -1443,8 +1463,8 @@ async function submitForgotPassword(){
 function openCompletePasswordReset(){
   document.getElementById('modal-title').textContent='Ingresa tu código';
   document.getElementById('modal-body').innerHTML=`
-    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe el correo de tu cuenta, el código de 6 dígitos que te dimos por WhatsApp, y tu nueva contraseña.</div>
-    <div><label class="fl">Correo de tu cuenta</label><input class="fi" id="reset-complete-email" type="email" placeholder="tu@correo.com"></div>
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Escribe el número de tu cuenta, el código de 6 dígitos que te dimos por WhatsApp, y tu nueva contraseña.</div>
+    ${phoneFieldHtml('reset-complete-phone-cc','reset-complete-phone','Número de tu cuenta')}
     <div><label class="fl">Código de 6 dígitos</label><input class="fi" id="reset-complete-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></div>
     <div><label class="fl">Nueva contraseña</label>${passwordFieldHtml('reset-complete-password','Mínimo 6 caracteres')}</div>
     <button class="submit-btn" id="reset-complete-btn" onclick="submitCompletePasswordReset()">Guardar nueva contraseña</button>
@@ -1453,14 +1473,16 @@ function openCompletePasswordReset(){
   document.getElementById('modal-bg').classList.add('on');
 }
 async function submitCompletePasswordReset(){
-  const email=(document.getElementById('reset-complete-email').value||'').trim();
+  const {digits,full:phone}=readPhone('reset-complete-phone-cc','reset-complete-phone');
   const code=(document.getElementById('reset-complete-code').value||'').trim();
   const pw=document.getElementById('reset-complete-password').value||'';
-  if(!email||!code){toast('Completa tu correo y código');return;}
+  if(digits.length<6||!code){toast('Completa tu número y código');return;}
   if(pw.length<6){toast('La contraseña debe tener al menos 6 caracteres');return;}
   const btn=document.getElementById('reset-complete-btn');
   const original=btn.textContent;
   btn.disabled=true;btn.textContent='Guardando…';
+  const email=await MC.emailForPhone(phone);
+  if(!email){btn.disabled=false;btn.textContent=original;toast('No encontramos una cuenta con ese número.');return;}
   const {data,error}=await MC.completePasswordResetWhatsApp(email,code,pw);
   btn.disabled=false;btn.textContent=original;
   if(error||data!=='ok'){
@@ -1617,19 +1639,17 @@ async function submitNewPassword(){
 }
 
 async function submitAuth(){
-  const email=(document.getElementById('acct-email').value||'').trim();
   const password=document.getElementById('acct-password').value||'';
-  if(!email||!password){toast('Completa correo y contraseña');return;}
   const btn=document.getElementById('acct-submit-btn');
   const original=btn.textContent;
   let result;
   let signedUpName=null,signedUpPhone=null;
   if(accountMode==='signup'){
+    const email=(document.getElementById('acct-email').value||'').trim();
     const name=(document.getElementById('acct-name').value||'').trim()||'Vecino';
-    const dialCode=document.getElementById('acct-phone-cc').value;
-    const phoneDigits=(document.getElementById('acct-phone').value||'').replace(/\D/g,'');
+    const {digits:phoneDigits,full:fullPhone}=readPhone('acct-phone-cc','acct-phone');
+    if(!email||!password){toast('Completa correo y contraseña');return;}
     if(phoneDigits.length<6||phoneDigits.length>12){toast('Ingresa un número de teléfono válido');return;}
-    const fullPhone='+'+dialCode+phoneDigits;
     if(await MC.isPhoneAlreadyVerified(fullPhone)){
       toast('Ese número ya está verificado en otra cuenta — usa uno diferente');
       return;
@@ -1638,8 +1658,10 @@ async function submitAuth(){
     result=await MC.signUp(email,password,name,fullPhone);
     signedUpName=name;signedUpPhone=fullPhone;
   } else {
+    const {digits:phoneDigits,full:fullPhone}=readPhone('acct-phone-cc','acct-phone');
+    if(phoneDigits.length<6||!password){toast('Escribe tu número y contraseña');return;}
     btn.disabled=true;btn.textContent='Un momento…';
-    result=await MC.signIn(email,password);
+    result=await MC.signInWithPhone(fullPhone,password);
   }
   btn.disabled=false;btn.textContent=original;
   if(result.error){toast(authErrorToast(result.error));return;}

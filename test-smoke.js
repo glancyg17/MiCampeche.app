@@ -195,6 +195,13 @@ const fakeClient = {
     if (name === 'get_ofertas_claim_counts') {
       return { data: (args.p_oferta_ids || []).map(id => ({ oferta_id: id, claimed: 2 })), error: null };
     }
+    if (name === 'email_for_phone') {
+      // login/reset resolve the typed phone to the account email; the
+      // fixture account is Ricardo, phone +529811234567.
+      const digits = (args.p_phone || '').replace(/\D/g, '');
+      if (digits === '529811234567') return { data: 'ricardo@example.com', error: null };
+      return { data: null, error: null };
+    }
     if (name === 'request_password_reset') {
       if (forcedErrors.requestPasswordReset) return { data: null, error: forcedErrors.requestPasswordReset };
       fakeResetIdCounter++;
@@ -481,32 +488,41 @@ const fakeClient = {
     window.togglePasswordVisibility('acct-password', toggleBtn);
     assert(doc.getElementById('acct-password').type === 'password', 'toggling again re-masks it');
 
-    // ── Forgot password: WhatsApp-mediated request step ──
+    // ── Forgot password: WhatsApp-mediated request step (by phone) ──
     window.openForgotPassword();
     assert(text('modal-title') === 'Recuperar contraseña', 'the forgot-password link opens a dedicated request screen');
-    await window.submitForgotPassword(); // no email typed yet
+    await window.submitForgotPassword(); // no number typed yet
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === 'Escribe tu correo', 'submitting with no email is blocked client-side, not sent to Supabase');
+    assert(text('toast') === 'Escribe tu número', 'submitting with no number is blocked client-side, not sent to Supabase');
 
     window.openForgotPassword();
-    doc.getElementById('forgot-email').value = 'ricardo@example.com';
+    doc.getElementById('forgot-phone-cc').value = '52';
+    doc.getElementById('forgot-phone').value = '981 123 4567';
     await window.submitForgotPassword();
-    await new Promise(r => setTimeout(r, 30));
+    await new Promise(r => setTimeout(r, 40));
     assert(text('modal-title') === 'Un paso más: WhatsApp', 'a real request shows the WhatsApp explanation step, not an immediate toast');
     const resetWaLink = doc.querySelector('#modal-body a[href*="wa.me"]');
-    assert(!!resetWaLink && resetWaLink.getAttribute('href').includes(encodeURIComponent('ricardo@example.com')), 'the link includes the real claimed email');
-    assert(fakePasswordResetRequests.some(r => r.claimed_email === 'ricardo@example.com'), 'the request genuinely exists in the (fake) database, not just a client-side illusion');
+    assert(!!resetWaLink && resetWaLink.getAttribute('href').includes(encodeURIComponent('+529811234567')), 'the link includes the real registered phone number');
+    assert(fakePasswordResetRequests.some(r => r.claimed_email === 'ricardo@example.com'), 'the request genuinely exists in the (fake) database, keyed by the email the phone resolved to');
     window.runWhatsAppStepContinue();
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Solicitud enviada — revisaremos tu mensaje pronto ✓', 'completing the WhatsApp step shows the real confirmation');
     assert(text('modal-title') === 'Iniciar sesión', 'after completing the step, it returns to the login screen');
 
-    // Forced failure on the request itself must still surface a real error.
+    // A number with no matching account is stopped before any request.
+    window.openForgotPassword();
+    doc.getElementById('forgot-phone').value = '999 000 0000';
+    await window.submitForgotPassword();
+    await new Promise(r => setTimeout(r, 30));
+    assert(text('toast') === 'No encontramos una cuenta con ese número.', 'an unknown number is rejected, not sent onward');
+    assert(text('modal-title') !== 'Un paso más: WhatsApp', 'and never reaches the WhatsApp step');
+
+    // Forced failure on the request itself (real account) must still surface a real error.
     forcedErrors.requestPasswordReset = { message: 'simulated failure' };
     window.openForgotPassword();
-    doc.getElementById('forgot-email').value = 'otra-persona@example.com';
+    doc.getElementById('forgot-phone').value = '981 123 4567';
     await window.submitForgotPassword();
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise(r => setTimeout(r, 30));
     assert(text('modal-title') !== 'Un paso más: WhatsApp', 'a genuinely failed request never reaches the WhatsApp step at all');
     forcedErrors.requestPasswordReset = null;
 
@@ -530,16 +546,17 @@ const fakeClient = {
     // ── Completing the reset with that real code ──
     window.openCompletePasswordReset();
     assert(text('modal-title') === 'Ingresa tu código', 'the "I have a code" screen is reachable from the login flow');
-    doc.getElementById('reset-complete-email').value = 'ricardo@example.com';
+    doc.getElementById('reset-complete-phone-cc').value = '52';
+    doc.getElementById('reset-complete-phone').value = '981 123 4567';
     doc.getElementById('reset-complete-code').value = '000000'; // deliberately wrong
     doc.getElementById('reset-complete-password').value = 'nuevaClaveSegura1';
     await window.submitCompletePasswordReset();
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise(r => setTimeout(r, 30));
     assert(text('toast') === 'Código inválido o vencido — pide uno nuevo por WhatsApp', 'a wrong code is rejected with a generic message, not revealing why');
 
     doc.getElementById('reset-complete-code').value = theRequest.reset_code; // the real one
     await window.submitCompletePasswordReset();
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise(r => setTimeout(r, 30));
     assert(text('toast') === '¡Contraseña actualizada! Ya puedes iniciar sesión ✓', 'the REAL code genuinely completes the reset');
     assert(theRequest.status === 'completed', 'the request is marked completed, so this same code can never be reused');
 
