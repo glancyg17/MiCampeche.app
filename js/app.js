@@ -552,7 +552,7 @@ function mcTopLayer(){
 // (the caller / OS may then let the app exit). Pure UI — no history.
 function mcCloseTopLayer(){
   switch(mcTopLayer()){
-    case 'modal':document.getElementById('modal-bg').classList.remove('on');return true;
+    case 'modal':mcModalBack();return true;   // steps back through nested modal views, then closes
     case 'menu':document.getElementById('menu-bg').classList.remove('on');return true;
     case 'weather':document.getElementById('wx-lb-bg').classList.remove('on');return true;
     case 'screen':nav(mcScreenStack.pop()||'inicio',true);return true;
@@ -1396,7 +1396,45 @@ function applyConditionalRows(form){
 }
 function digitsOnly(p){return String(p||'').replace(/\D/g,'');}
 
-function closeModal(){document.getElementById('modal-bg').classList.remove('on');}
+/* ══════════════ MODAL VIEW STACK ══════════════
+   The single #modal-bg is reused for deeply nested views — e.g. Tu cuenta
+   → Pendiente list → item review → motivo del rechazo. Without a stack the
+   ✕, the backdrop, and the hardware back button all jump straight out to
+   the home screen. Each "go deeper" call records how to rebuild the view
+   it's leaving; mcModalBack() rebuilds the one beneath (optionally skipping
+   intermediate levels by key), and only closes the modal outright when
+   there's nothing left under it. Modals that are a single view (post
+   forms, product view, …) never push, so ✕ closes them as before. */
+let mcModalStack=[];
+function mcModalSnap(){
+  const t=document.getElementById('modal-title').textContent;
+  const h=document.getElementById('modal-body').innerHTML;
+  return ()=>{
+    document.getElementById('modal-title').textContent=t;
+    document.getElementById('modal-body').innerHTML=h;
+  };
+}
+function mcModalPushView(key){mcModalStack.push({key,restore:mcModalSnap()});}
+// No targetKey: pop one level (✕ / backdrop / hardware back), closing the
+// modal when that was the last. targetKey: pop back to that named level,
+// dropping everything above it — and do nothing if it isn't on the stack
+// (the caller is already at that level, e.g. an inline list action).
+function mcModalBack(targetKey){
+  if(targetKey){
+    const i=mcModalStack.map(x=>x.key).lastIndexOf(targetKey);
+    if(i<0)return;
+    const entry=mcModalStack[i];
+    mcModalStack.length=i;
+    entry.restore();
+  }else if(mcModalStack.length){
+    mcModalStack.pop().restore();
+  }else{
+    closeModal();
+    return;
+  }
+  mcSyncBackTrap();
+}
+function closeModal(){mcModalStack=[];document.getElementById('modal-bg').classList.remove('on');mcSyncBackTrap();}
 
 /* ══════════════ ACCOUNT (login / signup / signed-in view) ══════════════
    Reuses the same #modal-bg/#modal-body infrastructure as the content
@@ -1747,6 +1785,7 @@ async function submitCompletePasswordReset(){
 async function openPasswordResetDetail(requestId){
   const item=moderationQueue.find(i=>i.kind==='password'&&i.id===requestId);
   if(!item)return;
+  mcModalPushView('pendingList');
   const r=item.raw;
   document.getElementById('modal-title').textContent='Restablecer contraseña';
   document.getElementById('modal-body').innerHTML=`
@@ -1758,14 +1797,14 @@ async function openPasswordResetDetail(requestId){
       <button class="submit-btn" style="margin-top:0;flex:1" onclick="approvePasswordResetRequest('${requestId}')">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPasswordResetRequest('${requestId}')">Rechazar</button>
     </div>
-    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="mcModalBack('pendingList')">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
 }
 async function approvePasswordResetRequest(id){
   const {data:code,error}=await MC.approvePasswordReset(id);
   if(error){toast(pgErrorToast(error,'No se pudo aprobar.'));return;}
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='password'&&i.id===id));
-  renderPendingQueue();
+  mcModalBack('pendingList');renderPendingQueue();
   toast('Aprobado — código: '+code+' (compártelo por WhatsApp, válido 30 min)');
   refreshPendingBadge();
 }
@@ -1773,7 +1812,7 @@ async function rejectPasswordResetRequest(id){
   const {error}=await MC.rejectPasswordReset(id,'No se pudo verificar la identidad');
   if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='password'&&i.id===id));
-  renderPendingQueue();
+  mcModalBack('pendingList');renderPendingQueue();
   toast('Rechazado');
   refreshPendingBadge();
 }
@@ -1785,6 +1824,7 @@ async function rejectPasswordResetRequest(id){
 function openPhoneVerificationDetail(profileId){
   const item=moderationQueue.find(i=>i.kind==='phone'&&i.id===profileId);
   if(!item)return;
+  mcModalPushView('pendingList');
   const p=item.raw;
   document.getElementById('modal-title').textContent='Verificación de teléfono';
   document.getElementById('modal-body').innerHTML=`
@@ -1796,14 +1836,14 @@ function openPhoneVerificationDetail(profileId){
       <button class="submit-btn" style="margin-top:0;flex:1" onclick="approvePhoneVerification('${profileId}')">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="rejectPhoneVerification('${profileId}')">Rechazar</button>
     </div>
-    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="mcModalBack('pendingList')">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
 }
 async function approvePhoneVerification(profileId){
   const {error}=await MC.approvePhoneVerification(profileId);
   if(error){toast(pgErrorToast(error,'No se pudo aprobar — puede que ese número ya esté verificado en otra cuenta.'));return;}
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='phone'&&i.id===profileId));
-  renderPendingQueue();
+  mcModalBack('pendingList');renderPendingQueue();
   toast('Teléfono verificado ✓');
   refreshPendingBadge();
 }
@@ -1811,7 +1851,7 @@ async function rejectPhoneVerification(profileId){
   const {error}=await MC.rejectPhoneVerification(profileId,'No se pudo confirmar el número por WhatsApp');
   if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='phone'&&i.id===profileId));
-  renderPendingQueue();
+  mcModalBack('pendingList');renderPendingQueue();
   toast('Rechazado');
   refreshPendingBadge();
 }
@@ -1943,6 +1983,9 @@ async function doSignOut(){
    boundary. */
 let moderationQueue=[];
 async function openPending(){
+  // Opened from the "Tu cuenta" view — remember it so ✕ / back returns
+  // there, not all the way to the home screen.
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
   document.getElementById('modal-title').textContent='Pendiente';
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
@@ -2077,6 +2120,7 @@ async function fillEventDuplicateCheck(raw){
 function openModerationDetail(table,id){
   const item=moderationQueue.find(i=>i.table===table&&i.id===id);
   if(!item)return;
+  mcModalPushView('pendingList');
   document.getElementById('modal-title').textContent=item.label;
   document.getElementById('modal-body').innerHTML=`
     <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Enviado por ${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
@@ -2086,18 +2130,19 @@ function openModerationDetail(table,id){
       <button class="submit-btn" style="margin-top:0;flex:1" onclick="moderateItem('${table}','${id}','published')">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openRejectReasonPrompt('${table}','${id}')">Rechazar</button>
     </div>
-    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
+    <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="mcModalBack('pendingList')">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
   if(table==='eventos')fillEventDuplicateCheck(item.raw);
 }
 
 function openRejectReasonPrompt(table,id){
+  mcModalPushView('itemDetail');
   document.getElementById('modal-title').textContent='Motivo del rechazo';
   document.getElementById('modal-body').innerHTML=`
     <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Este mensaje se guarda junto con la publicación para que la persona que la envió sepa por qué no se publicó — lo verá en su cuenta.</div>
     <textarea class="ft" id="reject-reason-input" placeholder="Ej. La foto no es clara, o el precio no coincide con la descripción..."></textarea>
     <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openModerationDetail('${table}','${id}')">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('itemDetail')">Cancelar</button>
       <button class="submit-btn" style="margin-top:0;flex:1" id="confirm-reject-btn" onclick="confirmReject('${table}','${id}')">Rechazar</button>
     </div>
   `;
@@ -2114,7 +2159,7 @@ async function moderateItem(table,id,newStatus,reason){
   const {error}=await MC.moderatePost(table,id,newStatus,reason);
   if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));if(btn){btn.disabled=false;btn.textContent='Rechazar';}return;}
   moderationQueue=moderationQueue.filter(i=>!(i.table===table&&i.id===id));
-  renderPendingQueue();
+  mcModalBack('pendingList');renderPendingQueue();
   toast(newStatus==='published'?'Publicado ✓':'Rechazado — el motivo quedó guardado');
   refreshPendingBadge();
 }

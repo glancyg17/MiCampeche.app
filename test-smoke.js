@@ -1084,6 +1084,24 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Pendiente (11)', 'queue aggregates pending items from all 9 content tables (two for eventos — a second same-day event, to exercise the duplicate check) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
+    // ── Nested modal views: ✕ / back / hardware-back step ONE level
+    //    (item review → list → account → home), never straight out. ──
+    window.mcModalBack();
+    assert(text('modal-title') === 'Tu cuenta', 'closing the Pendiente list returns to the account view it was opened from — not the home screen');
+    assert(doc.getElementById('modal-bg').classList.contains('on'), 'and the modal itself stays open');
+    await window.openPending();
+    await new Promise(r => setTimeout(r, 20));
+    window.openModerationDetail('avisos', 'av1');
+    assert(text('modal-title') === 'Aviso', 'set-up: an item is open for review');
+    window.mcModalBack();
+    assert(/^Pendiente \(\d+\)$/.test(text('modal-title')), 'closing an item under review returns to the Pendiente list, not the account view or home');
+    window.mcModalBack();
+    window.mcModalBack();
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'backing out past the account view finally closes the whole modal');
+    await window.openAccount();
+    await window.openPending();
+    await new Promise(r => setTimeout(r, 20));
+
     // The whole point of this change: a business verification request
     // should show enough to actually review, not just a name.
     window.openModerationDetail('businesses', currentBusiness.id);
