@@ -610,6 +610,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-body').includes('Ricardo Editado'), 'admin sees the real (edited) name in the unified pending list');
     assert(text('modal-body').includes('+529810009999'), 'admin sees the real current phone to compare against the incoming WhatsApp sender');
+    assert(text('modal-body').includes('Sí, aprobar'), 'phone-verification rows carry an inline approve button — fast path for the one queue item that blocks a real person');
 
     window.openPhoneVerificationDetail('uid-1');
     assert(text('modal-title') === 'Verificación de teléfono', 'tapping the phone item in the list opens its own detail screen');

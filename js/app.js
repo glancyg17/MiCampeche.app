@@ -1721,8 +1721,28 @@ function renderPendingQueue(){
   }
   let h='';
   moderationQueue.forEach(item=>{
+    if(item.kind==='phone'){
+      // Name, number and age are all on the row already — the whole
+      // review is "does this match the WhatsApp that just came in?" — so
+      // approve/reject inline. This is the one queue item that keeps a
+      // real person from doing anything until it's cleared, so cutting it
+      // from four taps to one matters. Tapping the row still opens the
+      // full detail for the cautious path.
+      h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+        <div style="cursor:pointer" onclick="openPhoneVerificationDetail('${item.id}')">
+          <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(item.label)}</div>
+          <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(item.title)}</div>
+          <div style="color:var(--ink3);font-size:12px;margin-top:2px">${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
+        </div>
+        <div style="color:var(--ink3);font-size:11px;margin-top:8px">¿Te escribió por WhatsApp desde este número?</div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px" onclick="approvePhoneVerification('${item.id}')">Sí, aprobar</button>
+          <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px;background:var(--paper2);color:var(--ink)" onclick="rejectPhoneVerification('${item.id}')">No, rechazar</button>
+        </div>
+      </div>`;
+      return;
+    }
     const onclick=item.kind==='content'?`openModerationDetail('${item.table}','${item.id}')`
-      :item.kind==='phone'?`openPhoneVerificationDetail('${item.id}')`
       :`openPasswordResetDetail('${item.id}')`;
     h+=`<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;cursor:pointer" onclick="${onclick}">
       <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(item.label)}</div>
@@ -2118,6 +2138,21 @@ async function refreshPendingBadge(){
   else{badge.classList.remove('on');badge.textContent='';}
 }
 
+/* Phone verifications are the time-sensitive queue item now — until the
+   founder clears one, that person can't post or interact at all. A quiet
+   toast on app-open (admin only) so it isn't sitting unseen behind the
+   burger badge. */
+async function nudgeAdminVerifications(){
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn||!acct.isAdmin)return;
+  const phone=await MC.fetchPendingPhoneVerifications();
+  if(phone.length>0){
+    toast(phone.length===1
+      ? '1 cuenta espera verificación por WhatsApp'
+      : phone.length+' cuentas esperan verificación por WhatsApp');
+  }
+}
+
 async function init(){
   if(!isMobile()){
     document.getElementById('desktop-gate').classList.add('on');
@@ -2133,6 +2168,7 @@ async function init(){
   renderHeaderWeather();
   await refreshContent();
   await checkPaymentReturn();
+  nudgeAdminVerifications();
   setTiendaMode('mercado');
   setAnunciosMode('eventos');
   setReportarMode('avisos');
