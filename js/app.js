@@ -220,7 +220,7 @@ function showInstallGate(){
   const ua=navigator.userAgent;
   const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   const iosNoInstall=isIOS&&/CriOS|FxiOS|EdgiOS|OPiOS|GSA|FBAN|FBAV|Instagram|Line|Twitter/.test(ua);
-  const wall='<div class="gate-wall"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>';
+  const icon='<img class="gate-icon" src="assets/icons/MiCampeche-app-icon.png" alt="MiCampeche">';
   const escape=`<button class="gate-escape" onclick="dismissInstallGate()">Seguir en el navegador por ahora</button>`;
   let body;
   if(iosNoInstall){
@@ -237,7 +237,7 @@ function showInstallGate(){
       <button class="gate-btn" onclick="gateInstall()">Instalar la app</button>
       <div class="gate-fallback">¿No aparece la opción? Abre el menú de tu navegador y elige <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.</div>`;
   }
-  document.getElementById('install-gate-card').innerHTML=wall+body+escape;
+  document.getElementById('install-gate-card').innerHTML=icon+body+escape;
   document.getElementById('install-gate').classList.add('on');
 }
 function dismissInstallGate(){

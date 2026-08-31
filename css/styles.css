@@ -31,9 +31,7 @@ svg{display:block}
 #desktop-gate{display:none;position:fixed;inset:0;background:radial-gradient(120% 100% at 50% 0%,#1a3238 0%,var(--night) 62%);z-index:99999;align-items:center;justify-content:center;padding:40px}
 #desktop-gate.on{display:flex}
 .gate-card{max-width:420px;text-align:center;color:var(--paper)}
-.gate-wall{display:flex;justify-content:center;gap:3px;margin-bottom:32px;opacity:.85}
-.gate-wall span{width:15px;height:24px;background:linear-gradient(180deg,var(--wall),var(--wall-dk));border-radius:2px 2px 0 0}
-.gate-wall span:nth-child(even){height:15px;align-self:flex-end}
+.gate-icon{width:78px;height:78px;border-radius:20px;display:block;margin:0 auto 30px;box-shadow:var(--sh3)}
 .gate-card h1{font-family:"Fraunces",Georgia,serif;font-size:32px;font-weight:600;margin-bottom:14px;letter-spacing:-0.015em;line-height:1.15}
 .gate-card p{font-size:15px;line-height:1.65;color:#b9c4bf;margin-bottom:34px}
 .gate-qr{width:172px;height:172px;background:#fff;border-radius:20px;margin:0 auto 22px;display:flex;align-items:center;justify-content:center;padding:14px;box-shadow:var(--sh3)}
