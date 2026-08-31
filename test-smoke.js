@@ -59,9 +59,9 @@ const SAMPLE = {
   ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
   ofertas_redemptions: [],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
-  perdidos: [{ id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '' }],
+  perdidos: [{ id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' }],
   alertas: [{ id: 'al1', alert_type: 'Corte de agua', zone: 'Zona test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
-  empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'] }],
+  empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' }],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
   avisos: [{ id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' }],
@@ -313,8 +313,10 @@ const fakeClient = {
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test') && text('clas-grid').includes('Ricardo T.'), 'Clasificados rendered real row with joined profile name');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('reclamados'), 'Ofertas rendered with real claim count wired in');
   assert(text('pf-list') && text('pf-list').includes('Gato test'), 'Perdidos rendered real fetched data');
+  assert(text('pf-list').includes('tel:+529815550000'), 'a Perdidos report with a contact number shows a call button');
   assert(text('alert-list') && text('alert-list').includes('Corte de agua'), 'Alertas rendered real fetched data');
   assert(text('job-list') && text('job-list').includes('Puesto test'), 'Empleos rendered real fetched data');
+  assert(text('job-list').includes('tel:+529815550001'), 'an Empleos listing with a contact number shows a call button');
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
 
@@ -739,10 +741,33 @@ const fakeClient = {
     await window.openPost('avisos');
     doc.getElementById('pf-title').value = 'Prueba de envío';
     doc.getElementById('pf-desc').value = 'Contenido de prueba';
-    doc.getElementById('pf-contact').value = '981 111 2222';
+    // contact + anon are opt-in toggles now — a plain aviso attaches neither
+    delete lastInsert.avisos;
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 50));
     assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'submitPost(avisos) → real MC.submitAviso → success toast');
+    assert(lastInsert.avisos && lastInsert.avisos.contact_info === null && lastInsert.avisos.anonymous === false, 'with the toggles left at their defaults, no contact number and a non-anonymous aviso are written');
+
+    // Now opt into both: anonymous, and a contact number to be reached at.
+    await window.openPost('avisos');
+    doc.getElementById('pf-title').value = 'Vieron a esta persona';
+    window.segPick(doc.querySelector('#pf-anon .seg-btn[data-v="si"]'));
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
+    doc.getElementById('pf-contact').value = '981 111 2222';
+    delete lastInsert.avisos;
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 50));
+    assert(lastInsert.avisos && lastInsert.avisos.contact_info === '981 111 2222' && lastInsert.avisos.anonymous === true, 'turning on "Anónimo" + "Sí, que me contacten" writes the number and the anonymous flag');
+
+    // Saying "sí, que me contacten" but leaving the number blank is blocked.
+    await window.openPost('avisos');
+    doc.getElementById('pf-title').value = 'Sin número';
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
+    doc.getElementById('pf-contact').value = '';
+    delete lastInsert.avisos;
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Escribe tu número o elige "No hace falta"' && !lastInsert.avisos, 'choosing "Sí, que me contacten" with an empty number is blocked, nothing written');
 
     // Claim/unclaim mechanics, now as a real signed-in user.
     const beforeHtml = text('of-list');
@@ -770,16 +795,36 @@ const fakeClient = {
     forcedErrors.insert.ofertas_redemptions = null;
     forcedErrors.delete.ofertas_redemptions = null;
 
-    // Perdidos has no manual contact field — while signed in, the submitted
-    // row should carry the account's phone automatically.
+    // Perdidos: the contact toggle defaults to "sí" and the number is
+    // pre-filled from the account, so a normal report still carries a phone.
     await window.openPost('perdidos');
     doc.getElementById('pf-name').value = 'Gato perdido de prueba';
+    delete lastInsert.perdidos;
     await window.submitPost('perdidos');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.perdidos && lastInsert.perdidos.contact_info === '+529811234567', 'Perdidos submission auto-fills contact_info from the signed-in account\'s phone, with no form field for it');
+    assert(lastInsert.perdidos && lastInsert.perdidos.contact_info === '+529811234567', 'Perdidos: with the contact toggle at its "sí" default, the report carries the account phone (pre-filled)');
 
-    // Avisos DOES have a manual contact field, but it should arrive
-    // pre-filled with the account's phone once signed in.
+    // …but toggling it off attaches no number at all.
+    await window.openPost('perdidos');
+    doc.getElementById('pf-name').value = 'Reporte sin contacto';
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
+    delete lastInsert.perdidos;
+    await window.submitPost('perdidos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.perdidos && lastInsert.perdidos.contact_info === null, 'Perdidos: choosing "No hace falta" writes no contact_info, even though the field was pre-filled');
+
+    // Empleos: company name is optional now (anonymity).
+    await window.openPost('empleos');
+    doc.getElementById('pf-title').value = 'Se busca ayudante';
+    doc.getElementById('pf-co').value = '';
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
+    delete lastInsert.empleos;
+    await window.submitPost('empleos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.empleos && lastInsert.empleos.company === null && lastInsert.empleos.contact_info === null, 'Empleos: a blank business name is stored as null (not ""), and the contact toggle can suppress the number');
+
+    // Avisos contact field is still pre-filled from the account (shown once
+    // the "sí, que me contacten" toggle reveals it).
     await window.openPost('avisos');
     assert(doc.getElementById('pf-contact').value === '+529811234567', 'Avisos contact field is pre-filled from the account\'s phone for a signed-in user');
 

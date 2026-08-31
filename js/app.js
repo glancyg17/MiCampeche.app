@@ -1081,8 +1081,9 @@ function renderEmpleos(){
   el.innerHTML=pin+EMPLEOS.map(x=>`
     <div class="job-card">
       <div class="job-top"><div class="job-title">${e(x.title)}</div><div class="job-pay">${e(x.pay)}</div></div>
-      <div class="job-co">${e(x.co)}</div>
-      <div class="job-tags">${x.tags.map(t=>`<span class="job-tag">${e(t)}</span>`).join('')}</div>
+      ${x.co?`<div class="job-co">${e(x.co)}</div>`:''}
+      ${x.tags.length?`<div class="job-tags">${x.tags.map(t=>`<span class="job-tag">${e(t)}</span>`).join('')}</div>`:''}
+      ${x.contact?`<a class="av-contact-btn" style="margin-top:11px" href="${telHref(x.contact)}">${svgIco('phone')}Llamar</a>`:''}
     </div>
   `).join('');
 }
@@ -1115,6 +1116,7 @@ function renderPerdidos(){
         <div class="pf-name">${e(x.name)}</div>
         <div class="pf-desc">${e(x.desc)}</div>
         <div class="pf-loc">${svgIco('pin')} ${e(x.loc)}</div>
+        ${x.contact?`<a class="av-contact-btn" style="margin-top:9px" href="${telHref(x.contact)}">${svgIco('phone')}Llamar</a>`:''}
       </div>
     </div>
   `).join('');
@@ -1204,7 +1206,7 @@ function renderAvisos(){
       <div class="av-desc">${e(a.desc)}</div>
       <div class="av-foot">
         <span class="av-author">${e(a.author)}</span>
-        <a class="av-contact-btn" href="${telHref(a.contact)}">${svgIco('phone')}Contactar</a>
+        ${a.contact?`<a class="av-contact-btn" href="${telHref(a.contact)}">${svgIco('phone')}Contactar</a>`:''}
       </div>
     </div>
   `).join('');
@@ -1277,13 +1279,17 @@ const POST_FORMS={
     {k:'name',lbl:'¿Qué se perdió / encontró?',type:'text',ph:'Ej. Gato atigrado'},
     {k:'loc',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
     {k:'photo',lbl:'Foto',type:'imgupload'},
-    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles que ayuden a identificarlo...'}
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles que ayuden a identificarlo...'},
+    {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','No hace falta']]},
+    {k:'contact',lbl:'Tu número de contacto',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Se muestra como botón de llamada en tu reporte.'}
   ]},
   empleos:{title:'Publicar una vacante',fields:[
     {k:'title',lbl:'Puesto',type:'text',ph:'Ej. Mesero(a) con experiencia'},
-    {k:'co',lbl:'Negocio',type:'text',ph:'Nombre del negocio'},
+    {k:'co',lbl:'Negocio (opcional)',type:'text',ph:'Déjalo en blanco para no dar el nombre'},
     {k:'pay',lbl:'Pago',type:'text',ph:'Ej. $350/día + propinas'},
-    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Requisitos, horario...'}
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Requisitos, horario...'},
+    {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','En la descripción']]},
+    {k:'contact',lbl:'Número de contacto',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Se muestra como botón de llamada en la vacante.'}
   ]},
   reportar:{title:'Reportar un problema',fields:[
     {k:'cat',lbl:'Tipo de problema',type:'select',opts:['Bache','Semáforo','Árbol caído','Alumbrado','Fuga de agua','Basura acumulada','Otro']},
@@ -1296,7 +1302,9 @@ const POST_FORMS={
     {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Familia','Comunidad','Seguridad','Otro']},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Buscamos a un familiar'},
     {k:'desc',lbl:'Mensaje',type:'textarea',ph:'Cuenta los detalles a tus vecinos...'},
-    {k:'contact',lbl:'Tu número de contacto',type:'tel',ph:'981 000 0000'}
+    {k:'anon',lbl:'¿Cómo lo firmas?',type:'seg',opts:[['no','Con mi nombre'],['si','Anónimo']]},
+    {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['no','No hace falta'],['si','Sí, que me contacten']]},
+    {k:'contact',lbl:'Tu número de contacto',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Se muestra como botón de contacto en tu aviso.'}
   ]},
   oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
@@ -1393,14 +1401,14 @@ async function openPost(kind){
       if(cp&&!cp.value)cp.value=acct.phone;
     }
   }
-  if(kind==='avisos'){
-    // Convenience only — anonymous visitors without an account yet can
-    // still type their own contact info manually; this just saves a real
-    // account holder from retyping their phone on every post.
+  if(kind==='avisos'||kind==='perdidos'||kind==='empleos'){
+    // Convenience only — prefill the contact field from the account so a
+    // signed-in poster doesn't retype their phone. The "¿dejar un número?"
+    // toggle still decides whether it's actually attached to the post.
     const acct=await MC.currentAccount();
     if(acct.signedIn&&acct.phone){
       const contactEl=document.getElementById('pf-contact');
-      if(contactEl)contactEl.value=acct.phone;
+      if(contactEl&&!contactEl.value)contactEl.value=acct.phone;
     }
   }
 }
@@ -2459,6 +2467,9 @@ async function submitPost(kind){
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
   if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
+  if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'&&!(data.contact||'').trim()){
+    stop();toast('Escribe tu número o elige "No hace falta"');return;
+  }
 
   if(kind==='negocio_verificar'){
     if(!data.name||!data.desc||!data.address||!data.phone||!data.cat){

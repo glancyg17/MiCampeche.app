@@ -389,7 +389,7 @@ svg{display:block}
 .av-desc{font-size:12.5px;color:var(--ink2);line-height:1.55;margin-bottom:11px}
 .av-foot{display:flex;align-items:center;justify-content:space-between;padding-top:11px;border-top:1px solid var(--line)}
 .av-author{font-size:11.5px;color:var(--ink3);font-weight:600}
-.av-contact-btn{display:flex;align-items:center;gap:6px;background:var(--night);color:#fff;border:none;border-radius:99px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.av-contact-btn{display:inline-flex;align-items:center;gap:6px;background:var(--night);color:#fff;border:none;border-radius:99px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;flex-shrink:0}
 .av-contact-btn .ico{width:13px;height:13px}
 
 /* ═══ EMPLEOS (sub-view inside Anuncios) ═══ */
