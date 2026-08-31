@@ -121,7 +121,7 @@ Noticias, "Cómo funciona", "Pagar servicios" reachable via Inicio "Ver todo" or
 - SMTP (e.g. Resend) is now lower priority — users log in and reset by phone/WhatsApp, so email confirmation and the dormant email-link reset flow matter less. Still nice-to-have for email as a recovery channel.
 
 **Compounding infrastructure:**
-- ~~Wire a real weather data source~~ — **done 31 ago 2026** (Open-Meteo: current + 12h hourly strip + hi/lo; "Ver pronóstico completo" links Conagua).
+- ~~Wire a real weather data source~~ — **done 31 ago 2026** (Open-Meteo: current + 12h hourly strip + hi/lo). The modal is a quick-glance-at-today only — shows the date/time it was opened; the old "Ver pronóstico completo" (Conagua) link was removed (it 404'd and everyone has a weather app).
 - Consider extending the admin-only notification badge to regular accounts once there's real usage pattern to justify it.
 - Fuller "my submissions" history view for regular users (rejections already surface; no complete history yet).
 - Revisit Empleos employer monetization once there's usage data.

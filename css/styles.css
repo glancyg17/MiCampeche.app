@@ -438,10 +438,8 @@ svg{display:block}
 .wx-lb-stat-val{font-size:16px;font-weight:700;color:var(--ink)}
 .wx-lb-stat-lbl{font-size:10px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
 .wx-lb-foot{padding:16px 20px 20px}
-.wx-lb-source{font-size:11px;color:var(--ink3);margin-bottom:10px;text-align:center}
+.wx-lb-source{font-size:11px;color:var(--ink3);text-align:center}
 .wx-lb-source a{color:var(--ink2);font-weight:600}
-.wx-lb-link{display:flex;align-items:center;justify-content:center;gap:7px;background:var(--night);color:#fff;border-radius:99px;padding:12px;font-size:13.5px;font-weight:700;text-decoration:none}
-.wx-lb-link .ico{width:15px;height:15px}
 
 /* ═══ PHOTO UPLOAD (real file picker + preview) ═══ */
 .photo-upload-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--paper2);border:1.5px dashed var(--line2);border-radius:var(--rs);padding:13px;font-size:13.5px;font-weight:700;color:var(--gulf);cursor:pointer;font-family:inherit}

@@ -362,7 +362,6 @@ function openWeatherLightbox(){
   document.getElementById('wx-lb').innerHTML=hero+`
     <div class="wx-lb-foot">
       <div class="wx-lb-source">Datos de <a href="${w.sourceUrl}" target="_blank" rel="noopener">Open-Meteo</a></div>
-      <a class="wx-lb-link" href="${w.fullUrl}" target="_blank" rel="noopener">Ver pronóstico completo${svgIco('external')}</a>
     </div>
   `;
   document.getElementById('wx-lb-bg').classList.add('on');
@@ -442,12 +441,11 @@ function renderPhotoUploadButton(fieldKey){
    version — it just reads whatever these variables currently hold. */
 /* Live — filled by loadWeather() from Open-Meteo. Renders read whatever's
    here; before the first fetch, temp is null and the header shows only the
-   icon. sourceUrl credits the data provider; fullUrl is the official
-   Mexican forecast (Conagua) the "Ver pronóstico completo" button opens. */
+   icon. sourceUrl credits the data provider. The modal is a quick glance at
+   today only — no "full forecast" link (everyone has a weather app). */
 const WEATHER={city:'Campeche',temp:null,cond:'',condCode:'sun',feelsLike:null,humidity:null,wind:null,hi:null,lo:null,alert:null,
   hourly:[],loaded:false,failed:false,
-  sourceUrl:'https://open-meteo.com/',
-  fullUrl:'https://smn.conagua.gob.mx/es/pronosticos/pronostico-por-ciudad/campeche'};
+  sourceUrl:'https://open-meteo.com/'};
 
 let NOTICIAS=[];
 let EVENTOS=[];
