@@ -1179,15 +1179,31 @@ const COUNTRY_CODES=[
   ['AE','Emiratos Árabes Unidos','971']
 ];
 let accountMode='signup';
+let accountViewSeq=0;
 async function openAccount(){
+  // Paint the modal frame immediately — the fetches below take a moment on
+  // mobile, and a blank pause right after tapping reads as broken.
+  const myTurn=++accountViewSeq;
+  document.getElementById('modal-title').textContent='Tu cuenta';
+  document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
+  document.getElementById('modal-bg').classList.add('on');
+
   const acct=await MC.currentAccount();
-  if(acct.signedIn){
-    acct.rejections=await MC.fetchMyRejections();
+  if(myTurn!==accountViewSeq)return; // a newer openAccount() superseded this one
+  if(!acct.signedIn){accountMode='signup';renderAccountForm();return;}
+
+  // Render the account view now; the rejected-submissions list needs a
+  // query per content table, so load it after and re-render when it lands
+  // rather than holding the whole view hostage to it.
+  renderAccountSignedIn(acct);
+  MC.fetchMyRejections().then(rej=>{
+    if(myTurn!==accountViewSeq)return;
+    const bg=document.getElementById('modal-bg');
+    if(!bg.classList.contains('on'))return;
+    if(document.getElementById('modal-title').textContent!=='Tu cuenta')return; // user navigated on
+    acct.rejections=rej;
     renderAccountSignedIn(acct);
-    return;
-  }
-  accountMode='signup';
-  renderAccountForm();
+  });
 }
 function renderAccountSignedIn(acct){
   lastFetchedAccount=acct;

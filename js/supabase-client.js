@@ -158,11 +158,15 @@ MC.rejectPasswordReset=async function(requestId,reason){
 MC.currentAccount=async function(){
   const {data:{session}}=await sb.auth.getSession();
   if(!session||session.user.is_anonymous)return {signedIn:false};
-  const {data:prof}=await sb.from('profiles').select('display_name,phone,is_admin,phone_verification_status,phone_verification_reason').eq('id',session.user.id).single();
-  const business=await MC.myBusiness();
+  const uid=session.user.id;
+  // profile + business are independent — fetch them together, not in series.
+  const [{data:prof},{data:business}]=await Promise.all([
+    sb.from('profiles').select('display_name,phone,is_admin,phone_verification_status,phone_verification_reason').eq('id',uid).single(),
+    sb.from('businesses').select('*').eq('profile_id',uid).maybeSingle()
+  ]);
   return {
     signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',phone:(prof&&prof.phone)||null,
-    isAdmin:!!(prof&&prof.is_admin),business,
+    isAdmin:!!(prof&&prof.is_admin),business:business||null,
     phoneVerificationStatus:(prof&&prof.phone_verification_status)||'pending',
     phoneVerificationReason:(prof&&prof.phone_verification_reason)||null
   };

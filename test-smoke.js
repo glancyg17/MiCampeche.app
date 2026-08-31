@@ -1046,6 +1046,7 @@ const fakeClient = {
     // rejected — surfaced in their own account view, not just stored and
     // forgotten in the database.
     await window.openAccount();
+    await new Promise(r => setTimeout(r, 20)); // rejected-submissions list loads after the view paints, then re-renders
     assert(text('modal-body').includes('Publicaciones no aprobadas'), 'account view surfaces rejected submissions to the person who sent them');
     assert(text('modal-body').includes('La descripción no es clara'), 'the actual rejection reason text is shown, not just that something was rejected');
 
