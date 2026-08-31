@@ -1325,11 +1325,18 @@ function renderAccountSignedIn(acct){
         `).join('')}
       </div>
     `:''}
-    ${acct.isAdmin?`<button class="acct-pend-btn" onclick="openPending()">
-      <span>Pendiente</span>
-      ${acct.pendingCount===undefined?''
-        :acct.pendingCount>0?`<span class="acct-pend-count">${acct.pendingCount>99?'99+':acct.pendingCount}</span>`
-        :`<span class="acct-pend-ok">✓ Todo al día</span>`}
+    ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">Pendiente</span>
+        <span class="menu-item-sub"${acct.pendingCount===0?' style="color:var(--palm)"':''}>${
+          acct.pendingCount===undefined?'Revisar la cola de aprobaciones'
+          :acct.pendingCount===0?'Todo al día ✓'
+          :acct.pendingCount+(acct.pendingCount===1?' cosa por revisar':' cosas por revisar')
+        }</span>
+      </span>
+      ${acct.pendingCount>0?`<span class="menu-badge on">${acct.pendingCount>99?'99+':acct.pendingCount}</span>`:''}
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
