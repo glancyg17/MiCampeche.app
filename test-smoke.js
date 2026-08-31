@@ -293,7 +293,7 @@ const fakeClient = {
   window.openEvento('e1');
   const evd = text('evento-detail-body') || '';
   assert(doc.getElementById('scr-evento-detail').classList.contains('on'), 'openEvento navigates to the event detail screen');
-  assert(evd.includes('example.com/cartel.jpg'), 'event detail shows the event image');
+  assert(evd.includes('<img class="evt-hero-img" src="https://example.com/cartel.jpg"'), 'event detail shows the poster as a full-width <img> (never cropped), not a fixed-height background');
   assert(evd.includes('Descripción larga del evento de prueba'), 'event detail shows the full description');
   assert(evd.includes('<a href="https://example.com/boletos"'), 'a bare URL in the description (e.g. the ticket link) renders as a real clickable link, not plain cut-off text');
   assert(evd.includes('de noviembre') || /\bde [a-zé]+ de 20\d\d/.test(evd), 'event detail shows a full human date');
@@ -302,6 +302,13 @@ const fakeClient = {
   assert(evd.includes('Precio') && evd.includes('$150'), 'event detail shows the ticket price');
   assert(text('evt-list').includes('$150'), 'event card shows the ticket price');
   window.nav('inicio'); // restore the default screen for the pull-to-refresh test below
+
+  // ── Weather modal shows the date & time it was opened ──
+  window.openWeatherLightbox();
+  const wxb = text('wx-lb') || '';
+  assert(wxb.includes('wx-lb-when'), 'the weather modal renders a date/time line');
+  assert(/\d{1,2}:\d{2}\s*(a\.m\.|p\.m\.)/.test(wxb) && /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(wxb), 'the weather modal shows a real clock time and a month — the moment it was opened');
+  window.closeWeatherLightbox();
   assert(text('mkt-grid') && text('mkt-grid').includes('Producto test'), 'Tienda/Mercado rendered real productos row');
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test') && text('clas-grid').includes('Ricardo T.'), 'Clasificados rendered real row with joined profile name');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('reclamados'), 'Ofertas rendered with real claim count wired in');

@@ -316,6 +316,15 @@ function gateInstall(){
 
 function openWeatherLightbox(){
   const w=WEATHER;
+  // Date + time the modal was opened — hand-rolled for the same reason the
+  // rest of the app avoids toLocale*: consistent Spanish, no ICU surprises.
+  const nowD=new Date();
+  const when=(()=>{
+    const long=dsToLongEs(dToDs(nowD)).replace(/ de \d{4}$/,''); // "sábado 31 de agosto"
+    const h=nowD.getHours(),m=nowD.getMinutes();
+    const t=(h%12||12)+':'+String(m).padStart(2,'0')+' '+(h<12?'a.m.':'p.m.');
+    return long.charAt(0).toUpperCase()+long.slice(1)+' · '+t;
+  })();
   const hours=(w.hourly&&w.hourly.length)?`
     <div class="wx-lb-hours">
       ${w.hourly.map(h=>`<div class="wx-hr">
@@ -329,6 +338,7 @@ function openWeatherLightbox(){
     <div class="wx-lb-hero">
       <button class="wx-lb-close" onclick="closeWeatherLightbox()">${svgIco('close')}</button>
       <div class="wx-lb-city">${e(w.city)}</div>
+      <div class="wx-lb-when">${e(when)}</div>
       <div class="wx-lb-cond">${e(w.cond)}</div>
       <div class="wx-lb-temp-row">
         <span class="wx-lb-temp">${w.temp}°</span>
@@ -345,6 +355,7 @@ function openWeatherLightbox(){
     <div class="wx-lb-hero">
       <button class="wx-lb-close" onclick="closeWeatherLightbox()">${svgIco('close')}</button>
       <div class="wx-lb-city">${e(w.city)}</div>
+      <div class="wx-lb-when">${e(when)}</div>
       <div class="wx-lb-cond" style="margin-top:8px">${w.failed?'No pudimos cargar el clima':'Cargando el clima…'}</div>
       ${w.failed?`<button class="wx-lb-retry" onclick="loadWeather()">Reintentar</button>`:''}
     </div>`;
@@ -836,7 +847,7 @@ function openEvento(id){
   }
   if(!links)links=`<div class="field-note">El organizador no dejó sitio web ni teléfono de contacto.</div>`;
   document.getElementById('evento-detail-body').innerHTML=`
-    ${x.img?`<div class="detail-hero" style="background-image:url('${e(x.img)}')"></div>`:''}
+    ${x.img?`<img class="evt-hero-img" src="${e(x.img)}" alt="">`:''}
     <div class="detail-body">
       <div class="detail-src">${e(x.cat)}</div>
       <div class="detail-head">${e(x.name)}</div>
