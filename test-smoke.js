@@ -878,15 +878,26 @@ const fakeClient = {
     assert(text('modal-title') === 'Publicar una Oferta', 'and so does Oferta, now that the business is actually approved');
 
     await window.openAccount();
-    assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view now shows the verified business');
-    assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell correctly stays hidden for admin accounts — admin already has premium (and more) rights, so there\'s nothing to upgrade to');
+    assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view shows the verified business as a single tappable box');
+    assert(text('modal-body').includes("openBusinessProfile()") && !text('modal-body').includes('Editar mi negocio'), 'the account view has ONE business box (no separate edit button) — it opens the business profile');
 
-    // Prove it's genuinely the admin check gating this, not some other
-    // coincidental condition — same business, same approved status, only
-    // is_admin changes.
+    // The business profile sub-view: full record + the edit action, one tap in.
+    await window.openBusinessProfile();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Mi negocio', 'tapping the business box opens the business profile view');
+    assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Lun-Sáb 9am-8pm'), 'the profile shows the full business record, not just the name');
+    assert(text('modal-body').includes('Editar negocio'), 'the profile carries the edit action that sends changes back to review');
+    assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell stays hidden for admin accounts — admin already has premium (and more) rights');
+    window.mcModalBack();
+    assert(text('modal-title') === 'Tu cuenta', 'closing the business profile returns to the account view, not the home screen');
+
+    // Same business, same approved status — only is_admin changes — proves the admin check is what gates the upsell.
     currentProfile.is_admin = false;
-    await window.openAccount();
-    assert(text('modal-body').includes('Actualizar a Premium'), 'a non-admin with the exact same approved, non-premium business DOES see the upsell — confirming is_admin is what specifically gates it');
+    await window.openAccount(); // refresh the account view so lastFetchedAccount reflects the non-admin state
+    await window.openBusinessProfile();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Actualizar a Premium'), 'a non-admin with the exact same approved, non-premium business DOES see the upsell in the profile');
+    window.mcModalBack();
     currentProfile.is_admin = true; // restore — later tests (Moderación/Pendiente access) need this fixture to stay admin
 
     // ── Editing an existing (approved) business ──
@@ -901,6 +912,7 @@ const fakeClient = {
     await window.submitPost('negocio_verificar');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Cambios guardados — tu negocio vuelve a revisión ✓', 'editing shows a distinct "back to review" toast, not the first-time verification message');
+    assert(text('modal-title') === 'Mi negocio' && doc.getElementById('modal-bg').classList.contains('on'), 'after saving an edit you land back on the business profile, not dumped to the home screen');
     assert(lastUpdate.businesses && lastUpdate.businesses.phone === '981 000 1234', 'the real edited field was sent as an UPDATE');
     assert(!lastInsert.businesses, 'editing an existing business never creates a second (duplicate) business row via insert');
 

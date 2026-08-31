@@ -1562,36 +1562,16 @@ function renderAccountSignedIn(acct){
       <span class="menu-item-lbl">Editar mi cuenta</span>
     </button>
     ${biz?`
-      <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:4px">
-        <div style="display:flex;gap:10px;align-items:flex-start">
-          ${biz.business_image_url?`<img src="${e(biz.business_image_url)}" style="width:48px;height:48px;object-fit:cover;border-radius:10px;flex-shrink:0">`:''}
-          <div style="min-width:0">
-            <div style="font-size:11px;font-weight:700;color:${biz.status==='published'?'var(--gulf)':'var(--wall-dk)'};text-transform:uppercase;letter-spacing:.04em">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio'}</div>
-            <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(biz.business_name)}</div>
-            <div style="color:var(--ink3);font-size:12.5px;margin-top:2px">${e(biz.category)} · ${e(biz.phone)}</div>
-          </div>
-        </div>
-        ${biz.description?`<div style="color:var(--ink2);font-size:12.5px;margin-top:8px">${e(biz.description)}</div>`:''}
-        ${(biz.status==='rejected'&&biz.rejection_reason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">${e(biz.rejection_reason)}</div>`:''}
-      </div>
-      <button class="menu-item" onclick="openBusinessEdit()" style="border:1.5px solid var(--line2);margin-bottom:4px">
-        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
+      <button class="menu-item" onclick="openBusinessProfile()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        ${biz.business_image_url
+          ?`<img src="${e(biz.business_image_url)}" style="width:34px;height:34px;object-fit:cover;border-radius:9px;flex-shrink:0">`
+          :`<span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>`}
         <span class="menu-item-txt">
-          <span class="menu-item-lbl">Editar mi negocio</span>
-          <span class="menu-item-sub">Los cambios se envían a revisión de nuevo</span>
+          <span class="menu-item-lbl">${e(biz.business_name)}</span>
+          <span class="menu-item-sub">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio verificado'}${biz.category?' · '+e(biz.category):''}</span>
         </span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      ${(biz.status==='published'&&!biz.is_premium&&!acct.isAdmin)?`
-        <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
-          <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
-          <span class="menu-item-txt">
-            <span class="menu-item-lbl">Actualizar a Premium</span>
-            <span class="menu-item-sub">$749 MXN/mes · más productos y espacios de Oferta</span>
-          </span>
-          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-        </a>
-      `:''}
     `:`
       <button class="menu-item" onclick="editingBusinessId=null;openPost('negocio_verificar')" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
@@ -1631,6 +1611,57 @@ function renderAccountSignedIn(acct){
   `;
   document.getElementById('modal-bg').classList.add('on');
 }
+
+/* Business profile — a sub-view of "Tu cuenta". One tap from the account
+   view opens the full business record; the edit action here reuses the
+   verification form and sends the changes back to review. Part of the
+   modal view stack, so ✕ / back / hardware-back returns to the account
+   view, and finishing an edit returns here (now showing "En revisión"). */
+async function openBusinessProfile(){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Mi negocio';
+  document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
+  document.getElementById('modal-bg').classList.add('on');
+  const biz=await MC.myBusiness();
+  if(!biz){mcModalBack();return;}
+  renderBusinessProfile(biz);
+}
+function renderBusinessProfile(biz){
+  if(!biz)return;
+  const isAdmin=!!(lastFetchedAccount&&lastFetchedAccount.isAdmin);
+  const statusLbl=biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio verificado';
+  const statusColor=biz.status==='published'?'var(--gulf)':'var(--wall-dk)';
+  document.getElementById('modal-title').textContent='Mi negocio';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="font-size:11px;font-weight:700;color:${statusColor};text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${statusLbl}</div>
+    ${biz.status==='pending'?`<div style="color:var(--ink3);font-size:12.5px;margin-bottom:14px">Está en revisión — te avisamos cuando se apruebe. Mientras tanto sigue visible con los datos anteriores.</div>`:''}
+    ${(biz.status==='rejected'&&biz.rejection_reason)?`<div style="color:var(--signal);font-size:12.5px;margin-bottom:14px">${e(biz.rejection_reason)}</div>`:''}
+    ${renderModerationDetailFields('businesses',biz)}
+    <button class="menu-item" onclick="openBusinessEdit()" style="border:1.5px solid var(--line2);margin:6px 0 4px">
+      <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">Editar negocio</span>
+        <span class="menu-item-sub">Los cambios se envían a revisión de nuevo</span>
+      </span>
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+    ${(biz.status==='published'&&!biz.is_premium&&!isAdmin)?`
+      <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
+        <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Actualizar a Premium</span>
+          <span class="menu-item-sub">$749 MXN/mes · más productos y espacios de Oferta</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+    `:''}
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function refreshBusinessProfile(){
+  renderBusinessProfile(await MC.myBusiness());
+}
+
 /* Country-code select + phone input pair. Reused by signup, login, and
    both password-reset screens — one markup, one place to change it. */
 function phoneFieldHtml(ccId,numId,label){
@@ -2202,6 +2233,7 @@ let editingBusinessId=null; // set by openBusinessEdit(), read by submitPost's n
 async function openBusinessEdit(){
   const biz=await MC.myBusiness();
   if(!biz)return;
+  mcModalPushView('bizProfile'); // ✕ / back from the form returns to the business profile
   editingBusinessId=biz.id;
   await openPost('negocio_verificar');
   document.getElementById('modal-title').textContent='Editar mi negocio';
@@ -2380,7 +2412,9 @@ async function submitPost(kind){
     toast(isEditing?'Cambios guardados — tu negocio vuelve a revisión ✓':'Tu negocio fue enviado para revisión ✓');
     const next=pendingPostAfterAuth;
     pendingPostAfterAuth=null;
-    if(next){await openPost(next);} else {closeModal();}
+    if(next){await openPost(next);}
+    else if(isEditing){mcModalBack('bizProfile');refreshBusinessProfile();}
+    else {closeModal();}
     return;
   }
 
