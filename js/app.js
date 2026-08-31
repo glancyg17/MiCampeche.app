@@ -10,6 +10,8 @@ const ICO={
   reportar:'<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/>',
   chevronR:'<path d="M9 6l6 6-6 6"/>',
   sun:'<circle cx="12" cy="12" r="4.5"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  moon:'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  fog:'<path d="M5 11h14a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.5 3.5 0 0 0 5 11z"/><path d="M4 15h16M6 19h12"/>',
   cloudy:'<path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.4-1.5A4.5 4.5 0 0 0 6.5 19h11z"/>',
   partlyCloudy:'<circle cx="8" cy="8" r="3.2"/><path d="M8 2.5v1.4M3.5 8H5M8 12.5v-1.4M4.4 4.4l1 1M18 20a4 4 0 0 0 0-8 5.3 5.3 0 0 0-9.9-1.6A4 4 0 0 0 7 20h11z"/>',
   rain:'<path d="M16.5 17a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.4-1.5A4.5 4.5 0 0 0 5.5 17h11z"/><path d="M8 20l-1 2M12 20l-1 2M16 20l-1 2"/>',
@@ -29,12 +31,71 @@ const ICO={
 };
 function svgIco(name,cls){return `<svg class="ico ${cls||''}" viewBox="0 0 24 24">${ICO[name]||''}</svg>`;}
 
-/* ══════════════ HEADER WEATHER (icon+temp button, global) + LIGHTBOX ══════════════ */
+/* ══════════════ HEADER WEATHER (icon+temp button, global) + LIGHTBOX ══════════════
+   Live from Open-Meteo (see MC.fetchWeather + loadWeather below). Starts
+   blank — header shows just the icon until the first fetch lands. */
 function renderHeaderWeather(){
   const w=WEATHER;
   const btn=document.getElementById('tb-weather');
-  btn.innerHTML=`${svgIco(w.condCode||'sun')}<span class="tb-wx-temp">${w.temp}°</span>${w.alert?'<span class="tb-wx-dot" title="Aviso activo"></span>':''}`;
+  if(!btn)return;
+  btn.innerHTML=`${svgIco(w.condCode||'sun')}${w.temp!=null?`<span class="tb-wx-temp">${w.temp}°</span>`:''}${w.alert?'<span class="tb-wx-dot" title="Aviso activo"></span>':''}`;
   btn.classList.toggle('has-alert',!!w.alert);
+}
+
+/* WMO weather_code → Spanish label + one of our icon keys. isDay picks
+   sun vs moon for the clear-sky codes. */
+function wmoInfo(code,isDay){
+  const day=isDay!==0;
+  if(code<=1)return {cond:'Despejado',ico:day?'sun':'moon'};
+  if(code===2)return {cond:'Parcialmente nublado',ico:'partlyCloudy'};
+  if(code===3)return {cond:'Nublado',ico:'cloudy'};
+  if(code===45||code===48)return {cond:'Niebla',ico:'fog'};
+  if(code>=51&&code<=57)return {cond:'Llovizna',ico:'rain'};
+  if(code>=61&&code<=67)return {cond:'Lluvia',ico:'rain'};
+  if(code>=71&&code<=77)return {cond:'Nieve',ico:'cloudy'};
+  if(code>=80&&code<=82)return {cond:'Chubascos',ico:'rain'};
+  if(code===85||code===86)return {cond:'Chubascos de nieve',ico:'cloudy'};
+  if(code>=95)return {cond:'Tormenta eléctrica',ico:'bolt'};
+  return {cond:'—',ico:'cloudy'};
+}
+
+async function loadWeather(){
+  if(typeof fetch!=='function')return; // e.g. the jsdom test env
+  try{
+    const d=await MC.fetchWeather();
+    const c=d.current||{};
+    if(typeof c.temperature_2m!=='number')throw new Error('unexpected payload');
+    const cur=wmoInfo(c.weather_code,c.is_day);
+    Object.assign(WEATHER,{
+      temp:Math.round(c.temperature_2m),
+      feelsLike:Math.round(c.apparent_temperature),
+      humidity:Math.round(c.relative_humidity_2m),
+      wind:Math.round(c.wind_speed_10m),
+      cond:cur.cond, condCode:cur.ico,
+      hi:Math.round((d.daily&&d.daily.temperature_2m_max||[])[0]),
+      lo:Math.round((d.daily&&d.daily.temperature_2m_min||[])[0]),
+      loaded:true, failed:false
+    });
+    const H=d.hourly||{}, times=H.time||[], nowMs=Date.now();
+    let start=times.findIndex(t=>new Date(t).getTime()>=nowMs-3600e3);
+    if(start<0)start=0;
+    WEATHER.hourly=[];
+    for(let i=start;i<Math.min(start+12,times.length);i++){
+      const info=wmoInfo((H.weather_code||[])[i],(H.is_day||[])[i]);
+      WEATHER.hourly.push({
+        label:i===start?'Ahora':new Date(times[i]).getHours()+' h',
+        temp:Math.round((H.temperature_2m||[])[i]),
+        ico:info.ico,
+        pop:Math.round((H.precipitation_probability||[])[i]||0)
+      });
+    }
+  }catch(err){
+    console.error('Weather load failed:',err);
+    WEATHER.failed=true;
+  }
+  renderHeaderWeather();
+  const bg=document.getElementById('wx-lb-bg');
+  if(bg&&bg.classList.contains('on'))openWeatherLightbox();
 }
 /* ══════════════ HAMBURGER MENU DRAWER ══════════════ */
 // TODO: replace with the real MiCampeche WhatsApp business number once set up
@@ -252,7 +313,16 @@ function gateInstall(){
 
 function openWeatherLightbox(){
   const w=WEATHER;
-  document.getElementById('wx-lb').innerHTML=`
+  const hours=(w.hourly&&w.hourly.length)?`
+    <div class="wx-lb-hours">
+      ${w.hourly.map(h=>`<div class="wx-hr">
+        <div class="wx-hr-t">${e(h.label)}</div>
+        ${svgIco(h.ico,'wx-hr-ico')}
+        <div class="wx-hr-pop${h.pop>=10?'':' none'}">${h.pop>=10?h.pop+'%':''}</div>
+        <div class="wx-hr-temp">${h.temp}°</div>
+      </div>`).join('')}
+    </div>`:'';
+  const hero=w.loaded?`
     <div class="wx-lb-hero">
       <button class="wx-lb-close" onclick="closeWeatherLightbox()">${svgIco('close')}</button>
       <div class="wx-lb-city">${e(w.city)}</div>
@@ -261,20 +331,28 @@ function openWeatherLightbox(){
         <span class="wx-lb-temp">${w.temp}°</span>
         ${svgIco(w.condCode||'sun','wx-lb-ico')}
       </div>
-      <div class="wx-lb-range">Sensación térmica ${w.feelsLike}° · Máx ${w.hi}° · Mín ${w.lo}°</div>
-      ${w.alert?`<div class="wx-lb-alert">${svgIco(w.condCode||'sun')}${e(w.alert)}</div>`:''}
+      <div class="wx-lb-range">Sensación ${w.feelsLike}° · Máx ${w.hi}° · Mín ${w.lo}°</div>
     </div>
+    ${hours}
     <div class="wx-lb-stats">
       <div class="wx-lb-stat"><div class="wx-lb-stat-val">${w.humidity}%</div><div class="wx-lb-stat-lbl">Humedad</div></div>
       <div class="wx-lb-stat"><div class="wx-lb-stat-val">${w.wind}</div><div class="wx-lb-stat-lbl">Viento km/h</div></div>
       <div class="wx-lb-stat"><div class="wx-lb-stat-val">${w.feelsLike}°</div><div class="wx-lb-stat-lbl">Sensación</div></div>
-    </div>
+    </div>`:`
+    <div class="wx-lb-hero">
+      <button class="wx-lb-close" onclick="closeWeatherLightbox()">${svgIco('close')}</button>
+      <div class="wx-lb-city">${e(w.city)}</div>
+      <div class="wx-lb-cond" style="margin-top:8px">${w.failed?'No pudimos cargar el clima':'Cargando el clima…'}</div>
+      ${w.failed?`<button class="wx-lb-retry" onclick="loadWeather()">Reintentar</button>`:''}
+    </div>`;
+  document.getElementById('wx-lb').innerHTML=hero+`
     <div class="wx-lb-foot">
-      <div class="wx-lb-source">Datos de ${e(w.source)}</div>
-      <a class="wx-lb-link" href="${w.sourceUrl}" target="_blank" rel="noopener">Ver pronóstico completo${svgIco('external')}</a>
+      <div class="wx-lb-source">Datos de <a href="${w.sourceUrl}" target="_blank" rel="noopener">Open-Meteo</a></div>
+      <a class="wx-lb-link" href="${w.fullUrl}" target="_blank" rel="noopener">Ver pronóstico completo${svgIco('external')}</a>
     </div>
   `;
   document.getElementById('wx-lb-bg').classList.add('on');
+  if(!w.loaded&&!w.failed)loadWeather();
 }
 function closeWeatherLightbox(){document.getElementById('wx-lb-bg').classList.remove('on');}
 
@@ -348,9 +426,14 @@ function renderPhotoUploadButton(fieldKey){
    These start empty and are populated by loadAllData() during init().
    Every render function below is otherwise UNCHANGED from the mock-data
    version — it just reads whatever these variables currently hold. */
-const WEATHER={city:'Campeche',temp:31,cond:'Soleado',condCode:'sun',feelsLike:35,humidity:64,wind:18,hi:33,lo:26,alert:'Aviso de calor — hidrátate entre 12pm y 4pm',source:'Servicio Meteorológico Nacional (Conagua)',sourceUrl:'https://smn.conagua.gob.mx/es/pronosticos/pronostico-por-ciudad/campeche'};
-// STILL MOCK, deliberately — real weather (current + hourly via Open-Meteo)
-// is separate, later work per the Codex (Sections 5 & 8).
+/* Live — filled by loadWeather() from Open-Meteo. Renders read whatever's
+   here; before the first fetch, temp is null and the header shows only the
+   icon. sourceUrl credits the data provider; fullUrl is the official
+   Mexican forecast (Conagua) the "Ver pronóstico completo" button opens. */
+const WEATHER={city:'Campeche',temp:null,cond:'',condCode:'sun',feelsLike:null,humidity:null,wind:null,hi:null,lo:null,alert:null,
+  hourly:[],loaded:false,failed:false,
+  sourceUrl:'https://open-meteo.com/',
+  fullUrl:'https://smn.conagua.gob.mx/es/pronosticos/pronostico-por-ciudad/campeche'};
 
 let NOTICIAS=[];
 let EVENTOS=[];
@@ -2138,6 +2221,7 @@ async function refreshContent(){
   renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
   refreshPendingBadge();
   refreshHeaderAccount();
+  loadWeather(); // fire-and-forget; re-renders the header (and the lightbox if open) when it lands
 }
 
 /* Header account icon: a compact "Entrar" pill while signed out (taps

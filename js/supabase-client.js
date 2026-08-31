@@ -411,6 +411,20 @@ MC.moderatePost=async function(table,id,newStatus,reason){
   return sb.from(table).update(patch).eq('id',id);
 };
 
+/* Weather — the one live data source that isn't Supabase. Open-Meteo:
+   free, no API key, CORS-open. San Francisco de Campeche coords. Two
+   forecast days so the hourly strip can still fill past midnight. */
+MC.fetchWeather=async function(){
+  const qs='latitude=19.8454&longitude=-90.5237'
+    +'&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day'
+    +'&hourly=temperature_2m,weather_code,precipitation_probability,is_day'
+    +'&daily=temperature_2m_max,temperature_2m_min'
+    +'&timezone=auto&forecast_days=2';
+  const r=await fetch('https://api.open-meteo.com/v1/forecast?'+qs);
+  if(!r.ok)throw new Error('open-meteo '+r.status);
+  return r.json();
+};
+
 /* So a rejection reason isn't just stored and forgotten — a submitter can
    see their own rejected items and why, surfaced in their account view. */
 MC.fetchMyRejections=async function(){
