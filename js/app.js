@@ -149,6 +149,10 @@ async function checkForUpdates(){
   if(!('serviceWorker' in navigator)){toast('Este navegador no soporta actualizaciones automáticas');return;}
   const reg=await navigator.serviceWorker.getRegistration();
   if(!reg){toast('No se pudo verificar — intenta recargar la página primero');return;}
+  updateSnoozeUntil=0; // an explicit check overrides any earlier "Cerrar" snooze
+  // A new version may already be installed and waiting from an earlier
+  // check — reg.update() won't re-fire updatefound for it, so surface it now.
+  if(reg.waiting&&navigator.serviceWorker.controller){showUpdateBanner(reg);return;}
   toast('Buscando actualizaciones…');
   let found=false;
   const onUpdateFound=()=>{

@@ -4,7 +4,7 @@
 // network. This avoids silently serving stale content the way a
 // cache-everything strategy would.
 // Bump CACHE_NAME whenever app-shell files change so old caches get cleared.
-const CACHE_NAME = 'micampeche-shell-v35';
+const CACHE_NAME = 'micampeche-shell-v36';
 const APP_SHELL = [
   '/',
   '/index.html',
