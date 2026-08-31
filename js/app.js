@@ -771,7 +771,7 @@ function renderOfertas(){
 }
 async function toggleClaim(id){
   const acct=await MC.currentAccount();
-  if(!acct.signedIn){openSignInGate(null);return;}
+  if(!runWriteGate(acct,null))return;
   const o=OFERTAS.find(x=>x.id===id);if(!o)return;
   const alreadyClaimed=o.claimed+(claimedByMe[id]?1:0)>=o.total;
   if(!claimedByMe[id]&&alreadyClaimed){toast('Esta oferta ya se agotó');renderOfertas();return;}
@@ -877,7 +877,7 @@ function renderReportes(){
 }
 async function toggleConfirm(id){
   const acct=await MC.currentAccount();
-  if(!acct.signedIn){openSignInGate(null);return;}
+  if(!runWriteGate(acct,null))return;
   const wasConfirmed=!!confirmedByMe[id];
   confirmedByMe[id]=!wasConfirmed;
   renderReportes();
@@ -1016,14 +1016,12 @@ let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kin
 
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
-  // A real account (not just an anonymous browsing session) is required
-  // for ANY interactive/posting action — this is the actual traceability
-  // guarantee, and it's enforced at the database layer too (RLS rejects
-  // anonymous inserts outright), not just here for UX. This check comes
-  // first, before the business-verification check below, since verifying
-  // a business is itself a write action that needs a real account.
+  // A real account is required for ANY write, and its phone must already
+  // be verified — both enforced at the database layer too (is_verified_writer
+  // RLS), not just here for UX. Comes first, before the business check
+  // below, since verifying a business is itself a gated write.
   const acct=await MC.currentAccount();
-  if(!acct.signedIn){openSignInGate(kind);return;}
+  if(!runWriteGate(acct,kind))return;
   // Selling in Tienda or posting an Oferta requires a verified AND
   // admin-approved business — verification alone used to be enough
   // (instant self-serve), but now goes through the same moderation queue
@@ -1360,7 +1358,7 @@ function renderAccountForm(){
   h+=phoneFieldHtml('acct-phone-cc','acct-phone',isSignup?'Teléfono / WhatsApp':'Tu número de teléfono');
   h+=`<div><label class="fl">Contraseña</label>${passwordFieldHtml('acct-password','Mínimo 6 caracteres')}</div>`;
   if(!isSignup)h+=`<div style="text-align:right;margin-top:-8px"><a href="#" onclick="openForgotPassword();return false;" style="font-size:12.5px;color:var(--gulf);text-decoration:none">¿Olvidaste tu contraseña?</a></div>`;
-  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Usamos tu teléfono para tus publicaciones (contacto) y avisos importantes — nunca lo compartimos ni lo vendemos.':'Inicia sesión con tu número de teléfono y contraseña.'}</div>`;
+  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Al terminar te pediremos un mensaje de WhatsApp <b>desde este mismo número</b> para activar tu cuenta. Hasta que la activemos puedes explorar, pero no publicar. Tu número nunca lo compartimos ni lo vendemos.':'Inicia sesión con tu número de teléfono y contraseña.'}</div>`;
   h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
@@ -1667,12 +1665,12 @@ async function submitAuth(){
   if(result.error){toast(authErrorToast(result.error));return;}
   refreshPendingBadge();
   if(accountMode==='signup'&&signedUpPhone){
-    // Verifying the phone is a security signal, not a login gate — this
-    // never blocks anything the account can already do; it's purely so
-    // the founder can confirm the number is real and genuinely theirs.
+    // The account exists now, but it can't write anything until the founder
+    // confirms this WhatsApp message came from the number that was
+    // registered — enforced by is_verified_writer RLS, not just the UI.
     const msg='Hola, acabo de crear mi cuenta en MiCampeche. Mi nombre es '+signedUpName+' y mi número es: '+signedUpPhone;
-    openWhatsAppStep(msg,'Para comprobar que tu cuenta es única y que el número que diste es real, necesitamos un mensaje tuyo desde ese número — así evitamos cuentas falsas o duplicadas.',async()=>{
-      toast('¡Cuenta creada! Revisaremos tu número pronto ✓');
+    openWhatsAppStep(msg,'El mensaje tiene que venir del <b>mismo número</b> que registraste ('+e(signedUpPhone)+'). Si llega desde otro número no podremos activar tu cuenta y tendrás que crearla de nuevo con el número correcto. Hasta que la activemos puedes explorar, pero no publicar ni interactuar.',async()=>{
+      toast('¡Cuenta creada! Actívala enviando el WhatsApp desde tu número ✓');
       const next=pendingPostAfterAuth;
       pendingPostAfterAuth=null;
       if(next){await openPost(next);} else {closeModal();}
@@ -1841,6 +1839,37 @@ async function openBusinessEdit(){
         style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
     </div>`;
   }
+}
+
+/* Every real write (posting, claiming an Oferta, confirming a Reporte,
+   verifying a business) needs a signed-in account whose phone is already
+   verified. Not signed in → sign-in gate. Signed in but pending/rejected
+   → the "cuenta en revisión" gate. The database enforces the same rule
+   (is_verified_writer RLS); this is the UX half so it fails clearly
+   instead of with a raw policy error. */
+function runWriteGate(acct,kindForSignin){
+  if(!acct.signedIn){openSignInGate(kindForSignin);return false;}
+  if(acct.phoneVerificationStatus!=='verified'){openVerificationGate(acct);return false;}
+  return true;
+}
+function openVerificationGate(acct){
+  const rejected=acct.phoneVerificationStatus==='rejected';
+  const waMsg='Hola, mi cuenta en MiCampeche está en revisión. Mi nombre es '+(acct.displayName||'')+' y mi número registrado es: '+(acct.phone||'');
+  const waUrl='https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent(waMsg);
+  document.getElementById('modal-title').textContent=rejected?'No pudimos verificar tu número':'Tu cuenta está en revisión';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:16px 10px 6px">
+      ${svgIco('checkBadge')}
+      <div style="font-weight:700;font-size:15px;margin-top:10px">${rejected?'El número no coincidió':'Estamos confirmando tu número'}</div>
+      <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.55">${rejected
+        ? 'El mensaje de WhatsApp debe venir del <b>mismo número</b> que registraste en tu cuenta. '+(acct.phoneVerificationReason?e(acct.phoneVerificationReason)+' ':'')+'Escríbenos por WhatsApp y lo resolvemos.'
+        : 'En cuanto confirmemos que tu mensaje de WhatsApp vino desde el número que registraste, podrás publicar e interactuar. Mientras tanto puedes explorar todo MiCampeche.<br><br>El mensaje debe venir del <b>mismo número</b> — si lo enviaste desde otro, mándalo de nuevo desde el correcto.'}</div>
+    </div>
+    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none" href="${waUrl}" target="_blank" rel="noopener">
+      ${svgIco('phone')}${rejected?'Escribir por WhatsApp':'Enviar mi verificación por WhatsApp'}
+    </a>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
 }
 
 function openSignInGate(kind){

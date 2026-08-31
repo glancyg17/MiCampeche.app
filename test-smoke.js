@@ -352,8 +352,10 @@ const fakeClient = {
   }
 
   // The gate should cascade correctly: tapping "+" while anonymous, then
-  // actually signing up, should land directly in the form originally
-  // requested — not just a generic "you're signed in now" dead end.
+  // signing up, then through the WhatsApp step, should try to resume the
+  // originally-requested action. Since the new account isn't verified yet,
+  // that resume now lands on the "cuenta en revisión" gate rather than the
+  // form — the account exists but can't write until the founder approves.
   try {
     window.openPost('avisos');
     await new Promise(r => setTimeout(r, 20));
@@ -367,7 +369,7 @@ const fakeClient = {
     assert(text('modal-title') === 'Un paso más: WhatsApp', 'signup now shows the WhatsApp explanation step first, before resuming anything');
     window.runWhatsAppStepContinue();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Publicar un aviso', 'tapping through the WhatsApp step resumes directly into the originally-requested Avisos form, not just closing');
+    assert(text('modal-title') === 'Tu cuenta está en revisión', 'resuming after signup lands on the verification gate — a brand-new account cannot post until its number is verified');
     await window.doSignOut(); // back to anonymous for the rest of the account-flow tests below
     await new Promise(r => setTimeout(r, 20));
   } catch (err) {
@@ -421,7 +423,7 @@ const fakeClient = {
     assert(currentProfile.display_name === 'Reintento Exitoso' && currentProfile.phone === '+529815551212', 'the retry genuinely persisted the real data — this is exactly what was silently failing in production before the fix');
     window.runWhatsAppStepContinue();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === '¡Cuenta creada! Revisaremos tu número pronto ✓', 'completing the WhatsApp step shows the real post-verification-request confirmation');
+    assert(text('toast') === '¡Cuenta creada! Actívala enviando el WhatsApp desde tu número ✓', 'completing the WhatsApp step shows the real post-verification-request confirmation');
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
@@ -471,7 +473,7 @@ const fakeClient = {
     assert(signupWaLink.getAttribute('href').includes(encodeURIComponent('Ricardo')), 'the link also includes the real name, not a placeholder');
     window.runWhatsAppStepContinue();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === '¡Cuenta creada! Revisaremos tu número pronto ✓', 'completing the WhatsApp step shows the real post-signup confirmation');
+    assert(text('toast') === '¡Cuenta creada! Actívala enviando el WhatsApp desde tu número ✓', 'completing the WhatsApp step shows the real post-signup confirmation');
     assert(lastUpdate.profiles && lastUpdate.profiles.phone === '+529811234567', 'Mexico (+52) default combines correctly too');
     assert(refreshSessionCallCount >= 1, 'signup forces a session refresh so the JWT drops the stale is_anonymous:true claim — without this, every new signup would fail on their very first authenticated action afterward (e.g. verifying a business) with a permission error');
 
@@ -632,6 +634,22 @@ const fakeClient = {
 
     await window.openAccount();
     assert(text('modal-body').includes(currentProfile.phone_verification_reason), 'the account view shows the real rejection reason back to the account owner');
+
+    // ── Unverified accounts can browse but not write. This is the client
+    //    half of the is_verified_writer gate; the DB half is enforced by
+    //    RLS and verified directly against Supabase, not here. ──
+    await window.openPost('avisos');
+    assert(text('modal-title') === 'No pudimos verificar tu número', 'a rejected account hits the verification gate, not the post form');
+    currentProfile.phone_verification_status = 'pending'; currentProfile.phone_verification_reason = null;
+    await window.openPost('clasificado');
+    assert(text('modal-title') === 'Tu cuenta está en revisión', 'a pending account hits the "en revisión" gate instead of the post form');
+    assert(text('modal-body').includes('mismo número'), 'the gate explains the WhatsApp must come from the registered number');
+    const ofBeforeGate = text('of-list');
+    await window.toggleClaim('o1');
+    await new Promise(r => setTimeout(r, 10));
+    assert(text('modal-title') === 'Tu cuenta está en revisión', 'a pending account also cannot claim an Oferta');
+    assert(text('of-list') === ofBeforeGate, 'the blocked claim never optimistically changed the rendered state');
+
     currentProfile.phone_verification_status = 'verified'; currentProfile.phone_verification_reason = null; // leave in a clean state for later tests
     currentProfile.display_name = 'Ricardo Martín'; currentProfile.phone = '+529811234567'; // undo the edit-account test's change so downstream assertions (Perdidos/Avisos auto-fill) see the expected original value
 
