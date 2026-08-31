@@ -4,7 +4,7 @@
 // network. This avoids silently serving stale content the way a
 // cache-everything strategy would.
 // Bump CACHE_NAME whenever app-shell files change so old caches get cleared.
-const CACHE_NAME = 'micampeche-shell-v36';
+const CACHE_NAME = 'micampeche-shell-v37';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -16,33 +16,29 @@ const APP_SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
+  // Cache the new shell, then take over immediately — no "waiting" state.
+  // The PAGE decides when to reload onto the new code (see the
+  // controllerchange handling in index.html): silently while the app is
+  // backgrounded, or at the next safe idle moment if it's in the
+  // foreground. So updates land on their own without ever interrupting a
+  // task, and there's nothing for anyone to tap.
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
   );
-  // Deliberately NOT calling skipWaiting() here. A new worker installs and
-  // then waits — it only activates once the page explicitly asks it to
-  // (see the SKIP_WAITING message handler below), which happens when the
-  // user taps the "update available" banner. This is what makes that
-  // banner meaningful instead of cosmetic: without this, the new version
-  // would silently take over in the background the moment it finished
-  // installing, and the "tap to update" prompt would be a lie.
-});
-
-self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(
-        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+    caches.keys()
+      .then((names) =>
+        Promise.all(
+          names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+        )
       )
-    )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {

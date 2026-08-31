@@ -57,12 +57,6 @@ function contactUs(){
   window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent('Hola, tengo una pregunta sobre MiCampeche'));
 }
 
-/* On-demand update check — the automatic banner only appears when the
-   browser happens to notice a new sw.js on its own timing, which during
-   active development can mean waiting on an unpredictable popup. This
-   forces the check right now and reuses the exact same showUpdateBanner()
-   flow (defined in index.html's inline script) if one's actually found,
-   rather than duplicating that logic here. */
 /* ══════════════ PULL TO REFRESH ══════════════
    Standard mobile pattern: pull down while already at the top of the
    active screen, release past a threshold, and it refreshes BOTH the
@@ -144,27 +138,19 @@ function initPullToRefresh(){
   });
 }
 
+/* Manual "check now" from the menu. Updates normally apply on their own
+   (skipWaiting in sw.js + the controllerchange handler in index.html);
+   this just forces the check immediately and reports what it found. If a
+   new version is pulled, the service worker activates it and the page
+   reloads itself at the next safe moment — usually within seconds. */
 async function checkForUpdates(){
   closeMenu();
   if(!('serviceWorker' in navigator)){toast('Este navegador no soporta actualizaciones automáticas');return;}
   const reg=await navigator.serviceWorker.getRegistration();
   if(!reg){toast('No se pudo verificar — intenta recargar la página primero');return;}
-  updateSnoozeUntil=0; // an explicit check overrides any earlier "Cerrar" snooze
-  // A new version may already be installed and waiting from an earlier
-  // check — reg.update() won't re-fire updatefound for it, so surface it now.
-  if(reg.waiting&&navigator.serviceWorker.controller){showUpdateBanner(reg);return;}
   toast('Buscando actualizaciones…');
   let found=false;
-  const onUpdateFound=()=>{
-    found=true;
-    const newWorker=reg.installing;
-    if(!newWorker)return;
-    newWorker.addEventListener('statechange',()=>{
-      if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
-        showUpdateBanner(reg);
-      }
-    });
-  };
+  const onUpdateFound=()=>{found=true;};
   reg.addEventListener('updatefound',onUpdateFound);
   try{
     await reg.update();
@@ -174,12 +160,9 @@ async function checkForUpdates(){
     reg.removeEventListener('updatefound',onUpdateFound);
     return;
   }
-  // updatefound (if anything changed) fires as part of the update() check
-  // above — a short grace period covers the async install step that
-  // follows it, without leaving the listener attached indefinitely.
   setTimeout(()=>{
     reg.removeEventListener('updatefound',onUpdateFound);
-    if(!found)toast('Ya tienes la versión más reciente ✓');
+    toast(found?'Actualizando a la versión más reciente…':'Ya tienes la versión más reciente ✓');
   },1500);
 }
 

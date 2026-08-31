@@ -291,77 +291,53 @@
 
 <div class="toast" id="toast"></div>
 
-<div class="update-banner" id="update-banner">
-  <svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
-  <div class="update-banner-txt">Hay una nueva versión de MiCampeche</div>
-  <button class="update-banner-btn" id="update-banner-btn">Actualizar</button>
-  <button class="update-banner-dismiss" id="update-banner-dismiss" aria-label="Cerrar"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-</div>
-
 <script src="js/vendor/supabase.js"></script>
 <script src="js/supabase-client.js"></script>
 <script src="js/app.js"></script>
 <script>
-/* ══════════════ SERVICE WORKER + UPDATE DETECTION ══════════════
-   "New version waiting" pattern, tuned so a stale install can't sit
-   unnoticed — which matters here because Ofertas are time-sensitive:
-     • On register, check reg.waiting directly. A worker that finished
-       installing while the app was closed is already 'waiting' on the
-       next load, so 'updatefound' never fires for this page — without
-       this check that user would never see the banner.
-     • Re-check every time the app returns to the foreground (exactly when
-       someone opens it to look at offers) and on a slow timer while it
-       stays open. Installed PWAs can run for days without a reload, so
-       otherwise the browser's own ~24h check is the only trigger.
-     • "Cerrar" snoozes the banner for an hour, not forever; it comes
-       back on the next foreground if the update still hasn't been taken.
-   Tapping "Actualizar" activates the waiting worker; controllerchange
-   then reloads the page (only once it's actually in control). */
-let updateSnoozeUntil=0;
+/* ══════════════ SERVICE WORKER — SILENT AUTO-UPDATE ══════════════
+   The worker calls skipWaiting()/clients.claim() itself (see sw.js), so a
+   new version activates on its own. This page's only job is to decide
+   *when* to reload onto the new code — and to never do it in the user's
+   face, since Ofertas are time-sensitive and a reload mid-task would be
+   its own kind of "missed out":
+     • If the app is backgrounded, reload immediately — invisible.
+     • If it's in the foreground, wait for a safe idle moment: no modal or
+       menu open, nothing focused, not mid Stripe redirect.
+   Retried on every foreground, focus, and a 10s tick until it lands.
+   reg.update() is polled on foreground + a 15-min timer so an always-open
+   installed PWA still notices new deploys quickly. */
+let swReloadPending=false,swReloading=false;
+function swSafeToReload(){
+  if(document.hidden)return true;
+  const on=(id)=>{const el=document.getElementById(id);return el&&el.classList.contains('on');};
+  if(on('modal-bg')||on('menu-bg')||on('wx-lb-bg'))return false;
+  const ae=document.activeElement;
+  if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return false;
+  try{if(sessionStorage.getItem('mc_pending_oferta'))return false;}catch(e){}
+  return true;
+}
+function swMaybeReload(){
+  if(swReloadPending&&!swReloading&&swSafeToReload()){swReloading=true;window.location.reload();}
+}
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
+    const hadController=!!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').then(reg=>{
-      const maybeBanner=()=>{ if(reg.waiting&&navigator.serviceWorker.controller)showUpdateBanner(reg); };
-      maybeBanner();
-      reg.addEventListener('updatefound',()=>{
-        const newWorker=reg.installing;
-        if(!newWorker)return;
-        newWorker.addEventListener('statechange',()=>{
-          if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
-            showUpdateBanner(reg);
-          }
-        });
-      });
-      const check=()=>{ maybeBanner(); if(navigator.onLine)reg.update().catch(()=>{}); };
-      document.addEventListener('visibilitychange',()=>{ if(!document.hidden)check(); });
+      const check=()=>{ if(navigator.onLine)reg.update().catch(()=>{}); };
+      document.addEventListener('visibilitychange',()=>{ if(!document.hidden)check(); swMaybeReload(); });
       window.addEventListener('online',check);
+      window.addEventListener('focus',swMaybeReload);
       setInterval(check,15*60*1000);
+      setInterval(swMaybeReload,10000);
     }).catch(err=>console.error('SW registration failed:',err));
 
-    // Reload once the new worker actually takes control, not before —
-    // otherwise the page could reload while still served by the old worker.
-    let refreshing=false;
     navigator.serviceWorker.addEventListener('controllerchange',()=>{
-      if(refreshing)return;
-      refreshing=true;
-      window.location.reload();
+      if(!hadController)return; // first-ever activation, not an update
+      swReloadPending=true;
+      swMaybeReload();
     });
   });
-}
-function showUpdateBanner(reg){
-  if(Date.now()<updateSnoozeUntil)return;
-  const banner=document.getElementById('update-banner');
-  const btn=document.getElementById('update-banner-btn');
-  const dismiss=document.getElementById('update-banner-dismiss');
-  banner.classList.add('on');
-  btn.onclick=()=>{
-    if(reg.waiting)reg.waiting.postMessage('SKIP_WAITING');
-    btn.disabled=true;btn.textContent='Actualizando…';
-  };
-  dismiss.onclick=()=>{
-    banner.classList.remove('on');
-    updateSnoozeUntil=Date.now()+60*60*1000;
-  };
 }
 </script>
 </body>
