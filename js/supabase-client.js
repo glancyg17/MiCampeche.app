@@ -24,6 +24,8 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 function dToDs(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 const TODAY_DS=dToDs(new Date());
 const MONTH_ABBR_ES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+const MONTH_FULL_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DOW_FULL_ES=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
 const MC={};
 
@@ -304,6 +306,12 @@ function dsToDayMon(ds){
   const d=new Date(ds+'T12:00:00');
   return {day:String(d.getDate()),mon:MONTH_ABBR_ES[d.getMonth()]};
 }
+// "sábado 21 de noviembre de 2026" — full, human date for the event detail screen
+function dsToLongEs(ds){
+  if(!ds)return '';
+  const d=new Date(ds+'T12:00:00');
+  return `${DOW_FULL_ES[d.getDay()]} ${d.getDate()} de ${MONTH_FULL_ES[d.getMonth()]} de ${d.getFullYear()}`;
+}
 /* Turns a Postgres error into a specific, friendly Spanish toast message —
    falls back to a generic one for anything not explicitly recognized. */
 function pgErrorToast(error,fallback){
@@ -451,7 +459,16 @@ MC.fetchEventos=async function(){
   if(error){console.error(error);return [];}
   return data.map(r=>{
     const {day,mon}=dsToDayMon(r.event_date);
-    return {id:r.id,cat:r.category||'Otro',name:r.title,ds:r.event_date,day,mon,time:r.event_time||'',loc:r.location||''};
+    const hasRange=r.end_date&&r.end_date!==r.event_date;
+    return {
+      id:r.id,cat:r.category||'Otro',name:r.title,ds:r.event_date,day,mon,
+      time:r.event_time||'',loc:r.location||'',
+      desc:r.description||'',img:r.image_url||'',
+      website:r.website||'',phone:r.contact_phone||'',
+      price:(r.price_text||'').trim(),
+      source:r.source||'',
+      dateLong:hasRange?`Del ${dsToLongEs(r.event_date)} al ${dsToLongEs(r.end_date)}`:dsToLongEs(r.event_date)
+    };
   });
 };
 
@@ -575,7 +592,13 @@ MC.fetchAvisos=async function(){
 
 MC.submitEvento=async function(d){
   const uid=await MC.ready;
-  return sb.from('eventos').insert({title:d.name,category:d.cat||null,event_date:d.date||null,event_time:d.time||null,location:d.loc||null,description:d.desc||null,submitted_by:uid});
+  return sb.from('eventos').insert({
+    title:d.name,category:d.cat||null,event_date:d.date||null,event_time:d.time||null,
+    location:d.loc||null,description:d.desc||null,image_url:d.photo||null,
+    website:(d.website||'').trim()||null,contact_phone:(d.phone||'').trim()||null,
+    price_text:(d.price||'').trim()||null,
+    submitted_by:uid
+  });
 };
 
 /* Selling in Tienda requires a verified business — the FAB in app.js

@@ -48,7 +48,7 @@ const SAMPLE = {
   // special-cased 'profiles' handling in from(), needed for real
   // approve/reject/edit-account testing.
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
-  eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', status: 'published' }],
+  eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', description: 'Descripción larga del evento de prueba', image_url: 'https://example.com/cartel.jpg', website: 'https://example.com/evento', contact_phone: '981 555 1234', price_text: '$150', source: 'user', status: 'published' }],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
   ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
@@ -281,6 +281,21 @@ const fakeClient = {
 
   assert(text('news-list') && text('news-list').includes('Titular de prueba'), 'Noticias rendered real fetched data');
   assert(text('evt-list') && text('evt-list').includes('Evento de prueba'), 'Eventos rendered real fetched data');
+  assert(text('evt-list').includes('example.com/cartel.jpg'), 'Event card shows its image thumbnail');
+  assert(text('evt-list').includes("openEvento('e1')"), 'Event card is clickable through to its detail page');
+
+  // ── Event detail page: full description, image, website + phone handoff ──
+  window.openEvento('e1');
+  const evd = text('evento-detail-body') || '';
+  assert(doc.getElementById('scr-evento-detail').classList.contains('on'), 'openEvento navigates to the event detail screen');
+  assert(evd.includes('example.com/cartel.jpg'), 'event detail shows the event image');
+  assert(evd.includes('Descripción larga del evento de prueba'), 'event detail shows the full description');
+  assert(evd.includes('de noviembre') || /\bde [a-zé]+ de 20\d\d/.test(evd), 'event detail shows a full human date');
+  assert(evd.includes('https://example.com/evento'), 'event detail links out to the organizer website');
+  assert(evd.includes('wa.me/529815551234') && evd.includes('tel:+529815551234'), 'event detail offers WhatsApp + call handoff to the organizer number');
+  assert(evd.includes('Precio') && evd.includes('$150'), 'event detail shows the ticket price');
+  assert(text('evt-list').includes('$150'), 'event card shows the ticket price');
+  window.nav('inicio'); // restore the default screen for the pull-to-refresh test below
   assert(text('mkt-grid') && text('mkt-grid').includes('Producto test'), 'Tienda/Mercado rendered real productos row');
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test') && text('clas-grid').includes('Ricardo T.'), 'Clasificados rendered real row with joined profile name');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('reclamados'), 'Ofertas rendered with real claim count wired in');

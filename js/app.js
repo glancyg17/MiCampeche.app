@@ -102,7 +102,10 @@ async function loadWeather(){
 // Real number, but used sparingly on purpose — in-app contact is preferred
 // for now; this is a fallback path only (Contacto menu item), not the
 // default flow for anything else.
-const MICAMPECHE_WHATSAPP='529811086380';
+const MICAMPECHE_WHATSAPP='529811269854';
+// Public contact address for the Contacto menu item. WhatsApp above is kept
+// for phone verification only, not general contact.
+const MICAMPECHE_EMAIL='hola@micampeche.app';
 
 /* Real, live Stripe Payment Links. ?locale=es-419 forces Mexican Spanish
    on Stripe's hosted checkout regardless of the visitor's own browser
@@ -115,7 +118,7 @@ function goToServicios(){closeMenu();nav('servicios');}
 function goToInfo(){closeMenu();nav('info');}
 function contactUs(){
   closeMenu();
-  window.open('https://wa.me/'+MICAMPECHE_WHATSAPP+'?text='+encodeURIComponent('Hola, tengo una pregunta sobre MiCampeche'));
+  window.open('mailto:'+MICAMPECHE_EMAIL+'?subject='+encodeURIComponent('Pregunta sobre MiCampeche'));
 }
 
 /* ══════════════ PULL TO REFRESH ══════════════
@@ -561,9 +564,9 @@ function renderEventosHoySection(){
   if(!today.length){slot.innerHTML='';return;}
   const picks=shuffle(today.slice()).slice(0,2);
   slot.innerHTML=dashSection('eventos','Eventos de hoy','anuncios', picks.map(x=>`
-    <div class="dash-card dc-evt" onclick="openAnunciosTo('eventos')">
+    <div class="dash-card dc-evt" onclick="openEvento('${x.id}')">
       <div class="dc-evt-date"><div class="dc-evt-day">${x.day}</div><div class="dc-evt-mon">${x.mon}</div></div>
-      <div><div class="dc-evt-name">${e(x.name)}</div><div class="dc-evt-meta">${x.time} · ${e(x.loc)}</div></div>
+      <div><div class="dc-evt-name">${e(x.name)}</div><div class="dc-evt-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div></div>
     </div>
   `).join(''));
 }
@@ -684,15 +687,65 @@ function renderEventos(){
   const el=document.getElementById('evt-list');
   if(!list.length){el.innerHTML=emptyState('eventos','Nada por aquí todavía','Sé el primero en publicar un evento en esta categoría.');return;}
   el.innerHTML=list.map(x=>`
-    <div class="evt-card">
+    <div class="evt-card" onclick="openEvento('${x.id}')">
       <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
+      ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
       <div class="evt-info">
         <div class="evt-cat">${e(x.cat)}</div>
         <div class="evt-name">${e(x.name)}</div>
-        <div class="evt-meta">${svgIco('clock')} ${x.time} · ${e(x.loc)}</div>
+        <div class="evt-meta">${svgIco('clock')} ${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
+        ${x.price?`<div class="evt-price">${e(x.price)}</div>`:''}
       </div>
+      ${svgIco('chevronR','evt-arr')}
     </div>
   `).join('');
+}
+
+/* Full event view — image, full date/time/place, description, and the
+   organizer's own website + phone. Like Tienda's listing view, MiCampeche
+   is never in the loop: the website link and call/WhatsApp buttons hand
+   straight off to the organizer. */
+function openEvento(id){
+  const x=EVENTOS.find(i=>String(i.id)===String(id));
+  if(!x)return;
+  const rows=[];
+  rows.push(['Cuándo',x.time?`${x.dateLong} · ${x.time}`:x.dateLong]);
+  if(x.loc)rows.push(['Dónde',x.loc]);
+  if(x.price)rows.push(['Precio',x.price]);
+  const num=digitsOnly(x.phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const waMsg=encodeURIComponent(`Hola, vi el evento "${x.name}" en MiCampeche y quiero más información.`);
+  let links='';
+  const site=/^https?:\/\//i.test(x.website||'')?x.website:(x.website?'https://'+x.website:'');
+  if(site){
+    links+=`<a class="detail-link" href="${e(site)}" target="_blank" rel="noopener">
+      <div><div class="detail-link-lbl">Sitio del evento</div><div class="detail-link-name">Abrir página oficial</div></div>
+      ${svgIco('external','detail-arr')}
+    </a>`;
+  }
+  if(intl){
+    links+=`<a class="detail-link" href="https://wa.me/${intl}?text=${waMsg}" target="_blank" rel="noopener">
+      <div><div class="detail-link-lbl">Contacto del organizador</div><div class="detail-link-name">WhatsApp ${e(x.phone)}</div></div>
+      ${svgIco('message','detail-arr')}
+    </a>
+    <a class="detail-link" href="tel:+${intl}">
+      <div><div class="detail-link-lbl">Contacto del organizador</div><div class="detail-link-name">Llamar ${e(x.phone)}</div></div>
+      ${svgIco('phone','detail-arr')}
+    </a>`;
+  }
+  if(!links)links=`<div class="field-note">El organizador no dejó sitio web ni teléfono de contacto.</div>`;
+  document.getElementById('evento-detail-body').innerHTML=`
+    ${x.img?`<div class="detail-hero" style="background-image:url('${e(x.img)}')"></div>`:''}
+    <div class="detail-body">
+      <div class="detail-src">${e(x.cat)}</div>
+      <div class="detail-head">${e(x.name)}</div>
+      <div class="detail-meta">${e(x.dateLong)}${x.time?' · '+e(x.time):''}</div>
+      <div class="detail-rows">${rows.map(r=>`<div class="detail-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>
+      ${x.desc?`<div class="detail-desc">${e(x.desc)}</div>`:''}
+      ${links}
+    </div>
+  `;
+  nav('evento-detail');
 }
 
 /* ══════════════ RENDER: ANUNCIOS (Productos ⇄ Empleos) ══════════════ */
@@ -1015,6 +1068,9 @@ const POST_FORMS={
     {k:'date',lbl:'Fecha',type:'date'},
     {k:'time',lbl:'Hora',type:'time'},
     {k:'loc',lbl:'Lugar',type:'text',ph:'Dirección o punto de referencia'},
+    {k:'price',lbl:'Precio de entrada',type:'text',ph:'Ej. Gratis, $150, $150–$300',note:'Opcional — déjalo en blanco si no aplica.'},
+    {k:'website',lbl:'Sitio web o página del evento',type:'url',ph:'https://...',note:'Opcional — página oficial, boletos o red social del evento.'},
+    {k:'phone',lbl:'Teléfono de contacto',type:'tel',ph:'981 000 0000',note:'Opcional — se muestra como botón de llamada y WhatsApp.'},
     {k:'photo',lbl:'Foto o cartel del evento',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más...'}
   ]},

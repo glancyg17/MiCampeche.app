@@ -6,7 +6,7 @@
 **Base:** San Francisco de Campeche, Campeche, México
 **Domain:** micampeche.app — GitHub Pages, repo `glancyg17/MiCampeche.app`, branch `main`
 **Supabase:** `fszvefihkjrqkxysencc` (us-east-1, LIVE) · **Stripe:** live account, UK-registered
-**Contact:** WhatsApp +52 981 108 6380 — real number, used sparingly as a fallback only, not the default path for anything new.
+**Contact:** WhatsApp +52 981 126 9854 — real number, used sparingly as a fallback only, not the default path for anything new.
 
 ## Mission
 

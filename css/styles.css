@@ -250,7 +250,12 @@ svg{display:block}
 .detail-link{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;text-decoration:none;color:var(--ink);box-shadow:var(--sh1)}
 .detail-link-lbl{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
 .detail-link-name{font-size:14px;font-weight:700}
-.detail-arr{width:18px;height:18px;color:var(--gulf)}
+.detail-arr{width:18px;height:18px;color:var(--gulf);flex-shrink:0}
+.detail-link+.detail-link{margin-top:10px}
+.detail-rows{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:22px}
+.detail-row{display:flex;justify-content:space-between;gap:14px;background:#fff;padding:11px 14px;font-size:13px}
+.detail-row span{color:var(--ink3);flex-shrink:0}
+.detail-row b{text-align:right}
 
 /* ═══ FILTER CHIPS ═══ */
 .chiprow{display:flex;align-items:center;gap:8px;padding:11px 18px 16px;overflow-x:auto;-ms-overflow-style:none;scrollbar-width:none;background:var(--paper2);position:relative;z-index:6}
@@ -260,7 +265,10 @@ svg{display:block}
 
 /* ═══ EVENTOS (full page) ═══ */
 .evt-list{padding:0 18px 40px;display:flex;flex-direction:column;gap:11px}
-.evt-card{display:flex;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#fff;box-shadow:var(--sh1)}
+.evt-card{display:flex;align-items:stretch;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#fff;box-shadow:var(--sh1);cursor:pointer}
+.evt-card:active{transform:translateY(1px)}
+.evt-thumb{width:76px;flex-shrink:0;background-size:cover;background-position:center;background-color:var(--paper2)}
+.evt-arr{width:18px;height:18px;color:var(--ink3);align-self:center;margin-right:8px;flex-shrink:0}
 .evt-date{width:64px;flex-shrink:0;background:linear-gradient(160deg,var(--wall),var(--wall-dk));color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px}
 .evt-date-day{font-family:"Fraunces",Georgia,serif;font-size:25px;font-weight:700;line-height:1}
 .evt-date-mon{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
@@ -269,6 +277,7 @@ svg{display:block}
 .evt-name{font-size:14.5px;font-weight:700;color:var(--ink);margin-bottom:5px;line-height:1.3}
 .evt-meta{font-size:12px;color:var(--ink3);display:flex;align-items:center;gap:6px}
 .evt-meta .ico{width:13px;height:13px}
+.evt-price{font-size:12.5px;font-weight:700;color:var(--palm);margin-top:4px}
 
 /* ═══ TIENDA (Productos, inside Anuncios) ═══ */
 .tienda-grid{padding:0 18px 24px;display:grid;grid-template-columns:1fr 1fr;gap:13px}

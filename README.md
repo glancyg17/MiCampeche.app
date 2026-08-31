@@ -46,8 +46,10 @@ micampeche/
 - **No backend.** See above — this is the next real milestone.
 - **Hardcoded placeholders in `js/app.js`** worth searching for and
   replacing before going live:
-  - `MICAMPECHE_WHATSAPP` — a placeholder phone number for the "Contacto"
-    menu item. Replace with the real MiCampeche WhatsApp Business number.
+  - `MICAMPECHE_WHATSAPP` — the MiCampeche WhatsApp number, used for phone
+    verification only (not general contact).
+  - `MICAMPECHE_EMAIL` — the public address the "Contacto" menu item opens
+    (`hola@micampeche.app`).
 - **Account/tier system doesn't exist yet.** The Negocio / Negocio Premium
   tiers, RFC verification, and the $99 MXN per-deal / $749 MXN per-month
   pricing are all real business decisions already made, but nothing in the
