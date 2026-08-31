@@ -1931,6 +1931,60 @@ function renderModerationDetailFields(table,raw){
   return h||'<div style="color:var(--ink3);font-size:13px">Sin detalles adicionales.</div>';
 }
 
+/* Lenient time parser for the free-typed event_time field — handles
+   "21:00", "7:00 PM", "7pm", "7 p.m.", etc. Returns minutes since
+   midnight, or null when it can't tell. */
+function parseEventMinutes(t){
+  if(!t)return null;
+  const m=String(t).trim().toLowerCase().match(/(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?/);
+  if(!m)return null;
+  let h=parseInt(m[1],10);const min=m[2]?parseInt(m[2],10):0;
+  if(isNaN(h)||h>23||min>59)return null;
+  const ap=m[3]?m[3].replace(/\./g,''):'';
+  if(ap==='pm'&&h<12)h+=12;
+  if(ap==='am'&&h===12)h=0;
+  return h*60+min;
+}
+
+/* Duplicate-spotting aid for event moderation: lists other events on the
+   same day, floating the ones within 3h of this submission to the top and
+   flagging them, so a re-post of an already-approved event is obvious at
+   the approval stage. */
+function renderEventDuplicateCheck(raw,others){
+  const mineMin=parseEventMinutes(raw.event_time);
+  const list=others.map(o=>{
+    const om=parseEventMinutes(o.time);
+    return Object.assign({},o,{om:om,near:mineMin!==null&&om!==null&&Math.abs(om-mineMin)<=180});
+  }).sort((a,b)=>(a.near!==b.near)?(a.near?-1:1):((a.om==null?9999:a.om)-(b.om==null?9999:b.om)));
+  const head=`<div class="fl">Otros eventos el ${e(dsToLongEs(raw.event_date))}</div>`;
+  if(!list.length){
+    return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px">${head}
+      <div style="font-size:13px;color:var(--palm);margin-top:6px">Ninguno — no parece un duplicado.</div></div>`;
+  }
+  const anyNear=list.some(o=>o.near);
+  const rows=list.map(o=>`
+    <div style="padding:8px 0;border-top:1px solid var(--line)${o.near?';border-left:3px solid var(--signal);padding-left:8px':''}">
+      <div style="font-size:13px"><b>${e(o.time||'Sin hora')}</b> · ${e(o.title)}
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${o.status==='published'?'var(--gulf)':'var(--wall-dk)'}"> ${o.status==='published'?'Publicado':'Pendiente'}</span>
+        ${o.near?'<span style="font-size:10px;font-weight:700;color:var(--signal)"> · HORA SIMILAR</span>':''}
+      </div>
+      ${o.loc?`<div style="font-size:11.5px;color:var(--ink3);margin-top:1px">${e(o.loc)}</div>`:''}
+    </div>`).join('');
+  return `<div style="border:1.5px solid ${anyNear?'var(--signal)':'var(--line2)'};border-radius:var(--rs);padding:12px 14px">${head}
+    <div style="font-size:11.5px;color:var(--ink3);margin:4px 0 2px">${list.length} evento${list.length===1?'':'s'} ese día${anyNear?' · revisa los marcados "hora similar"':''}</div>
+    ${rows}</div>`;
+}
+
+async function fillEventDuplicateCheck(raw){
+  let box=document.getElementById('evt-dup-check');
+  if(!box)return;
+  box.innerHTML=`<div style="font-size:12px;color:var(--ink3)">Buscando otros eventos ese día…</div>`;
+  const others=await MC.fetchEventosOnDate(raw.event_date,raw.id);
+  box=document.getElementById('evt-dup-check');
+  if(!box)return; // reviewer navigated away while it loaded
+  box.innerHTML=renderEventDuplicateCheck(raw,others);
+}
+
 function openModerationDetail(table,id){
   const item=moderationQueue.find(i=>i.table===table&&i.id===id);
   if(!item)return;
@@ -1938,12 +1992,14 @@ function openModerationDetail(table,id){
   document.getElementById('modal-body').innerHTML=`
     <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Enviado por ${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
     ${renderModerationDetailFields(table,item.raw)}
+    ${table==='eventos'?`<div id="evt-dup-check" style="margin:14px 0"></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="submit-btn" style="margin-top:0;flex:1" onclick="moderateItem('${table}','${id}','published')">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openRejectReasonPrompt('${table}','${id}')">Rechazar</button>
     </div>
     <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="renderPendingQueue()">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
+  if(table==='eventos')fillEventDuplicateCheck(item.raw);
 }
 
 function openRejectReasonPrompt(table,id){

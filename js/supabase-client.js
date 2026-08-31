@@ -374,7 +374,7 @@ const CONTENT_TABLES=[
    decides, instead of approving/rejecting blind. */
 const MODERATION_DETAIL_FIELDS={
   noticias:[['headline','Titular'],['summary','Resumen'],['source_name','Fuente'],['source_url','Enlace'],['thumbnail_url','Imagen']],
-  eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['description','Descripción'],['image_url','Imagen']],
+  eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['price_text','Precio'],['website','Sitio web'],['contact_phone','Tel. de contacto'],['description','Descripción'],['image_url','Imagen']],
   productos:[['title','Producto'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['availability','Disponibilidad'],['lead_time','Anticipación'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['seller_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['featured','Destacado']],
   clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['zone','Zona'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   ofertas:[['title','Oferta'],['business_name_snapshot','Negocio'],['description','Descripción'],['terms','Condiciones'],['price_was','Precio normal'],['price_now','Precio con descuento'],['quantity_total','Cantidad disponible'],['image_url','Imagen']],
@@ -398,6 +398,22 @@ MC.fetchPendingQueue=async function(){
     }));
   }));
   return results.flat().sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+};
+
+/* For the moderation detail view of a pending event: every OTHER event on
+   the same calendar day (published or still pending), so the reviewer can
+   eyeball whether the submission duplicates something already in the
+   system. Admin "read all" RLS covers reading non-published rows. */
+MC.fetchEventosOnDate=async function(ds,excludeId){
+  if(!ds)return [];
+  const {data,error}=await sb.from('eventos')
+    .select('id,title,event_date,event_time,location,status')
+    .eq('event_date',ds).in('status',['published','pending'])
+    .order('event_time',{ascending:true});
+  if(error){console.error(error);return [];}
+  return (data||[])
+    .filter(r=>r.event_date===ds&&r.id!==excludeId)
+    .map(r=>({id:r.id,title:r.title||'(sin título)',time:r.event_time||'',loc:r.location||'',status:r.status}));
 };
 
 /* For the header badge — combines all three "waiting on the founder"

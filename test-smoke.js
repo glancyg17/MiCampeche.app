@@ -48,7 +48,12 @@ const SAMPLE = {
   // special-cased 'profiles' handling in from(), needed for real
   // approve/reject/edit-account testing.
   noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
-  eventos: [{ id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', description: 'Descripción larga del evento de prueba', image_url: 'https://example.com/cartel.jpg', website: 'https://example.com/evento', contact_phone: '981 555 1234', price_text: '$150', source: 'user', status: 'published' }],
+  eventos: [
+    { id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', description: 'Descripción larga del evento de prueba', image_url: 'https://example.com/cartel.jpg', website: 'https://example.com/evento', contact_phone: '981 555 1234', price_text: '$150', source: 'user', status: 'published' },
+    // Second event, SAME day and near the same time — the moderation
+    // duplicate-check should surface and flag it when reviewing e1.
+    { id: 'e2', title: 'Evento de prueba (posible copia)', category: 'Cultura', event_date: ds(1), event_time: '8:00 PM', location: 'Centro', source: 'user', status: 'pending' },
+  ],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
   ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
@@ -1042,7 +1047,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (10)', 'queue aggregates one pending item from each of the 9 content tables plus business verification requests (phone/password requests from earlier tests are already resolved by this point, so the count matches the content-only total)');
+    assert(text('modal-title') === 'Pendiente (11)', 'queue aggregates pending items from all 9 content tables (two for eventos — a second same-day event, to exercise the duplicate check) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // The whole point of this change: a business verification request
     // should show enough to actually review, not just a name.
@@ -1052,6 +1057,15 @@ const fakeClient = {
     assert(text('modal-body').includes('instagram.com/tacolocotest'), 'business detail view shows the social/website link');
     window.renderPendingQueue();
     assert(!text('modal-body').includes('Aprobar') && !text('modal-body').includes('Rechazar'), 'the LIST no longer has blind approve/reject buttons — reviewing detail is required first');
+
+    // Reviewing a pending event runs a same-day duplicate check, so a
+    // re-post of an already-listed event is obvious at the approval stage.
+    window.openModerationDetail('eventos', 'e1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Otros eventos el'), 'event moderation detail runs a same-day duplicate check');
+    assert(text('modal-body').includes('Evento de prueba (posible copia)'), 'the duplicate check lists the OTHER event on that date');
+    assert(text('modal-body').includes('HORA SIMILAR'), 'an event within a few hours of the submission is flagged as a likely duplicate');
+    window.renderPendingQueue();
 
     // Tapping an item opens its full detail — real submitted fields, not
     // just the title, so a decision can actually be informed.
@@ -1074,7 +1088,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (9)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (10)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list).
     window.openModerationDetail('noticias', 'n1');
