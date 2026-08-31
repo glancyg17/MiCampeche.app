@@ -79,6 +79,11 @@ svg{display:block}
 .tb-wx-dot{position:absolute;top:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:var(--signal);border:2px solid var(--night);animation:tbWxPulse 2s ease-in-out infinite}
 @keyframes tbWxPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.7}}
 .tb-icon .ico{width:17px;height:17px}
+.tb-acct{width:36px;height:36px;flex-shrink:0;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--paper);cursor:pointer;font-family:inherit;padding:0;position:relative;-webkit-tap-highlight-color:transparent}
+.tb-acct .ico{width:17px;height:17px}
+.tb-acct-lbl{display:none;font-size:13px;font-weight:700}
+.tb-acct.signin{width:auto;border-radius:99px;padding:0 13px 0 11px}
+.tb-acct.signin .tb-acct-lbl{display:inline}
 
 /* ═══ BOTTOM NAV ═══ */
 .bottom-nav{display:flex;flex-shrink:0;background:#fff;border-top:1px solid var(--line);padding:8px 6px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px rgba(20,25,20,.05);position:relative;z-index:30}

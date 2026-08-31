@@ -41,9 +41,13 @@
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <button class="tb-wx" id="tb-weather" onclick="openWeatherLightbox()"></button>
-        <button class="tb-icon" id="tb-icon" onclick="openMenu()" style="position:relative" aria-label="Menú">
-          <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <button class="tb-acct signin" id="tb-acct" onclick="openAccount()" aria-label="Mi cuenta">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
+          <span class="tb-acct-lbl">Entrar</span>
           <span class="tb-badge" id="tb-badge"></span>
+        </button>
+        <button class="tb-icon" id="tb-icon" onclick="openMenu()" aria-label="Menú">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
       </div>
     </div>

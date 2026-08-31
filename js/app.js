@@ -1679,6 +1679,7 @@ async function submitAuth(){
   btn.disabled=false;btn.textContent=original;
   if(result.error){toast(authErrorToast(result.error));return;}
   refreshPendingBadge();
+  refreshHeaderAccount();
   if(accountMode==='signup'&&signedUpPhone){
     // The account exists now, but it can't write anything until the founder
     // confirms this WhatsApp message came from the number that was
@@ -1700,6 +1701,7 @@ async function submitAuth(){
 async function doSignOut(){
   await MC.signOut();
   refreshPendingBadge();
+  refreshHeaderAccount();
   closeModal();
   toast('Sesión cerrada ✓');
 }
@@ -2135,6 +2137,17 @@ async function refreshContent(){
   renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
   renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
   refreshPendingBadge();
+  refreshHeaderAccount();
+}
+
+/* Header account icon: a compact "Entrar" pill while signed out (taps
+   through to the sign-in / create-account form), just the round icon once
+   signed in. Called on load and after any sign-in/sign-out. */
+async function refreshHeaderAccount(){
+  const btn=document.getElementById('tb-acct');
+  if(!btn)return;
+  const acct=await MC.currentAccount();
+  btn.classList.toggle('signin',!acct.signedIn);
 }
 
 /* Header notification badge — admin-only for now (per the founder's own
