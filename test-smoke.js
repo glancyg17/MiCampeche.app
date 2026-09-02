@@ -60,7 +60,11 @@ const SAMPLE = {
   ofertas_redemptions: [],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
   perdidos: [{ id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' }],
-  alertas: [{ id: 'al1', alert_type: 'Corte de agua', zone: 'Zona test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
+  // alertas now also carries pipeline-fed pending rows (status='pending',
+  // no submitter). title/source are the automated feed's fields; the
+  // rejection_reason here exercises the "owner-less tables never surface
+  // in a user's rejections" guard in MC.fetchMyRejections.
+  alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'desc', source: 'JAPAY', resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
   empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' }],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
@@ -1162,7 +1166,22 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (11)', 'queue aggregates pending items from all 9 content tables (two for eventos — a second same-day event, to exercise the duplicate check) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (12)', 'queue aggregates pending items from all 10 content tables (two for eventos — a second same-day event, to exercise the duplicate check; one alerta from the automated pipeline) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+
+    // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
+    assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
+    assert(text('modal-body').includes('Alerta'), 'the alerta row carries its "Alerta" type label');
+    window.openModerationDetail('alertas', 'al1');
+    assert(text('modal-title') === 'Alerta', 'opening the alerta shows its detail screen');
+    assert(text('modal-body').includes('Enviado por Automático'), 'an owner-less alerta shows a synthetic submitter, not "Vecino"');
+    assert(text('modal-body').includes('Zona test') && text('modal-body').includes('JAPAY'), 'the alerta detail renders its real fields (zona, fuente) from MODERATION_DETAIL_FIELDS');
+    assert(text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'the same approve/reject flow is available on an alerta');
+    await window.moderateItem('alertas', 'al1', 'published');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.alertas && lastUpdate.alertas.status === 'published', 'approving an alerta sends status: published to Supabase like any other table');
+    // moderateItem's success path already stepped back to the list (one
+    // level above the account view) — same modal state the block below
+    // expects right after the initial openPending().
 
     // ── Nested modal views: ✕ / back / hardware-back step ONE level
     //    (item review → list → account → home), never straight out. ──
@@ -1221,7 +1240,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (10)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (11)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list).
     window.openModerationDetail('noticias', 'n1');
@@ -1247,6 +1266,10 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20)); // rejected-submissions list loads after the view paints, then re-renders
     assert(text('modal-body').includes('Publicaciones no aprobadas'), 'account view surfaces rejected submissions to the person who sent them');
     assert(text('modal-body').includes('La descripción no es clara'), 'the actual rejection reason text is shown, not just that something was rejected');
+    // Owner-less tables (alertas) must never leak into anyone's rejections
+    // list — MC.fetchMyRejections skips any CONTENT_TABLES entry with no
+    // ownerField, so a rejected alerta with a reason set stays invisible here.
+    assert(!text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a rejected alerta never surfaces in a user\'s "no aprobadas" list — it has no submitter to show it to');
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));

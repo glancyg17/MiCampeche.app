@@ -353,9 +353,9 @@ function authErrorToast(error){
    Reads rely on the "admin read all" RLS policy already in place since
    Phase 1 (is_admin can SELECT regardless of status) — nothing new needed
    there. Approve/reject reuse the existing "admin update (moderation)"
-   policy too. Only real gap this closes: pulling all 9 tables' pending
-   rows into one unified list instead of clicking through Studio's Table
-   Editor nine times. */
+   policy too. Only real gap this closes: pulling every moderated table's
+   pending rows into one unified list instead of clicking through Studio's
+   Table Editor one table at a time. */
 const CONTENT_TABLES=[
   {table:'noticias',label:'Noticia',titleField:'headline',ownerField:'submitted_by'},
   {table:'eventos',label:'Evento',titleField:'title',ownerField:'submitted_by'},
@@ -366,6 +366,7 @@ const CONTENT_TABLES=[
   {table:'empleos',label:'Empleo',titleField:'title',ownerField:'submitted_by'},
   {table:'reportes',label:'Reporte',titleField:'title',ownerField:'submitted_by'},
   {table:'avisos',label:'Aviso',titleField:'title',ownerField:'submitted_by'},
+  {table:'alertas',label:'Alerta',titleField:'title',ownerField:null},
   {table:'businesses',label:'Verificación de negocio',titleField:'business_name',ownerField:'profile_id'}
 ];
 
@@ -382,17 +383,22 @@ const MODERATION_DETAIL_FIELDS={
   empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas'],['contact_info','Contacto']],
   reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
   avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto'],['anonymous','Anónimo']],
+  alertas:[['title','Título'],['alert_type','Tipo'],['zone','Zona'],['description','Descripción'],['source','Fuente']],
   businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC'],['payment_methods','Métodos de pago'],['delivers','Entrega a domicilio'],['delivery_info','Zonas y costo de entrega'],['pickup_address','Dirección para recoger']]
 };
 
 MC.fetchPendingQueue=async function(){
-  const results=await Promise.all(CONTENT_TABLES.map(async ({table,label,titleField})=>{
-    const {data,error}=await sb.from(table).select('*, profiles(display_name)').eq('status','pending').order('created_at',{ascending:true});
+  const results=await Promise.all(CONTENT_TABLES.map(async ({table,label,titleField,ownerField})=>{
+    // Owner-less tables (e.g. alertas, fed by an automated pipeline with no
+    // submitter) have no FK to profiles — a "profiles(display_name)" embed
+    // on them is a hard PostgREST error, so only ask for it where it exists.
+    const sel=ownerField?'*, profiles(display_name)':'*';
+    const {data,error}=await sb.from(table).select(sel).eq('status','pending').order('created_at',{ascending:true});
     if(error){console.error(error);return [];}
     return (data||[]).map(r=>({
       table,label,id:r.id,
       title:r[titleField]||'(sin título)',
-      submittedBy:(r.profiles&&r.profiles.display_name)||'Vecino',
+      submittedBy:(r.profiles&&r.profiles.display_name)||(ownerField?'Vecino':'Automático'),
       createdAt:r.created_at,
       raw:r // full row, for the detail view — nothing hidden from the reviewer
     }));
@@ -454,7 +460,7 @@ MC.fetchWeather=async function(){
 MC.fetchMyRejections=async function(){
   const uid=await MC.ready;
   if(!uid)return [];
-  const results=await Promise.all(CONTENT_TABLES.map(async ({table,label,titleField,ownerField})=>{
+  const results=await Promise.all(CONTENT_TABLES.filter(t=>t.ownerField).map(async ({table,label,titleField,ownerField})=>{
     const {data,error}=await sb.from(table).select('*').eq(ownerField,uid).eq('status','rejected').not('rejection_reason','is',null);
     if(error){console.error(error);return [];}
     return (data||[]).map(r=>({table,label,id:r.id,title:r[titleField]||'(sin título)',reason:r.rejection_reason,createdAt:r.created_at}));
