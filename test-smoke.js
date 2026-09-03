@@ -63,8 +63,9 @@ const SAMPLE = {
   // alertas now also carries pipeline-fed pending rows (status='pending',
   // no submitter). title/source are the automated feed's fields; the
   // rejection_reason here exercises the "owner-less tables never surface
-  // in a user's rejections" guard in MC.fetchMyRejections.
-  alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'desc', source: 'JAPAY', resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
+  // in a user's rejections" guard in MC.fetchMyRejections. The description
+  // is deliberately multi-paragraph (\n\n) to exercise the pre-wrap render.
+  alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'Primer párrafo del aviso oficial.\n\nSegundo párrafo con el detalle de la zona afectada y la duración estimada.', source: 'JAPAY', resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
   empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' }],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
@@ -319,6 +320,9 @@ const fakeClient = {
   assert(text('pf-list') && text('pf-list').includes('Gato test'), 'Perdidos rendered real fetched data');
   assert(text('pf-list').includes('tel:+529815550000'), 'a Perdidos report with a contact number shows a call button');
   assert(text('alert-list') && text('alert-list').includes('Corte de agua'), 'Alertas rendered real fetched data');
+  assert(text('alert-list').includes('alert-headline') && text('alert-list').includes('Corte de agua programado en Zona Norte'), 'an alerta renders its title as a real headline line');
+  assert(text('alert-list').includes('class="alert-zone">Zona test<'), 'the zone still renders, now as a secondary line');
+  assert(text('alert-list').includes('Primer párrafo del aviso oficial.\n\nSegundo párrafo'), 'a multi-paragraph description keeps its paragraph breaks in the markup (rendered visibly via white-space:pre-wrap)');
   assert(text('job-list') && text('job-list').includes('Puesto test'), 'Empleos rendered real fetched data');
   assert(text('job-list').includes('tel:+529815550001'), 'an Empleos listing with a contact number shows a call button');
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');

@@ -567,7 +567,7 @@ MC.fetchAlertas=async function(){
   const {data,error}=await sb.from('alertas').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,type:r.alert_type,cls:r.resolved?'resolved':'',zone:r.zone||'',desc:r.description||'',time:relTimeEs(r.created_at)}));
+  return data.map(r=>({id:r.id,title:r.title||'',type:r.alert_type,cls:r.resolved?'resolved':'',zone:r.zone||'',desc:r.description||'',time:relTimeEs(r.created_at)}));
 };
 
 MC.fetchEmpleos=async function(){

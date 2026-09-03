@@ -1220,7 +1220,8 @@ function renderAlertas(){
   el.innerHTML=pin+ALERTAS.map(x=>`
     <div class="alert-card ${x.cls}">
       <div class="alert-top"><span class="alert-type">${x.cls==='resolved'?'✓ Resuelto — ':''}${e(x.type)}</span><span class="alert-time">${x.time}</span></div>
-      <div class="alert-zone">${e(x.zone)}</div>
+      ${x.title?`<div class="alert-headline">${e(x.title)}</div>`:''}
+      ${x.zone?`<div class="alert-zone">${e(x.zone)}</div>`:''}
       <div class="alert-desc">${e(x.desc)}</div>
     </div>
   `).join('');
