@@ -380,10 +380,10 @@ const MODERATION_DETAIL_FIELDS={
   productos:[['title','Producto'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['availability','Disponibilidad'],['lead_time','Anticipación'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['seller_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['featured','Destacado']],
   clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['zone','Zona'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   ofertas:[['title','Oferta'],['business_name_snapshot','Negocio'],['description','Descripción'],['terms','Condiciones'],['price_was','Precio normal'],['price_now','Precio con descuento'],['quantity_total','Cantidad disponible'],['image_url','Imagen']],
-  perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['description','Descripción'],['image_url','Imagen'],['contact_info','Contacto']],
-  empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas'],['contact_info','Contacto']],
+  perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['description','Descripción'],['image_url','Imagen'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
+  empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
-  avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto'],['anonymous','Anónimo']],
+  avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['anonymous','Anónimo']],
   alertas:[['title','Título'],['alert_type','Tipo'],['zone','Zona'],['description','Descripción'],['source','Fuente']],
   businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC'],['payment_methods','Métodos de pago'],['delivers','Entrega a domicilio'],['delivery_info','Zonas y costo de entrega'],['pickup_address','Dirección para recoger']]
 };
@@ -561,7 +561,8 @@ MC.fetchPerdidos=async function(){
   const {data,error}=await sb.from('perdidos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,tag:r.report_type,name:r.title,desc:r.description||'',loc:r.location||'',img:r.image_url||'',contact:r.contact_info||''}));
+  return data.map(r=>({id:r.id,tag:r.report_type,name:r.title,desc:r.description||'',loc:r.location||'',img:r.image_url||'',
+    contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
 };
 
 MC.fetchAlertas=async function(){
@@ -584,7 +585,8 @@ MC.fetchEmpleos=async function(){
   const {data,error}=await sb.from('empleos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,title:r.title,co:r.company||'',pay:r.pay||'A convenir',tags:r.tags||[],contact:r.contact_info||''}));
+  return data.map(r=>({id:r.id,title:r.title,co:r.company||'',pay:r.pay||'A convenir',tags:r.tags||[],
+    contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
 };
 
 MC.fetchReportes=async function(){
@@ -629,7 +631,8 @@ MC.fetchAvisos=async function(){
   if(error){console.error(error);return [];}
   return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',
     author:r.anonymous?'Vecino anónimo':((r.profiles&&r.profiles.display_name)||'Vecino'),
-    contact:r.contact_info||'',time:relTimeEs(r.created_at)}));
+    contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[],
+    time:relTimeEs(r.created_at)}));
 };
 
 /* ══════════════ SUBMIT: writes real rows, always as status='pending' by table default ══════════════ */
@@ -678,22 +681,28 @@ MC.submitClasificado=async function(d){
   });
 };
 
-/* Perdidos/Empleos have no manual contact field in the UI — phone is now
-   required at signup, so pulling it from the profile is more reliable
-   than asking again on every post. Anonymous (not-yet-signed-up)
-   visitors simply won't have one yet, same as before this existed. */
-// contact_info is opt-in now: the "¿dejar un número?" toggle in the form
-// (d.want_contact) decides whether the typed number is attached at all.
-function optContact(d){return d.want_contact==='si'?((d.contact||'').trim()||null):null;}
+/* Contact is opt-in on Avisos / Empleos / Perdidos: the "¿dejar un número?"
+   toggle (d.want_contact) decides whether anything is attached. When it's
+   on, the poster also picks which channels they're reachable by — same
+   contact_phone (text) + contact_methods (text[]) shape Productos and
+   Clasificados already use. The legacy contact_info column is left null on
+   new posts and only read as a fallback for pre-existing ones. */
+function optContactFields(d){
+  if(d.want_contact!=='si')return {contact_phone:null,contact_methods:null};
+  const phone=(d.contact_phone||'').trim()||null;
+  if(!phone)return {contact_phone:null,contact_methods:null};
+  const methods=(Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms'];
+  return {contact_phone:phone,contact_methods:methods};
+}
 
 MC.submitPerdido=async function(d){
   const uid=await MC.ready;
-  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,contact_info:optContact(d),submitted_by:uid});
+  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d),submitted_by:uid});
 };
 
 MC.submitEmpleo=async function(d){
   const uid=await MC.ready;
-  return sb.from('empleos').insert({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,description:d.desc||null,contact_info:optContact(d),submitted_by:uid});
+  return sb.from('empleos').insert({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,description:d.desc||null,...optContactFields(d),submitted_by:uid});
 };
 
 MC.submitReporte=async function(d){
@@ -703,7 +712,7 @@ MC.submitReporte=async function(d){
 
 MC.submitAviso=async function(d){
   const uid=await MC.ready;
-  return sb.from('avisos').insert({category:d.cat||null,title:d.title,description:d.desc||null,contact_info:optContact(d),anonymous:d.anon==='si',submitted_by:uid});
+  return sb.from('avisos').insert({category:d.cat||null,title:d.title,description:d.desc||null,...optContactFields(d),anonymous:d.anon==='si',submitted_by:uid});
 };
 
 /* Ofertas is two writes: the deal itself, then either a booking (day free)

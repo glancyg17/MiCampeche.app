@@ -746,7 +746,7 @@ function openReportarTo(mode){nav('reportar');setReportarMode(mode);}
 function renderNoticias(){
   const el=document.getElementById('news-list');
   el.innerHTML=NOTICIAS.map(n=>`
-    <div class="news-card" onclick="showNoticia('${n.id}')">
+    <div class="news-card" ${admRm('noticias',n.id,n.title)} onclick="showNoticia('${n.id}')">
       <div class="news-thumb" style="background-image:url('${n.img}')"></div>
       <div class="news-body">
         <div class="news-src">${e(n.source)}</div>
@@ -756,6 +756,7 @@ function renderNoticias(){
       </div>
     </div>
   `).join('');
+  wireAdminRemove(el);
 }
 function showNoticia(id){
   const n=NOTICIAS.find(x=>x.id===id);if(!n)return;
@@ -802,6 +803,7 @@ function dismissOnboard(key){
 
 /* ══════════════ RENDER: EVENTOS (sub-view inside Anuncios) ══════════════ */
 let evtFilter='all';
+let evtDateFilter='all';
 function renderEvtChips(){
   const cats=['all',...new Set(EVENTOS.map(x=>x.cat))];
   document.getElementById('evt-chips').innerHTML=cats.map(c=>
@@ -809,8 +811,30 @@ function renderEvtChips(){
   ).join('');
 }
 function setEvtFilter(c){evtFilter=c;renderEvtChips();renderEventos();}
+/* Quick date filter — same chip control as the category row, just a
+   separate scroll row above it (#evt-date-chips). */
+const EVT_DATE_OPTS=[['all','Todas las fechas'],['hoy','Hoy'],['semana','Esta semana'],['proximamente','Próximamente']];
+function renderEvtDateChips(){
+  const el=document.getElementById('evt-date-chips');
+  if(!el)return;
+  el.innerHTML=EVT_DATE_OPTS.map(([v,l])=>
+    `<button class="chip${v===evtDateFilter?' on':''}" onclick="setEvtDateFilter('${v}')">${l}</button>`
+  ).join('');
+}
+function setEvtDateFilter(v){evtDateFilter=v;renderEvtDateChips();renderEventos();}
+/* MC.fetchEventos already drops anything before today, so the buckets are:
+   hoy = exactly today · semana = today..+6d · proximamente = 7+ days out. */
+function evtInDateRange(ds){
+  if(evtDateFilter==='all'||!ds)return true;
+  if(evtDateFilter==='hoy')return ds===TODAY_DS;
+  const diffDays=Math.round((new Date(ds+'T12:00:00')-new Date(TODAY_DS+'T12:00:00'))/86400000);
+  if(evtDateFilter==='semana')return diffDays>=0&&diffDays<=6;
+  if(evtDateFilter==='proximamente')return diffDays>6;
+  return true;
+}
 function renderEventos(){
-  const list=EVENTOS.filter(x=>evtFilter==='all'||x.cat===evtFilter);
+  renderEvtDateChips();
+  const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&evtInDateRange(x.ds));
   const el=document.getElementById('evt-list');
   const pin=onboardCard('eventos','eventos','Publica tu propio evento',
     '¿Organizas algo en Campeche? Compártelo aquí, gratis.',
@@ -819,9 +843,14 @@ function renderEventos(){
      'Agrega una foto o cartel, precio y contacto (opcional).',
      'Envíalo: lo revisamos y se publica para toda la ciudad.'],
     'Publicar un evento',"openPost('eventos')");
-  if(!list.length){el.innerHTML=pin+emptyState('eventos','Nada por aquí todavía','Sé el primero en publicar un evento en esta categoría.');return;}
+  if(!list.length){
+    const sub=(evtFilter!=='all'||evtDateFilter!=='all')
+      ? 'No hay eventos que coincidan con este filtro. Prueba con otro.'
+      : 'Sé el primero en publicar un evento en Campeche.';
+    el.innerHTML=pin+emptyState('eventos','Nada por aquí todavía',sub);return;
+  }
   el.innerHTML=pin+list.map(x=>`
-    <div class="evt-card" onclick="openEvento('${x.id}')">
+    <div class="evt-card" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
       ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
       <div class="evt-body">
         <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
@@ -835,6 +864,7 @@ function renderEventos(){
       </div>
     </div>
   `).join('');
+  wireAdminRemove(el);
 }
 
 /* Turn bare URLs in already-HTML-escaped text into real links — event
@@ -922,7 +952,7 @@ function prodCardHtml(x){
   if(x.availability==='pedido')tags.push('<span class="prod-tag">Sobre pedido</span>');
   if(FULFILLMENT_LABEL[x.fulfillment])tags.push(`<span class="prod-tag">${FULFILLMENT_LABEL[x.fulfillment]}</span>`);
   return `
-    <div class="prod-wrap">
+    <div class="prod-wrap" ${admRm(x.sellerType==='negocio'?'productos':'clasificados',x.id,x.name)}>
       ${x.featured?'<span class="prod-badge">Destacado</span>':''}
       <div class="prod-card" onclick="openProdView('${x.sellerType}','${e(String(x.id))}')">
         <div class="prod-img" style="background-image:url('${x.img}')"></div>
@@ -988,6 +1018,7 @@ function renderMercado(){
   const el=document.getElementById('mkt-grid');
   if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar en esta categoría.');return;}
   el.innerHTML=list.map(prodCardHtml).join('');
+  wireAdminRemove(el);
 }
 
 let clasFilter='all';
@@ -1004,6 +1035,7 @@ function renderClasificados(){
   const el=document.getElementById('clas-grid');
   if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar algo por aquí.');return;}
   el.innerHTML=list.map(prodCardHtml).join('');
+  wireAdminRemove(el);
 }
 
 /* ══════════════ RENDER: OFERTAS (daily deal drop) ══════════════ */
@@ -1022,7 +1054,7 @@ function renderOfertas(){
     const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
     const iClaimed=!!claimedByMe[o.id];
     return `
-    <div class="of-card${soldOut?' sold-out':''}">
+    <div class="of-card${soldOut?' sold-out':''}" ${admRm('ofertas',o.id,o.name)}>
       ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
       <div class="of-top">
         <div class="of-img" style="background-image:url('${o.img}')"></div>
@@ -1050,6 +1082,7 @@ function renderOfertas(){
       </div>
     </div>
   `;}).join('');
+  wireAdminRemove(el);
 }
 async function toggleClaim(id){
   const acct=await MC.currentAccount();
@@ -1083,13 +1116,14 @@ function renderEmpleos(){
      'Envíalo: quien busca trabajo te contacta directo.'],
     'Publicar una vacante',"openPost('empleos')");
   el.innerHTML=pin+EMPLEOS.map(x=>`
-    <div class="job-card">
+    <div class="job-card" ${admRm('empleos',x.id,x.title)}>
       <div class="job-top"><div class="job-title">${e(x.title)}</div><div class="job-pay">${e(x.pay)}</div></div>
       ${x.co?`<div class="job-co">${e(x.co)}</div>`:''}
       ${x.tags.length?`<div class="job-tags">${x.tags.map(t=>`<span class="job-tag">${e(t)}</span>`).join('')}</div>`:''}
-      ${x.contact?`<a class="av-contact-btn" style="margin-top:11px" href="${telHref(x.contact)}">${svgIco('phone')}Llamar</a>`:''}
+      ${contactCtaRow(x,`Hola, vi la vacante "${x.title}" en MiCampeche y me interesa.`)}
     </div>
   `).join('');
+  wireAdminRemove(el);
 }
 
 /* ══════════════ RENDER: PERDIDOS (full page) ══════════════ */
@@ -1113,17 +1147,18 @@ function renderPerdidos(){
     'Reportar perdido o encontrado',"openPost('perdidos')");
   if(!list.length){el.innerHTML=pin+emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
   el.innerHTML=pin+list.map(x=>`
-    <div class="pf-card">
+    <div class="pf-card" ${admRm('perdidos',x.id,x.name)}>
       <div class="pf-img" style="${x.img?`background-image:url('${x.img}')`:''}">${!x.img?svgIco('pin'):''}</div>
       <div class="pf-body">
         <span class="pf-tag ${x.tag}">${x.tag==='perdido'?'Perdido':'Encontrado'}</span>
         <div class="pf-name">${e(x.name)}</div>
         <div class="pf-desc">${e(x.desc)}</div>
         <div class="pf-loc">${svgIco('pin')} ${e(x.loc)}</div>
-        ${x.contact?`<a class="av-contact-btn" style="margin-top:9px" href="${telHref(x.contact)}">${svgIco('phone')}Llamar</a>`:''}
+        ${contactCtaRow(x,`Hola, vi tu reporte "${x.name}" en MiCampeche.`)}
       </div>
     </div>
   `).join('');
+  wireAdminRemove(el);
 }
 
 /* ══════════════ RENDER: REPORTAR (Reportes ⇄ Alertas) ══════════════ */
@@ -1162,7 +1197,7 @@ function renderReportes(){
     const iConfirmed=!!confirmedByMe[x.id];
     const iVotedResolved=!!resolvedByMe[x.id];
     return `
-    <div class="rep-card">
+    <div class="rep-card" ${admRm('reportes',x.id,x.title)}>
       <div class="rep-top">
         <div class="rep-img" style="${x.img?`background-image:url('${x.img}')`:''}">${!x.img?svgIco('pin'):''}</div>
         <div class="rep-body">
@@ -1184,6 +1219,7 @@ function renderReportes(){
       </div>
     </div>
   `;}).join('');
+  wireAdminRemove(el);
 }
 async function toggleConfirm(id){
   const acct=await MC.currentAccount();
@@ -1237,16 +1273,17 @@ function renderAvisos(){
     'Publicar un aviso',"openPost('avisos')");
   if(!AVISOS.length){el.innerHTML=pin+emptyState('reportar','Nada por aquí todavía','Sé el primero en publicar un aviso para tus vecinos.');return;}
   el.innerHTML=pin+AVISOS.map(a=>`
-    <div class="av-card">
+    <div class="av-card" ${admRm('avisos',a.id,a.title)}>
       <div class="av-top"><span class="av-cat">${e(a.cat)}</span><span class="av-time">${a.time}</span></div>
       <div class="av-title">${e(a.title)}</div>
       <div class="av-desc">${e(a.desc)}</div>
+      ${contactCtaRow(a,`Hola, vi tu aviso "${a.title}" en MiCampeche.`)}
       <div class="av-foot">
         <span class="av-author">${e(a.author)}</span>
-        ${a.contact?`<a class="av-contact-btn" href="${telHref(a.contact)}">${svgIco('phone')}Contactar</a>`:''}
       </div>
     </div>
   `).join('');
+  wireAdminRemove(el);
 }
 function renderAlertas(){
   const el=document.getElementById('alert-list');
@@ -1345,7 +1382,8 @@ const POST_FORMS={
     {k:'photo',lbl:'Foto',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles que ayuden a identificarlo...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','No hace falta']]},
-    {k:'contact',lbl:'Tu número de contacto',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Se muestra como botón de llamada en tu reporte.'}
+    {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Quien lo vea te contactará por los medios que elijas.'},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms'],showIf:{field:'want_contact',val:'si'}}
   ]},
   empleos:{title:'Publicar una vacante',fields:[
     {k:'title',lbl:'Puesto',type:'text',ph:'Ej. Mesero(a) con experiencia'},
@@ -1353,7 +1391,8 @@ const POST_FORMS={
     {k:'pay',lbl:'Pago',type:'text',ph:'Ej. $350/día + propinas'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Requisitos, horario...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','En la descripción']]},
-    {k:'contact',lbl:'Número de contacto',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Se muestra como botón de llamada en la vacante.'}
+    {k:'contact_phone',lbl:'Número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Quien busca trabajo te contactará por los medios que elijas.'},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms'],showIf:{field:'want_contact',val:'si'}}
   ]},
   reportar:{title:'Reportar un problema',fields:[
     {k:'cat',lbl:'Tipo de problema',type:'select',opts:['Bache','Semáforo','Árbol caído','Alumbrado','Fuga de agua','Basura acumulada','Otro']},
@@ -1363,12 +1402,13 @@ const POST_FORMS={
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más sobre el problema...'}
   ]},
   avisos:{title:'Publicar un aviso',note:'Un aviso por persona al día. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
-    {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Familia','Comunidad','Seguridad','Otro']},
+    {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Otro']},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Buscamos a un familiar'},
     {k:'desc',lbl:'Mensaje',type:'textarea',ph:'Cuenta los detalles a tus vecinos...'},
     {k:'anon',lbl:'¿Cómo lo firmas?',type:'seg',opts:[['no','Con mi nombre'],['si','Anónimo']]},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['no','No hace falta'],['si','Sí, que me contacten']]},
-    {k:'contact',lbl:'Tu número de contacto',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Se muestra como botón de contacto en tu aviso.'}
+    {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Los vecinos te contactarán por los medios que elijas.'},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms'],showIf:{field:'want_contact',val:'si'}}
   ]},
   oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
@@ -1457,22 +1497,14 @@ async function openPost(kind){
     const cr=document.getElementById('row-contact_methods');
     if(cr&&acct.business.phone)cr.insertAdjacentHTML('beforeend',`<div class="field-note">Los clientes te contactarán al número de tu negocio: ${e(acct.business.phone)}.</div>`);
   }
-  if(kind==='clasificado'){
-    // Prefill the contact number from the account so a real account holder
-    // doesn't retype it; they can still overwrite it for this one post.
+  if(kind==='clasificado'||kind==='avisos'||kind==='perdidos'||kind==='empleos'){
+    // Prefill the contact number from the account so a signed-in poster
+    // doesn't retype it (they can still overwrite it for this one post).
+    // For avisos/perdidos/empleos the "¿dejar un número?" toggle still
+    // decides whether it's actually attached; this only pre-fills the field.
     if(acct.signedIn&&acct.phone){
       const cp=document.getElementById('pf-contact_phone');
       if(cp&&!cp.value)cp.value=acct.phone;
-    }
-  }
-  if(kind==='avisos'||kind==='perdidos'||kind==='empleos'){
-    // Convenience only — prefill the contact field from the account so a
-    // signed-in poster doesn't retype their phone. The "¿dejar un número?"
-    // toggle still decides whether it's actually attached to the post.
-    const acct=await MC.currentAccount();
-    if(acct.signedIn&&acct.phone){
-      const contactEl=document.getElementById('pf-contact');
-      if(contactEl&&!contactEl.value)contactEl.value=acct.phone;
     }
   }
 }
@@ -1552,6 +1584,34 @@ function applyConditionalRows(form){
   });
 }
 function digitsOnly(p){return String(p||'').replace(/\D/g,'');}
+
+/* Direct WhatsApp / call / SMS buttons from a phone + the channels the
+   poster opted into ('whatsapp' | 'llamada' | 'sms' — same vocabulary as
+   Tienda's contact_methods). Inline pill style, shared by the Avisos /
+   Empleos / Perdidos cards. Returns '' when there's no usable number or no
+   selected method, so callers can fall back to the legacy contact_info. */
+function contactCtaButtons(phone,methods,messageText){
+  const num=digitsOnly(phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const ms=Array.isArray(methods)?methods:[];
+  if(!intl||!ms.length)return '';
+  const msg=encodeURIComponent(messageText||'Hola, te contacto desde MiCampeche.');
+  const secondary='style="background:var(--paper2);color:var(--ink)"';
+  let h='';
+  if(ms.includes('whatsapp'))h+=`<a class="av-contact-btn" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">${svgIco('message')}WhatsApp</a>`;
+  if(ms.includes('llamada'))h+=`<a class="av-contact-btn" ${secondary} href="tel:+${intl}">${svgIco('phone')}Llamar</a>`;
+  if(ms.includes('sms'))h+=`<a class="av-contact-btn" ${secondary} href="sms:+${intl}">${svgIco('message')}SMS</a>`;
+  return h;
+}
+/* Full contact block for a card: the method buttons when the poster set
+   them, otherwise the legacy single "Llamar" button for pre-feature posts
+   that only have a plain contact_info string. '' when neither exists. */
+function contactCtaRow(x,messageText){
+  const btns=contactCtaButtons(x.contactPhone,x.contactMethods,messageText);
+  if(btns)return `<div class="contact-cta-row">${btns}</div>`;
+  if(x.contact)return `<div class="contact-cta-row"><a class="av-contact-btn" href="${telHref(x.contact)}">${svgIco('phone')}Llamar</a></div>`;
+  return '';
+}
 
 /* ══════════════ MODAL VIEW STACK ══════════════
    The single #modal-bg is reused for deeply nested views — e.g. Tu cuenta
@@ -2352,6 +2412,71 @@ async function moderateItem(table,id,newStatus,reason){
   refreshPendingBadge();
 }
 
+/* ══════════════ ADMIN: long-press to remove an already-published post ══════════════
+   No new DB anything — this just flips status to 'rejected' via the same
+   MC.moderatePost the Pendiente queue uses, which drops the row from every
+   public-read view (all RLS-filtered on status='published') and surfaces
+   the optional message in the submitter's "Publicaciones no aprobadas".
+   Long-press is touch-only, so right-click is the desktop equivalent. */
+function attachAdminRemove(el,table,id,title){
+  if(!el||!lastFetchedAccount||!lastFetchedAccount.isAdmin)return;
+  let timer=null;
+  const start=()=>{clearTimeout(timer);timer=setTimeout(()=>openAdminRemoveConfirm(table,id,title),550);};
+  const cancel=()=>clearTimeout(timer);
+  el.addEventListener('touchstart',start,{passive:true});
+  el.addEventListener('touchend',cancel);
+  el.addEventListener('touchmove',cancel,{passive:true});
+  el.addEventListener('mousedown',start);
+  el.addEventListener('mouseup',cancel);
+  el.addEventListener('mouseleave',cancel);
+  el.addEventListener('contextmenu',e=>{e.preventDefault();cancel();openAdminRemoveConfirm(table,id,title);});
+}
+/* Called at the end of each card-render function: wires every card tagged
+   with data-adm-rm. A no-op unless the current account is a known admin. */
+function wireAdminRemove(container){
+  if(!container||!lastFetchedAccount||!lastFetchedAccount.isAdmin)return;
+  container.querySelectorAll('[data-adm-rm]').forEach(node=>{
+    if(node._admRmWired)return;
+    node._admRmWired=true;
+    const raw=node.getAttribute('data-adm-rm')||'';
+    const sep=raw.indexOf('|');
+    if(sep<0)return;
+    attachAdminRemove(node,raw.slice(0,sep),raw.slice(sep+1),node.getAttribute('data-adm-rm-t')||'');
+  });
+}
+/* Attribute string for a card that an admin can long-press to remove. */
+function admRm(table,id,title){
+  return `data-adm-rm="${e(table)}|${e(String(id))}" data-adm-rm-t="${e(String(title||''))}"`;
+}
+function openAdminRemoveConfirm(table,id,title){
+  document.getElementById('modal-title').textContent='Quitar publicación';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:6px">Esto la quita de la vista pública de inmediato. La persona que la publicó verá que fue retirada en su cuenta.</div>
+    ${title?`<div style="font-weight:700;font-size:14px;margin:8px 0 12px">${e(title)}</div>`:''}
+    <label class="fl">Mensaje para quien la publicó (opcional)</label>
+    <textarea class="ft" id="adm-rm-msg" placeholder="Ej. El contenido no cumple las reglas de la comunidad."></textarea>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="closeModal()">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--signal);color:#fff" id="adm-rm-btn" onclick="confirmAdminRemove('${e(table)}','${e(String(id))}')">Quitar</button>
+    </div>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function confirmAdminRemove(table,id){
+  const btn=document.getElementById('adm-rm-btn');
+  const msg=(document.getElementById('adm-rm-msg').value||'').trim();
+  if(btn){btn.disabled=true;btn.textContent='Quitando…';}
+  const {error}=await MC.moderatePost(table,id,'rejected',msg||null);
+  if(error){
+    if(btn){btn.disabled=false;btn.textContent='Quitar';}
+    toast(pgErrorToast(error,'No se pudo quitar la publicación.'));
+    return;
+  }
+  closeModal();
+  toast('Publicación retirada ✓');
+  refreshContent();
+}
+
 
 // Shared by both gates below — after either signing in OR verifying a
 // business, we just re-open the originally requested kind, and openPost()
@@ -2531,8 +2656,9 @@ async function submitPost(kind){
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
   if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
-  if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'&&!(data.contact||'').trim()){
-    stop();toast('Escribe tu número o elige "No hace falta"');return;
+  if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'){
+    if(!(data.contact_phone||'').trim()){stop();toast('Escribe tu número o elige "No hace falta"');return;}
+    if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
 
   if(kind==='negocio_verificar'){
@@ -2654,6 +2780,10 @@ async function checkPaymentReturn(){
    whatever mode is currently set; only init() sets the initial default. */
 async function refreshContent(){
   await loadAllData();
+  // Resolve admin status before the first render pass so admin-only card
+  // affordances (long-press remove) are wired on initial load, not only
+  // after a later re-render. refreshPendingBadge() keeps it fresh after.
+  lastFetchedAccount=await MC.currentAccount();
   renderInicio();
   renderNoticias();
   renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();
@@ -2686,6 +2816,10 @@ async function refreshPendingBadge(){
   const els=[document.getElementById('tb-badge'),document.getElementById('menu-account-badge')];
   const set=(txt)=>els.forEach(el=>{ if(!el)return; el.textContent=txt; el.classList.toggle('on',!!txt); });
   const acct=await MC.currentAccount();
+  // Keep the app-wide "who's signed in" cache fresh from here too — it runs
+  // on load and after every sign-in/out, so admin-only affordances
+  // (long-press remove) work without first opening the account view.
+  lastFetchedAccount=acct;
   if(!acct.signedIn||!acct.isAdmin){set('');return;}
   const count=await MC.fetchPendingCount();
   set(count>0?(count>99?'99+':String(count)):'');

@@ -824,28 +824,41 @@ const fakeClient = {
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 50));
     assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'submitPost(avisos) → real MC.submitAviso → success toast');
-    assert(lastInsert.avisos && lastInsert.avisos.contact_info === null && lastInsert.avisos.anonymous === false, 'with the toggles left at their defaults, no contact number and a non-anonymous aviso are written');
+    assert(lastInsert.avisos && lastInsert.avisos.contact_phone === null && lastInsert.avisos.contact_methods === null && lastInsert.avisos.anonymous === false, 'with the toggles at their defaults, an aviso is written with no contact fields and not anonymous');
 
-    // Now opt into both: anonymous, and a contact number to be reached at.
+    // Now opt into both: anonymous, and a contact number with chosen channels.
     await window.openPost('avisos');
     doc.getElementById('pf-title').value = 'Vieron a esta persona';
     window.segPick(doc.querySelector('#pf-anon .seg-btn[data-v="si"]'));
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
-    doc.getElementById('pf-contact').value = '981 111 2222';
+    doc.getElementById('pf-contact_phone').value = '981 111 2222';
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="sms"]')); // drop SMS, keep WhatsApp + Llamada
     delete lastInsert.avisos;
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 50));
-    assert(lastInsert.avisos && lastInsert.avisos.contact_info === '981 111 2222' && lastInsert.avisos.anonymous === true, 'turning on "Anónimo" + "Sí, que me contacten" writes the number and the anonymous flag');
+    assert(lastInsert.avisos && lastInsert.avisos.contact_phone === '981 111 2222' && lastInsert.avisos.anonymous === true, 'opting into "Anónimo" + "Sí, que me contacten" writes the number and the anonymous flag');
+    assert(Array.isArray(lastInsert.avisos.contact_methods) && lastInsert.avisos.contact_methods.includes('whatsapp') && lastInsert.avisos.contact_methods.includes('llamada') && !lastInsert.avisos.contact_methods.includes('sms'), 'the aviso carries exactly the contact channels the poster left selected (contact_methods text[])');
 
     // Saying "sí, que me contacten" but leaving the number blank is blocked.
     await window.openPost('avisos');
     doc.getElementById('pf-title').value = 'Sin número';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
-    doc.getElementById('pf-contact').value = '';
+    doc.getElementById('pf-contact_phone').value = '';
     delete lastInsert.avisos;
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Escribe tu número o elige "No hace falta"' && !lastInsert.avisos, 'choosing "Sí, que me contacten" with an empty number is blocked, nothing written');
+
+    // …and a number with every channel unticked is blocked too.
+    await window.openPost('avisos');
+    doc.getElementById('pf-title').value = 'Sin canales';
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
+    doc.getElementById('pf-contact_phone').value = '981 000 1111';
+    doc.querySelectorAll('#pf-contact_methods .mchip.on').forEach(c => window.multiPick(c));
+    delete lastInsert.avisos;
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Elige al menos una forma de contacto' && !lastInsert.avisos, 'a contact number with no channels selected is blocked, nothing written');
 
     // Claim/unclaim mechanics, now as a real signed-in user.
     const beforeHtml = text('of-list');
@@ -874,22 +887,24 @@ const fakeClient = {
     forcedErrors.delete.ofertas_redemptions = null;
 
     // Perdidos: the contact toggle defaults to "sí" and the number is
-    // pre-filled from the account, so a normal report still carries a phone.
+    // pre-filled from the account, so a normal report still carries a phone
+    // plus the full set of contact channels.
     await window.openPost('perdidos');
     doc.getElementById('pf-name').value = 'Gato perdido de prueba';
     delete lastInsert.perdidos;
     await window.submitPost('perdidos');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.perdidos && lastInsert.perdidos.contact_info === '+529811234567', 'Perdidos: with the contact toggle at its "sí" default, the report carries the account phone (pre-filled)');
+    assert(lastInsert.perdidos && lastInsert.perdidos.contact_phone === '+529811234567', 'Perdidos: with the contact toggle at its "sí" default, the report carries the account phone (pre-filled)');
+    assert(Array.isArray(lastInsert.perdidos.contact_methods) && lastInsert.perdidos.contact_methods.length === 3, 'Perdidos: all three contact channels are attached by default');
 
-    // …but toggling it off attaches no number at all.
+    // …but toggling it off attaches no contact at all.
     await window.openPost('perdidos');
     doc.getElementById('pf-name').value = 'Reporte sin contacto';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
     delete lastInsert.perdidos;
     await window.submitPost('perdidos');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.perdidos && lastInsert.perdidos.contact_info === null, 'Perdidos: choosing "No hace falta" writes no contact_info, even though the field was pre-filled');
+    assert(lastInsert.perdidos && lastInsert.perdidos.contact_phone === null && lastInsert.perdidos.contact_methods === null, 'Perdidos: choosing "No hace falta" attaches neither number nor channels, even though the field was pre-filled');
 
     // Empleos: company name is optional now (anonymity).
     await window.openPost('empleos');
@@ -899,12 +914,22 @@ const fakeClient = {
     delete lastInsert.empleos;
     await window.submitPost('empleos');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.empleos && lastInsert.empleos.company === null && lastInsert.empleos.contact_info === null, 'Empleos: a blank business name is stored as null (not ""), and the contact toggle can suppress the number');
+    assert(lastInsert.empleos && lastInsert.empleos.company === null && lastInsert.empleos.contact_phone === null, 'Empleos: a blank business name is stored as null (not ""), and the contact toggle can suppress the number');
 
-    // Avisos contact field is still pre-filled from the account (shown once
-    // the "sí, que me contacten" toggle reveals it).
+    // …and with the toggle on, an empleo carries the phone + chosen channels.
+    await window.openPost('empleos');
+    doc.getElementById('pf-title').value = 'Se busca cajero';
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
+    doc.getElementById('pf-contact_phone').value = '981 444 5555';
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="llamada"]')); // WhatsApp + SMS only
+    delete lastInsert.empleos;
+    await window.submitPost('empleos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.empleos && lastInsert.empleos.contact_phone === '981 444 5555' && Array.isArray(lastInsert.empleos.contact_methods) && lastInsert.empleos.contact_methods.includes('whatsapp') && lastInsert.empleos.contact_methods.includes('sms') && !lastInsert.empleos.contact_methods.includes('llamada'), 'Empleos: "sí, que me contacten" writes contact_phone + exactly the contact_methods left selected');
+
+    // Avisos contact field is still pre-filled from the account.
     await window.openPost('avisos');
-    assert(doc.getElementById('pf-contact').value === '+529811234567', 'Avisos contact field is pre-filled from the account\'s phone for a signed-in user');
+    assert(doc.getElementById('pf-contact_phone').value === '+529811234567', 'Avisos contact field is pre-filled from the account\'s phone for a signed-in user');
 
     // ── Business verification: a capability an account HAS, not a
     // different kind of account. Clasificados stays open to everyone;
@@ -1344,6 +1369,24 @@ const fakeClient = {
     // list — MC.fetchMyRejections skips any CONTENT_TABLES entry with no
     // ownerField, so a rejected alerta with a reason set stays invisible here.
     assert(!text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a rejected alerta never surfaces in a user\'s "no aprobadas" list — it has no submitter to show it to');
+
+    // ── Admin: long-press (right-click on desktop) any published card to
+    //    pull it from public view, with an optional note to the submitter.
+    //    This is a new UI entry point onto the existing generic
+    //    MC.moderatePost(table,id,'rejected',msg) path. openAccount() above
+    //    left lastFetchedAccount pointing at this admin account. ──
+    window.renderAvisos();
+    const avAdmCard = doc.querySelector('#av-list [data-adm-rm="avisos|av1"]');
+    assert(!!avAdmCard, 'published Avisos cards carry a data-adm-rm hook for the admin remove gesture');
+    avAdmCard.dispatchEvent(new window.Event('contextmenu', { bubbles: true, cancelable: true }));
+    assert(text('modal-title') === 'Quitar publicación', 'right-click / long-press on a published card opens the admin remove confirm');
+    doc.getElementById('adm-rm-msg').value = 'Contenido duplicado';
+    delete lastUpdate.avisos;
+    await window.confirmAdminRemove('avisos', 'av1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'Contenido duplicado', 'confirming sends status:rejected + the note to Supabase through MC.moderatePost — the same call the Pendiente queue uses');
+    assert(text('toast') === 'Publicación retirada ✓', 'a confirmation toast fires after the removal');
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'the confirm modal closes itself after a successful removal');
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
