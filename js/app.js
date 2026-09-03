@@ -27,6 +27,7 @@ const ICO={
   droplet:'<path d="M12 2s6 7.5 6 12a6 6 0 0 1-12 0c0-4.5 6-12 6-12z"/>',
   bolt:'<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>',
   thumb:'<path d="M7 22V11M2 13v7a2 2 0 0 0 2 2h11.6a2 2 0 0 0 2-1.6l1.2-6A2 2 0 0 0 16.8 12H14V6a2 2 0 0 0-2-2L9 11v11H7"/>',
+  check:'<path d="M20 6L9 17l-5-5"/>',
   external:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/>'
 };
 function svgIco(name,cls){return `<svg class="ico ${cls||''}" viewBox="0 0 24 24">${ICO[name]||''}</svg>`;}
@@ -490,7 +491,10 @@ async function loadAllData(){
   NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;
   OFERTAS.forEach(o=>{if(o.iClaimedReal)claimedByMe[o.id]=true;});
-  REPORTES.forEach(r=>{if(r.iConfirmedReal)confirmedByMe[r.id]=true;});
+  REPORTES.forEach(r=>{
+    if(r.iConfirmedReal)confirmedByMe[r.id]=true;
+    if(r.iVotedResolvedReal)resolvedByMe[r.id]=true;
+  });
 }
 
 
@@ -1134,6 +1138,7 @@ function setReportarMode(mode){
 }
 let repFilter='all';
 const confirmedByMe={};
+const resolvedByMe={};
 function renderRepChips(){
   const cats=['all',...new Set(REPORTES.map(x=>x.cat))];
   document.getElementById('rep-chips').innerHTML=cats.map(c=>
@@ -1155,6 +1160,7 @@ function renderReportes(){
   el.innerHTML=pin+list.map(x=>{
     const isResolved=x.status==='resuelto';
     const iConfirmed=!!confirmedByMe[x.id];
+    const iVotedResolved=!!resolvedByMe[x.id];
     return `
     <div class="rep-card">
       <div class="rep-top">
@@ -1169,7 +1175,10 @@ function renderReportes(){
       <div class="rep-bottom">
         ${isResolved
           ? `<span class="rep-resolved-badge">${svgIco('thumb')} Resuelto</span>`
-          : `<button class="rep-confirm-btn${iConfirmed?' on':''}" onclick="toggleConfirm('${x.id}')">${svgIco('thumb')} ${x.confirms+(iConfirmed?1:0)} confirmaron</button>`
+          : `<div class="rep-actions">
+               <button class="rep-confirm-btn${iConfirmed?' on':''}" onclick="toggleConfirm('${x.id}')">${svgIco('thumb')} ${x.confirms+(iConfirmed?1:0)} confirmaron</button>
+               <button class="rep-resolve-btn${iVotedResolved?' on':''}" onclick="toggleResolveVote('${x.id}')">${svgIco('check')} Ya no está</button>
+             </div>`
         }
         <span class="rep-time">${x.time}</span>
       </div>
@@ -1187,6 +1196,34 @@ async function toggleConfirm(id){
     confirmedByMe[id]=wasConfirmed;
     renderReportes();
     toast(pgErrorToast(error,'No se pudo actualizar tu confirmación.'));
+  }
+}
+/* "Ya no está" vote — same optimistic/rollback shape as toggleConfirm.
+   Deliberately kept separate from confirming so a resident can't conflate
+   "this problem is real" with "this problem is fixed". After a successful
+   new vote we re-pull Reportes: the 2nd distinct vote auto-resolves the
+   report via a DB trigger, and we want the card to flip to "Resuelto" now
+   rather than at the next natural refresh. */
+async function toggleResolveVote(id){
+  const acct=await MC.currentAccount();
+  if(!runWriteGate(acct,null))return;
+  const wasVoted=!!resolvedByMe[id];
+  resolvedByMe[id]=!wasVoted;
+  renderReportes();
+  const {error}=wasVoted?await MC.unvoteReporteResolved(id):await MC.voteReporteResolved(id);
+  if(error){
+    resolvedByMe[id]=wasVoted;
+    renderReportes();
+    toast(pgErrorToast(error,'No se pudo actualizar tu voto.'));
+    return;
+  }
+  if(!wasVoted){
+    REPORTES=await MC.fetchReportes();
+    REPORTES.forEach(r=>{
+      if(r.iConfirmedReal)confirmedByMe[r.id]=true;
+      if(r.iVotedResolvedReal)resolvedByMe[r.id]=true;
+    });
+    renderReportes();
   }
 }
 function renderAvisos(){

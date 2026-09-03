@@ -377,10 +377,17 @@ svg{display:block}
 .rep-title{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.3;margin-bottom:3px}
 .rep-loc{font-size:11.5px;color:var(--ink3)}
 .rep-desc{font-size:12.5px;color:var(--ink2);line-height:1.5;padding:10px 14px 0}
-.rep-bottom{display:flex;align-items:center;justify-content:space-between;padding:11px 14px 13px;margin-top:8px}
+.rep-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px 10px;flex-wrap:wrap;padding:11px 14px 13px;margin-top:8px}
+.rep-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
 .rep-confirm-btn{display:flex;align-items:center;gap:6px;background:var(--paper2);border:1px solid var(--line2);border-radius:99px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--ink2);cursor:pointer;font-family:inherit}
 .rep-confirm-btn .ico{width:14px;height:14px}
 .rep-confirm-btn.on{background:var(--palm-bg);border-color:var(--palm);color:var(--palm)}
+/* Deliberately quieter than the confirm pill (outline, not filled) so
+   "the problem is gone" doesn't read as another way to confirm it. Its
+   pressed state is a solid dark fill — nothing like the confirm green. */
+.rep-resolve-btn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--line2);border-radius:99px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--ink3);cursor:pointer;font-family:inherit}
+.rep-resolve-btn .ico{width:14px;height:14px}
+.rep-resolve-btn.on{background:var(--night);border-color:var(--night);color:var(--paper)}
 .rep-time{font-size:11px;color:var(--ink3)}
 .rep-resolved-badge{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--palm)}
 

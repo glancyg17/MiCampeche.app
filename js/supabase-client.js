@@ -322,6 +322,7 @@ function pgErrorToast(error,fallback){
     if(m.includes('one_clasificado_per_person'))return 'Ya tienes un artículo publicado en Clasificados (uno por persona).';
     if(m.includes('ofertas_bookings_booked_date_key'))return 'Ese día ya fue reservado por otro negocio — intenta con otro.';
     if(m.includes('one_claim_per_person_per_oferta'))return 'Ya habías reclamado esta oferta.';
+    if(m.includes('reportes_resolution_votes'))return 'Ya habías marcado este reporte como resuelto.';
     if(m.includes('reportes_confirmations'))return 'Ya habías confirmado este reporte.';
     if(m.includes('businesses_profile_id_key'))return 'Ya tienes un negocio verificado en esta cuenta.';
     return 'Ya existe un registro con esos datos.';
@@ -592,22 +593,33 @@ MC.fetchReportes=async function(){
   if(error){console.error(error);return [];}
   const ids=data.map(r=>r.id);
   let countsById={};
+  let resolveCountsById={};
   if(ids.length){
     const {data:confs}=await sb.from('reportes_confirmations').select('reporte_id').in('reporte_id',ids);
     (confs||[]).forEach(c=>{countsById[c.reporte_id]=(countsById[c.reporte_id]||0)+1;});
+    const {data:rvotes}=await sb.from('reportes_resolution_votes').select('reporte_id').in('reporte_id',ids);
+    (rvotes||[]).forEach(c=>{resolveCountsById[c.reporte_id]=(resolveCountsById[c.reporte_id]||0)+1;});
   }
   const uid=await MC.ready;
   let mine=new Set();
+  let myResolveVotes=new Set();
   if(uid&&ids.length){
     const {data:myConfs}=await sb.from('reportes_confirmations').select('reporte_id').eq('confirmed_by',uid).in('reporte_id',ids);
     (myConfs||[]).forEach(r=>mine.add(r.reporte_id));
+    const {data:myRVotes}=await sb.from('reportes_resolution_votes').select('reporte_id').eq('voted_by',uid).in('reporte_id',ids);
+    (myRVotes||[]).forEach(r=>myResolveVotes.add(r.reporte_id));
   }
   return data.map(r=>{
     const iConfirmed=mine.has(r.id);
     const total=countsById[r.id]||0;
+    const iVotedResolved=myResolveVotes.has(r.id);
+    const resolveTotal=resolveCountsById[r.id]||0;
     return {id:r.id,cat:r.category||'Otro',title:r.title,loc:r.location_text||'',desc:r.description||'',
       confirms:iConfirmed?Math.max(0,total-1):total,status:r.resolved?'resuelto':'abierto',
-      time:relTimeEs(r.created_at),img:r.image_url||'',iConfirmedReal:iConfirmed};
+      // net of my own vote, same "base count + 1 if me" convention as confirms
+      resolveVotes:iVotedResolved?Math.max(0,resolveTotal-1):resolveTotal,
+      time:relTimeEs(r.created_at),img:r.image_url||'',
+      iConfirmedReal:iConfirmed,iVotedResolvedReal:iVotedResolved};
   });
 };
 
@@ -753,4 +765,17 @@ MC.confirmReporte=async function(reporteId){
 MC.unconfirmReporte=async function(reporteId){
   const uid=await MC.ready;
   return sb.from('reportes_confirmations').delete().eq('reporte_id',reporteId).eq('confirmed_by',uid);
+};
+
+/* "Ya no está" — a resident says the problem is gone. Same social-proof
+   shape as confirmations (own row, unique per person, public read); a DB
+   trigger flips reportes.resolved once 2 distinct people vote, so this
+   never touches the moderation queue. */
+MC.voteReporteResolved=async function(reporteId){
+  const uid=await MC.ready;
+  return sb.from('reportes_resolution_votes').insert({reporte_id:reporteId,voted_by:uid});
+};
+MC.unvoteReporteResolved=async function(reporteId){
+  const uid=await MC.ready;
+  return sb.from('reportes_resolution_votes').delete().eq('reporte_id',reporteId).eq('voted_by',uid);
 };

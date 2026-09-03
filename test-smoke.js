@@ -92,6 +92,9 @@ let fakePhoneAlreadyVerified = false; // controllable flag for MC.isPhoneAlready
 const forcedErrors = { insert: {}, delete: {}, update: {}, resetPassword: null, requestPasswordReset: null, profilesUpdateFailOnce: false, profilesUpdateAlways: false };
 
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+// Stateful so the reportes auto-resolve trigger (2 distinct votes ->
+// reportes.resolved = true) can be exercised through the real app path.
+let fakeResolutionVotes = []; // [{ reporte_id, voted_by }]
 let refreshSessionCallCount = 0;
 let authStateChangeCallback = null;
 let fakePasswordResetRequests = [];
@@ -155,6 +158,30 @@ const fakeClient = {
           })),
           error: null,
         })),
+      };
+    }
+    if (table === 'reportes_resolution_votes') {
+      // Stateful, and it mirrors trg_reporte_auto_resolve: the 2nd distinct
+      // vote for a report flips SAMPLE.reportes[...].resolved = true, exactly
+      // as the real AFTER INSERT trigger does. Chain filters (.eq/.in) are
+      // no-ops here (same as the other fake tables), so fetchReportes does
+      // its own client-side grouping over the full list.
+      return {
+        select: (..._a) => makeChain(() => ({ data: fakeResolutionVotes.map(v => ({ ...v })), error: null })),
+        insert: (row) => { lastInsert.reportes_resolution_votes = row; return makeChain(() => {
+          if (forcedErrors.insert.reportes_resolution_votes) return { data: null, error: forcedErrors.insert.reportes_resolution_votes };
+          if (fakeResolutionVotes.some(v => v.reporte_id === row.reporte_id && v.voted_by === row.voted_by))
+            return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "reportes_resolution_votes_reporte_id_voted_by_key"' } };
+          fakeResolutionVotes.push({ reporte_id: row.reporte_id, voted_by: row.voted_by });
+          if (fakeResolutionVotes.filter(v => v.reporte_id === row.reporte_id).length >= 2) {
+            const rep = (SAMPLE.reportes || []).find(r => r.id === row.reporte_id);
+            if (rep) rep.resolved = true;
+          }
+          return { data: [{ ...row, id: 'rv-' + fakeResolutionVotes.length }], error: null };
+        }); },
+        delete: () => makeChain(() => forcedErrors.delete.reportes_resolution_votes
+          ? { data: null, error: forcedErrors.delete.reportes_resolution_votes }
+          : { data: [], error: null }),
       };
     }
     if (table === 'profiles') {
@@ -344,6 +371,32 @@ const fakeClient = {
   assert(text('job-list').includes('tel:+529815550001'), 'an Empleos listing with a contact number shows a call button');
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
+
+  // ── Reportes "ya no está": social-proof resolution. An open report shows
+  //    a distinct resolve-vote button alongside confirm; once 2 different
+  //    residents vote, a DB trigger sets resolved=true and the card swaps
+  //    its buttons for the "Resuelto" badge. ──
+  assert(text('rep-list').includes('Ya no está') && text('rep-list').includes('rep-resolve-btn'), 'an open report shows a "Ya no está" resolve-vote button next to the confirm button');
+  assert(!text('rep-list').includes('rep-resolved-badge'), 'and no Resuelto badge while it is still open');
+  {
+    const savedVer = currentProfile.phone_verification_status;
+    const savedSess = currentSession;
+    currentProfile.phone_verification_status = 'verified';
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    // another resident already voted it resolved
+    await fakeClient.from('reportes_resolution_votes').insert({ reporte_id: 'r1', voted_by: 'uid-neighbour' });
+    // the current user casts the 2nd vote through the real UI path
+    await window.toggleResolveVote('r1');
+    await new Promise(r => setTimeout(r, 10));
+    assert(lastInsert.reportes_resolution_votes && lastInsert.reportes_resolution_votes.reporte_id === 'r1' && lastInsert.reportes_resolution_votes.voted_by === 'uid-1', 'MC.voteReporteResolved inserts {reporte_id, voted_by} into reportes_resolution_votes');
+    assert(text('rep-list').includes('rep-resolved-badge') && text('rep-list').includes('Resuelto'), 'after the 2nd distinct vote the report auto-resolves and the card shows the Resuelto badge');
+    assert(!text('rep-list').includes('Ya no está'), 'the resolve-vote and confirm buttons are gone once the report is resolved');
+    // teardown so later tests (pull-to-refresh re-fetches everything) see a clean fixture
+    (SAMPLE.reportes || []).forEach(r => { r.resolved = false; });
+    fakeResolutionVotes = [];
+    currentProfile.phone_verification_status = savedVer;
+    currentSession = savedSess;
+  }
 
   // ── Onboarding: a pinned "how to use this section" card at the top of
   //    each user-postable list, dismissible per device. ──
