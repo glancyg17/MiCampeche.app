@@ -567,7 +567,16 @@ MC.fetchAlertas=async function(){
   const {data,error}=await sb.from('alertas').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,title:r.title||'',type:r.alert_type,cls:r.resolved?'resolved':'',zone:r.zone||'',desc:r.description||'',time:relTimeEs(r.created_at)}));
+  return data.map(r=>({
+    id:r.id,title:r.title||'',type:r.alert_type,cls:r.resolved?'resolved':'',
+    zone:r.zone||'',desc:r.description||'',
+    // published_at is when the source actually posted it (Facebook/RSS
+    // bridge); created_at is only when our sync picked it up. Prefer the
+    // real event time, fall back for older/manual rows that have no
+    // published_at.
+    time:relTimeEs(r.published_at||r.created_at),
+    sourceUrl:r.source_url||null
+  }));
 };
 
 MC.fetchEmpleos=async function(){

@@ -65,7 +65,10 @@ const SAMPLE = {
   // rejection_reason here exercises the "owner-less tables never surface
   // in a user's rejections" guard in MC.fetchMyRejections. The description
   // is deliberately multi-paragraph (\n\n) to exercise the pre-wrap render.
-  alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'Primer párrafo del aviso oficial.\n\nSegundo párrafo con el detalle de la zona afectada y la duración estimada.', source: 'JAPAY', resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
+  // published_at (source post time) is deliberately 3h before created_at
+  // (pipeline sync time) so the render can be checked to prefer it.
+  // source_url exercises the "ver publicación original" link in the modal.
+  alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'Primer párrafo del aviso oficial.\n\nSegundo párrafo con el detalle de la zona afectada y la duración estimada.', source: 'JAPAY', source_url: 'https://facebook.com/aguakan/posts/123', published_at: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString(), resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
   empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' }],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
@@ -322,7 +325,21 @@ const fakeClient = {
   assert(text('alert-list') && text('alert-list').includes('Corte de agua'), 'Alertas rendered real fetched data');
   assert(text('alert-list').includes('alert-headline') && text('alert-list').includes('Corte de agua programado en Zona Norte'), 'an alerta renders its title as a real headline line');
   assert(text('alert-list').includes('class="alert-zone">Zona test<'), 'the zone still renders, now as a secondary line');
-  assert(text('alert-list').includes('Primer párrafo del aviso oficial.\n\nSegundo párrafo'), 'a multi-paragraph description keeps its paragraph breaks in the markup (rendered visibly via white-space:pre-wrap)');
+  assert(text('alert-list').includes('alert-preview') && text('alert-list').includes('Primer párrafo del aviso oficial.'), 'the card shows a compact one-line preview of the description');
+  assert(!text('alert-list').includes('Segundo párrafo'), 'the card preview stops at the first line — the rest is only in the detail modal');
+  assert(text('alert-list').includes("openAlertaDetail('al1')"), 'the whole alerta card is clickable through to its detail modal');
+  assert(text('alert-list').includes('Hace 3 horas') && !text('alert-list').includes('Hace un momento'), 'the relative time uses published_at (when the source posted), not created_at (when our pipeline synced)');
+
+  // ── Alerta detail modal: full text + link back to the original post.
+  //    Resident-facing (no approve/reject), single-view (back closes it). ──
+  window.openAlertaDetail('al1');
+  assert(text('modal-title') === 'Corte de agua', 'the alerta detail modal titles with the alert type');
+  assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'the detail modal shows the full headline');
+  assert(text('modal-body').includes('Primer párrafo del aviso oficial.\n\nSegundo párrafo'), 'the detail modal shows the complete multi-paragraph description, breaks intact');
+  assert(text('modal-body').includes('facebook.com/aguakan/posts/123') && text('modal-body').includes('Ver publicación original'), 'the detail modal links out to the original source post when source_url is set');
+  assert(doc.getElementById('modal-bg').classList.contains('on'), 'the detail modal is actually shown');
+  window.mcModalBack();
+  assert(!doc.getElementById('modal-bg').classList.contains('on'), 'single-view modal: back / ✕ closes it outright, no nested stack left behind');
   assert(text('job-list') && text('job-list').includes('Puesto test'), 'Empleos rendered real fetched data');
   assert(text('job-list').includes('tel:+529815550001'), 'an Empleos listing with a contact number shows a call button');
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');

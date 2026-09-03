@@ -1217,14 +1217,40 @@ function renderAlertas(){
     'Aquí verás <b>alertas oficiales</b> para toda la ciudad — cortes de agua, clima fuerte, cierres de calles, emergencias. Las publica MiCampeche; tú solo revisa aquí cuando algo esté pasando. ¿Un problema de tu calle (bache, fuga, alumbrado)? Eso va en <b>Reportes</b>.',
     null,
     'Ir a Reportes',"setReportarMode('reportes')");
-  el.innerHTML=pin+ALERTAS.map(x=>`
-    <div class="alert-card ${x.cls}">
+  el.innerHTML=pin+ALERTAS.map(x=>{
+    // One-line teaser: first paragraph only, hard-capped so the row stays
+    // one line even before CSS truncation kicks in. Full text lives in the
+    // detail modal.
+    const firstLine=x.desc.split('\n')[0]||'';
+    const preview=firstLine.slice(0,100);
+    const truncated=x.desc.length>preview.length;
+    return `
+    <div class="alert-card ${x.cls}" role="button" tabindex="0" onclick="openAlertaDetail('${x.id}')">
       <div class="alert-top"><span class="alert-type">${x.cls==='resolved'?'✓ Resuelto — ':''}${e(x.type)}</span><span class="alert-time">${x.time}</span></div>
       ${x.title?`<div class="alert-headline">${e(x.title)}</div>`:''}
       ${x.zone?`<div class="alert-zone">${e(x.zone)}</div>`:''}
-      <div class="alert-desc">${e(x.desc)}</div>
+      ${preview?`<div class="alert-preview">${e(preview)}${truncated?'…':''}</div>`:''}
     </div>
-  `).join('');
+  `}).join('');
+}
+/* Resident-facing detail modal — mirrors openProdView (a content card on a
+   screen opening the shared #modal-bg), NOT openModerationDetail (which is
+   admin-only and opened from inside an already-open modal, so it pushes a
+   view). Single view: no mcModalPushView, so ✕ / backdrop / hardware-back
+   closes it outright. */
+function openAlertaDetail(id){
+  const a=ALERTAS.find(x=>x.id===id);
+  if(!a)return;
+  document.getElementById('modal-title').textContent=a.type||'Alerta';
+  document.getElementById('modal-body').innerHTML=`
+    ${a.cls==='resolved'?`<div class="alert-type" style="color:var(--palm);margin-bottom:8px">✓ Resuelto</div>`:''}
+    ${a.title?`<div class="alert-headline" style="white-space:normal;margin-bottom:8px">${e(a.title)}</div>`:''}
+    ${a.zone?`<div class="alert-zone" style="margin-bottom:10px">${e(a.zone)}</div>`:''}
+    <div style="font-size:11px;color:var(--ink3);margin-bottom:12px">${a.time}</div>
+    <div class="alert-desc">${e(a.desc)}</div>
+    ${a.sourceUrl?`<a href="${e(a.sourceUrl)}" target="_blank" rel="noopener" class="menu-item" style="margin-top:16px;justify-content:center">${svgIco('external')}<span class="menu-item-lbl">Ver publicación original</span></a>`:''}
+  `;
+  document.getElementById('modal-bg').classList.add('on');
 }
 function renderServiciosUtiles(){
   const el=document.getElementById('su-list');

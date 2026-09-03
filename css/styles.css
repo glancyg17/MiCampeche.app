@@ -339,7 +339,7 @@ svg{display:block}
 
 /* ═══ ALERTAS (sub-view inside Reportar) ═══ */
 .alert-list{padding:0 18px 12px;display:flex;flex-direction:column;gap:11px}
-.alert-card{border-radius:var(--r);border:1px solid var(--line);background:#fff;padding:15px;border-left:3px solid var(--signal);box-shadow:var(--sh1)}
+.alert-card{border-radius:var(--r);border:1px solid var(--line);background:#fff;padding:13px 14px;border-left:3px solid var(--signal);box-shadow:var(--sh1);cursor:pointer}
 .alert-card.info{border-left-color:var(--gulf)}
 .alert-card.resolved{border-left-color:var(--palm);opacity:.72}
 .alert-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
@@ -347,9 +347,13 @@ svg{display:block}
 .alert-card.info .alert-type{color:var(--gulf)}
 .alert-card.resolved .alert-type{color:var(--palm)}
 .alert-time{font-size:11px;color:var(--ink3)}
-.alert-headline{font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.35;margin-bottom:5px}
-.alert-zone{font-size:11.5px;color:var(--ink3);margin-bottom:7px}
-.alert-desc{font-size:12.5px;color:var(--ink2);line-height:1.5;white-space:pre-wrap}
+.alert-headline{font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.35;margin-bottom:4px}
+.alert-zone{font-size:11.5px;color:var(--ink3);margin-bottom:6px}
+.alert-preview{font-size:12.5px;color:var(--ink2)}
+/* One line each on the card; the detail modal (which reuses .alert-headline)
+   opts back into wrapping via an inline white-space:normal. */
+.alert-card .alert-headline,.alert-card .alert-zone,.alert-card .alert-preview{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alert-desc{font-size:13px;color:var(--ink2);line-height:1.5;white-space:pre-wrap}
 
 /* ═══ SERVICIOS ÚTILES (CFE / agua shortcuts) ═══ */
 .su-list{padding:0 18px 24px;display:flex;flex-direction:column;gap:9px}
