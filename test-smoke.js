@@ -26,18 +26,35 @@ function assert(cond, msg) {
 // query builder closely enough to exercise our actual code paths. ──
 function makeChain(getResult) {
   let single = false;
+  const eqs = [];   // captured .eq(field, value) constraints
+  const notNulls = []; // fields required non-null via .not(field, 'is', null)
   const proxy = new Proxy({}, {
     get(target, prop) {
       if (prop === 'then') {
         return (res, rej) => {
           let out = getResult();
+          // The fake ignores MOST filters on purpose (e.g. .eq('status',…) —
+          // several tests rely on getting every SAMPLE row back). It DOES
+          // honor owner-scoping (.eq('submitted_by',…)) and .not(reason,is
+          // null) so the resident-facing "my own posts / my rejections"
+          // queries can be exercised for real.
+          if (Array.isArray(out.data)) {
+            let rows = out.data;
+            eqs.forEach(([f, v]) => {
+              if (f === 'submitted_by') rows = rows.filter(r => r && r[f] === v);
+            });
+            notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
+            if (rows !== out.data) out = { ...out, data: rows };
+          }
           if (single) out = { ...out, data: Array.isArray(out.data) ? (out.data[0] || null) : out.data };
           return Promise.resolve(out).then(res, rej);
         };
       }
       if (prop === 'catch') return (fn) => Promise.resolve(getResult()).catch(fn);
       if (prop === 'single' || prop === 'maybeSingle') { single = true; return () => proxy; }
-      return (..._args) => proxy; // select/eq/order/limit/gte/in/etc all just chain
+      if (prop === 'eq') return (f, v) => { eqs.push([f, v]); return proxy; };
+      if (prop === 'not') return (f, op, v) => { if (op === 'is' && v === null) notNulls.push(f); return proxy; };
+      return (..._args) => proxy; // select/order/limit/gte/in/etc all just chain
     }
   });
   return proxy;
@@ -59,7 +76,12 @@ const SAMPLE = {
   ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
   ofertas_redemptions: [],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
-  perdidos: [{ id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' }],
+  perdidos: [
+    { id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' },
+    // owned by the test user (uid-1) — a still-pending one and another user's, for MC.fetchMyPosts
+    { id: 'pf2', report_type: 'perdido', title: 'Mi reporte pendiente', description: 'x', location: 'Centro', image_url: '', status: 'pending', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    { id: 'pf9', report_type: 'encontrado', title: 'Reporte de otra persona', description: 'x', location: 'Centro', image_url: '', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+  ],
   // alertas now also carries pipeline-fed pending rows (status='pending',
   // no submitter). title/source are the automated feed's fields; the
   // rejection_reason here exercises the "owner-less tables never surface
@@ -72,7 +94,14 @@ const SAMPLE = {
   empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' }],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
-  avisos: [{ id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' }],
+  avisos: [
+    // av1: the test user's own REJECTED aviso — drives the "no aprobadas"
+    // count badge and the rejection-reason surfacing in Mis publicaciones.
+    { id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', status: 'rejected', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' },
+    // av2: the same user's PUBLISHED aviso — so Mis publicaciones spans
+    // more than one status (and, with pf2, more than one table).
+    { id: 'av2', category: 'Seguridad', title: 'Mi aviso publicado', description: 'x', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } },
+  ],
 };
 
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
@@ -1265,7 +1294,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (12)', 'queue aggregates pending items from all 10 content tables (two for eventos — a second same-day event, to exercise the duplicate check; one alerta from the automated pipeline) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (15)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, and the three extra owner-tagged perdidos/avisos rows the Mis-publicaciones tests add) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
     assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
@@ -1339,7 +1368,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (11)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (14)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list).
     window.openModerationDetail('noticias', 'n1');
@@ -1362,13 +1391,42 @@ const fakeClient = {
     // rejected — surfaced in their own account view, not just stored and
     // forgotten in the database.
     await window.openAccount();
-    await new Promise(r => setTimeout(r, 20)); // rejected-submissions list loads after the view paints, then re-renders
-    assert(text('modal-body').includes('Publicaciones no aprobadas'), 'account view surfaces rejected submissions to the person who sent them');
-    assert(text('modal-body').includes('La descripción no es clara'), 'the actual rejection reason text is shown, not just that something was rejected');
-    // Owner-less tables (alertas) must never leak into anyone's rejections
-    // list — MC.fetchMyRejections skips any CONTENT_TABLES entry with no
-    // ownerField, so a rejected alerta with a reason set stays invisible here.
-    assert(!text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a rejected alerta never surfaces in a user\'s "no aprobadas" list — it has no submitter to show it to');
+    await new Promise(r => setTimeout(r, 20)); // the "N no aprobadas" count loads after the view paints, then re-renders
+    assert(text('modal-body').includes('Mis publicaciones'), 'the account view has a "Mis publicaciones" entry for every signed-in resident');
+    assert(text('modal-body').includes('1 no aprobada'), 'it flags the count of rejected posts inline — the trimmed quick-indicator that replaced the full inline list');
+    assert(!text('modal-body').includes('La descripción no es clara'), 'the full rejection reason is no longer duplicated inline in the account view — it lives in the Mis publicaciones view now');
+
+    // ── Mis publicaciones: the resident-facing sibling of the admin
+    //    Pendiente view. MC.fetchMyPosts returns THIS user's rows across the
+    //    self-editable tables, any status, excluding other users' and the
+    //    owner-less alertas table. ──
+    await window.openMyPosts();
+    await new Promise(r => setTimeout(r, 20));
+    const mp = () => text('modal-body');
+    assert(/^Mis publicaciones \(3\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, pf2 (pending) in perdidos');
+    assert(mp().includes('Aviso test') && mp().includes('No aprobado') && mp().includes('La descripción no es clara'), 'a rejected post shows the "No aprobado" badge with the rejection reason inline');
+    assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'a published post shows the "Publicado" badge');
+    assert(mp().includes('Mi reporte pendiente') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
+    assert(!mp().includes('Reporte de otra persona'), 'another user\'s post never appears — fetchMyPosts is scoped to the owner');
+    assert(!mp().includes('Corte de agua programado en Zona Norte'), 'alertas (owner-less) is excluded from Mis publicaciones entirely');
+    assert(mp().includes("openMyPostEdit('avisos','av1')"), 'each editable row is tappable straight into its edit form');
+
+    // Tapping a row opens the reused post form, pre-filled, routed to an UPDATE.
+    await window.openMyPostEdit('avisos', 'av1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Editar publicación' && doc.getElementById('pf-title').value === 'Aviso test', 'the edit form is the real post form, pre-filled with the post\'s current data');
+    assert(doc.getElementById('post-submit-btn').textContent === 'Guardar cambios', 'its submit button says "Guardar cambios", not "Enviar para revisión"');
+    doc.getElementById('pf-title').value = 'Aviso test (corregido)';
+    delete lastUpdate.avisos;
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.avisos && lastUpdate.avisos.title === 'Aviso test (corregido)' && lastUpdate.avisos.category === 'Comunidad', 'saving routes through MC.updatePost — the edited fields reach the row');
+    assert(lastUpdate.avisos.submitted_by === undefined && lastUpdate.avisos.status === undefined, 'the client never sends submitted_by or status on a self-edit — the DB trigger owns those');
+    assert(text('toast') === 'Cambios guardados — vuelve a revisión ✓', 'a confirmation toast fires after a successful self-edit');
+
+    // Back out to the account view for the admin test that follows.
+    window.mcModalBack('account');
+    await new Promise(r => setTimeout(r, 10));
 
     // ── Admin: long-press (right-click on desktop) any published card to
     //    pull it from public view, with an optional note to the submitter.

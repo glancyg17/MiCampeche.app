@@ -456,15 +456,49 @@ MC.fetchWeather=async function(){
   return r.json();
 };
 
+/* The tables a resident can see and self-edit their own rows in — the
+   ones the DB self-edit triggers + "owner update own" RLS cover. Derived
+   from CONTENT_TABLES (for the labels/titleField) minus: alertas
+   (owner-less), businesses (its own dedicated profile/edit view — showing
+   it here too would just duplicate it), and noticias/ofertas (no
+   resident self-edit path). Every row in "Mis publicaciones" is therefore
+   tappable straight into an edit form. */
+const SELF_EDIT_TABLES=['eventos','productos','clasificados','perdidos','empleos','reportes','avisos'];
+const MY_POST_TABLES=CONTENT_TABLES.filter(t=>t.ownerField&&SELF_EDIT_TABLES.includes(t.table));
+
 /* So a rejection reason isn't just stored and forgotten — a submitter can
-   see their own rejected items and why, surfaced in their account view. */
+   see their own rejected items and why. Feeds the "N no aprobadas" count
+   on the "Mis publicaciones" button in the account view. */
 MC.fetchMyRejections=async function(){
   const uid=await MC.ready;
   if(!uid)return [];
-  const results=await Promise.all(CONTENT_TABLES.filter(t=>t.ownerField).map(async ({table,label,titleField,ownerField})=>{
+  const results=await Promise.all(MY_POST_TABLES.map(async ({table,label,titleField,ownerField})=>{
     const {data,error}=await sb.from(table).select('*').eq(ownerField,uid).eq('status','rejected').not('rejection_reason','is',null);
     if(error){console.error(error);return [];}
     return (data||[]).map(r=>({table,label,id:r.id,title:r[titleField]||'(sin título)',reason:r.rejection_reason,createdAt:r.created_at}));
+  }));
+  return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+};
+
+/* Every one of the current user's own submissions, any status, across the
+   self-editable tables — powers the "Mis publicaciones" view. Same
+   per-table-fetch-scoped-by-owner shape as fetchMyRejections, just without
+   the status/reason filters. status + rejectionReason ride along so the UI
+   can badge each row and show the reason inline when it was rejected. */
+MC.fetchMyPosts=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const results=await Promise.all(MY_POST_TABLES.map(async ({table,label,titleField,ownerField})=>{
+    const {data,error}=await sb.from(table).select('*').eq(ownerField,uid).order('created_at',{ascending:false});
+    if(error){console.error(error);return [];}
+    return (data||[]).map(r=>({
+      table,label,id:r.id,
+      title:r[titleField]||'(sin título)',
+      status:r.status||'pending',
+      rejectionReason:r.rejection_reason||null,
+      createdAt:r.created_at,
+      raw:r
+    }));
   }));
   return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
 };
@@ -637,50 +671,6 @@ MC.fetchAvisos=async function(){
 
 /* ══════════════ SUBMIT: writes real rows, always as status='pending' by table default ══════════════ */
 
-MC.submitEvento=async function(d){
-  const uid=await MC.ready;
-  return sb.from('eventos').insert({
-    title:d.name,category:d.cat||null,event_date:d.date||null,event_time:d.time||null,
-    location:d.loc||null,description:d.desc||null,image_url:d.photo||null,
-    website:(d.website||'').trim()||null,contact_phone:(d.phone||'').trim()||null,
-    price_text:(d.price||'').trim()||null,
-    submitted_by:uid
-  });
-};
-
-/* Selling in Tienda requires a verified business — the FAB in app.js
-   routes here only when the Mercado sub-tab is active. If somehow called
-   without one (shouldn't happen given app.js's own gate, but defense in
-   depth), returns needsBusiness so the UI can show the verify prompt. */
-MC.submitProducto=async function(d){
-  const uid=await MC.ready;
-  const biz=await MC.myBusiness();
-  if(!biz)return {needsBusiness:true};
-  const onOrder=d.availability==='pedido';
-  return sb.from('productos').insert({
-    business_id:biz.id,business_name_snapshot:biz.business_name,title:d.name,category:d.cat||null,
-    price_mxn:parseMoney(d.price),price_text:d.price||null,description:d.desc||null,image_url:d.photo||null,submitted_by:uid,
-    availability:onOrder?'pedido':'ahora',lead_time:onOrder?(d.lead_time||null):null,
-    fulfillment:d.fulfillment||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
-    seller_phone:biz.phone||null,
-    contact_methods:(Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms']
-  });
-};
-
-/* Clasificados stays open to every account — no business needed, matches
-   the "personal listing" spirit (1 free item/person, enforced by the
-   existing unique index). */
-MC.submitClasificado=async function(d){
-  const uid=await MC.ready;
-  return sb.from('clasificados').insert({
-    title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),price_text:d.price||null,
-    description:d.desc||null,image_url:d.photo||null,submitted_by:uid,
-    fulfillment:d.fulfillment||null,zone:d.zone||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
-    contact_phone:d.contact_phone||null,
-    contact_methods:(Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms']
-  });
-};
-
 /* Contact is opt-in on Avisos / Empleos / Perdidos: the "¿dejar un número?"
    toggle (d.want_contact) decides whether anything is attached. When it's
    on, the poster also picks which channels they're reachable by — same
@@ -694,25 +684,104 @@ function optContactFields(d){
   const methods=(Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms'];
   return {contact_phone:phone,contact_methods:methods};
 }
+function defaultContactMethods(d){
+  return (Array.isArray(d.contact_methods)&&d.contact_methods.length)?d.contact_methods:['whatsapp','llamada','sms'];
+}
+
+/* Maps a POST_FORMS form-data object to the editable content columns of
+   each self-editable table. Shared by the INSERT path (the submit
+   wrappers below) and the self-edit UPDATE path (MC.updatePost), so the
+   two can never drift — same idea as businessPayloadFromForm. Never
+   includes submitted_by / status / snapshot columns: the INSERT wrappers
+   add those, and the per-table DB edit triggers (enforce_*_edit) protect
+   id / submitted_by / created_at / status / rejection_reason (and
+   business_id / featured / resolved / source) server-side regardless. */
+const CONTENT_PAYLOAD={
+  eventos:(d)=>({
+    title:d.name,category:d.cat||null,event_date:d.date||null,event_time:d.time||null,
+    location:d.loc||null,description:d.desc||null,image_url:d.photo||null,
+    website:(d.website||'').trim()||null,contact_phone:(d.phone||'').trim()||null,
+    price_text:(d.price||'').trim()||null
+  }),
+  avisos:(d)=>({category:d.cat||null,title:d.title,description:d.desc||null,...optContactFields(d),anonymous:d.anon==='si'}),
+  empleos:(d)=>({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,description:d.desc||null,...optContactFields(d)}),
+  perdidos:(d)=>({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d)}),
+  reportes:(d)=>({category:d.cat||null,title:d.title,location_text:d.loc||null,description:d.desc||null,image_url:d.photo||null}),
+  productos:(d)=>{
+    const onOrder=d.availability==='pedido';
+    return {
+      title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),price_text:d.price||null,
+      description:d.desc||null,image_url:d.photo||null,
+      availability:onOrder?'pedido':'ahora',lead_time:onOrder?(d.lead_time||null):null,
+      fulfillment:d.fulfillment||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
+      contact_methods:defaultContactMethods(d)
+    };
+  },
+  clasificados:(d)=>({
+    title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),price_text:d.price||null,
+    description:d.desc||null,image_url:d.photo||null,
+    fulfillment:d.fulfillment||null,zone:d.zone||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
+    contact_phone:d.contact_phone||null,contact_methods:defaultContactMethods(d)
+  })
+};
+
+MC.submitEvento=async function(d){
+  const uid=await MC.ready;
+  return sb.from('eventos').insert({...CONTENT_PAYLOAD.eventos(d),submitted_by:uid});
+};
+
+/* Selling in Tienda requires a verified business — the FAB in app.js
+   routes here only when the Mercado sub-tab is active. If somehow called
+   without one (shouldn't happen given app.js's own gate, but defense in
+   depth), returns needsBusiness so the UI can show the verify prompt. */
+MC.submitProducto=async function(d){
+  const uid=await MC.ready;
+  const biz=await MC.myBusiness();
+  if(!biz)return {needsBusiness:true};
+  return sb.from('productos').insert({
+    ...CONTENT_PAYLOAD.productos(d),
+    business_id:biz.id,business_name_snapshot:biz.business_name,seller_phone:biz.phone||null,
+    submitted_by:uid
+  });
+};
+
+/* Clasificados stays open to every account — no business needed, matches
+   the "personal listing" spirit (1 free item/person, enforced by the
+   existing unique index). */
+MC.submitClasificado=async function(d){
+  const uid=await MC.ready;
+  return sb.from('clasificados').insert({...CONTENT_PAYLOAD.clasificados(d),submitted_by:uid});
+};
 
 MC.submitPerdido=async function(d){
   const uid=await MC.ready;
-  return sb.from('perdidos').insert({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d),submitted_by:uid});
+  return sb.from('perdidos').insert({...CONTENT_PAYLOAD.perdidos(d),submitted_by:uid});
 };
 
 MC.submitEmpleo=async function(d){
   const uid=await MC.ready;
-  return sb.from('empleos').insert({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,description:d.desc||null,...optContactFields(d),submitted_by:uid});
+  return sb.from('empleos').insert({...CONTENT_PAYLOAD.empleos(d),submitted_by:uid});
 };
 
 MC.submitReporte=async function(d){
   const uid=await MC.ready;
-  return sb.from('reportes').insert({category:d.cat||null,title:d.title,location_text:d.loc||null,description:d.desc||null,image_url:d.photo||null,submitted_by:uid});
+  return sb.from('reportes').insert({...CONTENT_PAYLOAD.reportes(d),submitted_by:uid});
 };
 
 MC.submitAviso=async function(d){
   const uid=await MC.ready;
-  return sb.from('avisos').insert({category:d.cat||null,title:d.title,description:d.desc||null,...optContactFields(d),anonymous:d.anon==='si',submitted_by:uid});
+  return sb.from('avisos').insert({...CONTENT_PAYLOAD.avisos(d),submitted_by:uid});
+};
+
+/* Self-edit: a resident updating one of their own already-submitted posts.
+   Sends only the editable content columns (via the shared CONTENT_PAYLOAD
+   map); the per-table DB trigger forces status back to 'pending' and
+   clears rejection_reason, and RLS ("<table> owner update own") restricts
+   it to the row's owner. `table` is a raw table name from MY_POST_TABLES. */
+MC.updatePost=async function(table,id,d){
+  const build=CONTENT_PAYLOAD[table];
+  if(!build)return {error:{message:'unsupported_table_for_edit'}};
+  return sb.from(table).update(build(d)).eq('id',id);
 };
 
 /* Ofertas is two writes: the deal itself, then either a booking (day free)

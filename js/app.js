@@ -1438,9 +1438,11 @@ const POST_FORMS={
 };
 
 let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kind==='oferta'
+let editingPost=null; // {table,id} while the post form is in self-edit mode; set by openMyPostEdit() AFTER openPost() renders, read by submitPost()
 
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
+  editingPost=null; // any fresh form start clears a stale edit target; openMyPostEdit re-sets it after this returns
   // A real account is required for ANY write, and its phone must already
   // be verified — both enforced at the database layer too (is_verified_writer
   // RLS), not just here for UX. Comes first, before the business check
@@ -1776,18 +1778,18 @@ function renderAccountSignedIn(acct){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `}
-    ${(acct.rejections&&acct.rejections.length)?`
-      <div style="margin-top:4px;margin-bottom:4px">
-        <div class="fl" style="margin-bottom:6px">Publicaciones no aprobadas</div>
-        ${acct.rejections.map(r=>`
-          <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:10px 12px;margin-bottom:8px">
-            <div style="font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">${e(r.label)}</div>
-            <div style="font-weight:700;font-size:13.5px;margin-top:2px">${e(r.title)}</div>
-            <div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(r.reason)}</div>
-          </div>
-        `).join('')}
-      </div>
-    `:''}
+    ${(()=>{const rej=(acct.rejections||[]).length;return `
+      <button class="menu-item" onclick="openMyPosts()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Mis publicaciones</span>
+          <span class="menu-item-sub"${rej?' style="color:var(--signal)"':''}>${rej
+            ? (rej===1?'1 no aprobada — revisa el motivo':rej+' no aprobadas — revisa el motivo')
+            : 'Edita o revisa el estado de lo que has publicado'}</span>
+        </span>
+        ${rej?`<span class="menu-badge on">${rej>99?'99+':rej}</span>`:''}
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>`;})()}
     ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
@@ -2289,6 +2291,140 @@ function renderPendingQueue(){
   document.getElementById('modal-body').innerHTML=h;
 }
 
+/* ══════════════ RESIDENT: "Mis publicaciones" ══════════════
+   The resident-facing sibling of the admin Pendiente view — same
+   modal-push-view pattern, same "one unified list across tables" shape,
+   but scoped to the current user's own rows (any status) and tappable
+   straight into the edit form. Open to every signed-in account. */
+let myPostsList=[];
+async function openMyPosts(){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Mis publicaciones';
+  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
+  document.getElementById('modal-bg').classList.add('on');
+  myPostsList=await MC.fetchMyPosts();
+  renderMyPosts();
+}
+async function refreshMyPosts(){
+  myPostsList=await MC.fetchMyPosts();
+  renderMyPosts();
+}
+/* Status pill — reuses the three labels + colours already used for
+   business status (renderBusinessProfile) and the account view, plus
+   --signal for rejected since that row needs action. */
+function postStatusBadge(status){
+  const map={
+    published:['Publicado','var(--gulf)'],
+    pending:['En revisión','var(--wall-dk)'],
+    rejected:['No aprobado','var(--signal)']
+  };
+  const [lbl,color]=map[status]||map.pending;
+  return `<span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${lbl}</span>`;
+}
+function renderMyPosts(){
+  document.getElementById('modal-title').textContent=`Mis publicaciones (${myPostsList.length})`;
+  if(!myPostsList.length){
+    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
+    return;
+  }
+  document.getElementById('modal-body').innerHTML=myPostsList.map(p=>{
+    const editable=!!MY_POST_EDIT[p.table];
+    return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px${editable?';cursor:pointer':''}"${editable?` onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')"`:''}>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+        <span style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(p.label)}</span>
+        ${postStatusBadge(p.status)}
+      </div>
+      <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(p.title)}</div>
+      <div style="color:var(--ink3);font-size:12px;margin-top:2px">${relTimeEs(p.createdAt)}${editable?' · toca para editar':''}</div>
+      ${(p.status==='rejected'&&p.rejectionReason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(p.rejectionReason)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+/* Per-table map from a stored row back to POST_FORMS field keys. Every
+   value bucket maps to a field kind the form renderer produced:
+   input → <input>/<textarea>/<select> (.value), seg → segPick a button,
+   multi → toggle mchips, img → prefill uploadedImageUrls + preview. */
+const MY_POST_EDIT={
+  avisos:{form:'avisos',fill:r=>({
+    input:{title:r.title,desc:r.description,cat:r.category,contact_phone:r.contact_phone},
+    seg:{anon:r.anonymous?'si':'no',want_contact:r.contact_phone?'si':'no'},
+    multi:{contact_methods:r.contact_methods}
+  })},
+  empleos:{form:'empleos',fill:r=>({
+    input:{title:r.title,co:r.company,pay:r.pay,desc:r.description,contact_phone:r.contact_phone},
+    seg:{want_contact:r.contact_phone?'si':'no'},
+    multi:{contact_methods:r.contact_methods}
+  })},
+  perdidos:{form:'perdidos',fill:r=>({
+    input:{name:r.title,loc:r.location,desc:r.description,contact_phone:r.contact_phone},
+    seg:{tag:r.report_type||'perdido',want_contact:r.contact_phone?'si':'no'},
+    multi:{contact_methods:r.contact_methods},
+    img:{photo:r.image_url}
+  })},
+  eventos:{form:'eventos',fill:r=>({
+    input:{name:r.title,cat:r.category,date:r.event_date,time:r.event_time,loc:r.location,price:r.price_text,website:r.website,phone:r.contact_phone,desc:r.description},
+    img:{photo:r.image_url}
+  })},
+  reportes:{form:'reportar',fill:r=>({
+    input:{cat:r.category,title:r.title,loc:r.location_text,desc:r.description},
+    img:{photo:r.image_url}
+  })},
+  productos:{form:'producto',fill:r=>({
+    input:{name:r.title,cat:r.category,price:r.price_text||'',lead_time:r.lead_time,desc:r.description},
+    seg:{item_condition:r.item_condition||'nuevo',availability:r.availability||'ahora',fulfillment:r.fulfillment||'recoger'},
+    multi:{contact_methods:r.contact_methods},
+    img:{photo:r.image_url}
+  })},
+  clasificados:{form:'clasificado',fill:r=>({
+    input:{name:r.title,cat:r.category,price:r.price_text||'',zone:r.zone,desc:r.description,contact_phone:r.contact_phone},
+    seg:{item_condition:r.item_condition||'nuevo',fulfillment:r.fulfillment||'recoger'},
+    multi:{contact_methods:r.contact_methods},
+    img:{photo:r.image_url}
+  })}
+};
+function applyPostEditFill(fill){
+  Object.entries(fill.input||{}).forEach(([k,v])=>{
+    const el=document.getElementById('pf-'+k);
+    if(el&&v!=null&&v!=='')el.value=v;
+  });
+  Object.entries(fill.seg||{}).forEach(([k,v])=>{
+    const btn=document.querySelector(`#pf-${k} .seg-btn[data-v="${v}"]`);
+    if(btn)segPick(btn);
+  });
+  Object.entries(fill.multi||{}).forEach(([k,vals])=>{
+    if(!Array.isArray(vals))return;
+    document.querySelectorAll(`#pf-${k} .mchip`).forEach(c=>c.classList.remove('on'));
+    vals.forEach(v=>{const c=document.querySelector(`#pf-${k} .mchip[data-v="${v}"]`);if(c)c.classList.add('on');});
+  });
+  Object.entries(fill.img||{}).forEach(([k,url])=>{
+    if(!url)return;
+    uploadedImageUrls[k]=url;
+    const wrap=document.getElementById('pf-'+k+'-wrap');
+    if(wrap)wrap.innerHTML=`<div style="position:relative;display:inline-block">
+      <img src="${e(url)}" style="width:72px;height:72px;object-fit:cover;border-radius:var(--rs);display:block">
+      <button type="button" onclick="removePhotoSelection('${k}')" aria-label="Quitar foto"
+        style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
+    </div>`;
+  });
+}
+/* Opens the post form for kind, pre-filled, routed to an UPDATE. Mirrors
+   openBusinessEdit(): push a view so ✕/back returns to the list, let
+   openPost() render the form, THEN flip it into edit mode. */
+async function openMyPostEdit(table,id){
+  const item=(myPostsList||[]).find(p=>p.table===table&&String(p.id)===String(id));
+  const cfg=MY_POST_EDIT[table];
+  if(!item||!cfg)return;
+  mcModalPushView('myPosts');
+  await openPost(cfg.form);
+  if(!document.getElementById('post-submit-btn')){return;} // openPost hit a gate — no form rendered
+  editingPost={table,id};
+  document.getElementById('modal-title').textContent='Editar publicación';
+  applyPostEditFill(cfg.fill(item.raw));
+  applyConditionalRows(POST_FORMS[cfg.form]); // re-sync showIf rows now that seg values are set
+  const btn=document.getElementById('post-submit-btn');
+  if(btn)btn.textContent='Guardar cambios';
+}
+
 /* Renders every field the submitter actually sent, per MODERATION_DETAIL_FIELDS
    — nothing hidden, no deciding blind. Blank/null fields are skipped
    rather than shown as empty rows. */
@@ -2659,6 +2795,20 @@ async function submitPost(kind){
   if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'){
     if(!(data.contact_phone||'').trim()){stop();toast('Escribe tu número o elige "No hace falta"');return;}
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
+  }
+
+  // Self-edit: same form, same validation (above), routed to an UPDATE of
+  // the resident's own row. The DB trigger forces it back to 'pending'.
+  if(editingPost){
+    const {table,id}=editingPost;
+    const {error}=await MC.updatePost(table,id,data);
+    if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+    if(error){toast(pgErrorToast(error,'No se pudieron guardar los cambios.'));return;}
+    editingPost=null;
+    toast('Cambios guardados — vuelve a revisión ✓');
+    mcModalBack('myPosts');
+    refreshMyPosts();
+    return;
   }
 
   if(kind==='negocio_verificar'){
