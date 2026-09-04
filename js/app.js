@@ -2603,6 +2603,10 @@ async function moderateItem(table,id,newStatus,reason,extraPatch){
   mcModalBack('pendingList');renderPendingQueue();
   toast(newStatus==='published'?'Publicado ✓':'Rechazado — el motivo quedó guardado');
   refreshPendingBadge();
+  refreshContent(); // an approve/reject changes public visibility immediately —
+                     // same class of bug as the self-edit fix above: without
+                     // this, a newly-approved item wouldn't appear in its
+                     // public list until some unrelated later refresh.
 }
 
 /* ══════════════ ADMIN: long-press to remove an already-published post ══════════════
@@ -2864,6 +2868,10 @@ async function submitPost(kind){
     editingPost=null;
     toast('Cambios guardados — vuelve a revisión ✓');
     mcModalBack('myPosts');
+    refreshContent(); // re-fetch + re-render every public list so the edited
+                       // item's new status (and content) actually disappears
+                       // from/updates in public view immediately — refreshMyPosts()
+                       // alone only updates the Mis Publicaciones list itself.
     refreshMyPosts();
     return;
   }

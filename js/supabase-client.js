@@ -781,7 +781,20 @@ MC.submitAviso=async function(d){
 MC.updatePost=async function(table,id,d){
   const build=CONTENT_PAYLOAD[table];
   if(!build)return {error:{message:'unsupported_table_for_edit'}};
-  return sb.from(table).update(build(d)).eq('id',id);
+  // Explicitly set status back to 'pending' and clear any prior rejection
+  // reason as part of the payload itself — don't rely solely on the
+  // per-table edit trigger (enforce_simple_content_edit / _eventos_edit /
+  // _reportes_edit) to force this. Those triggers deliberately skip ALL
+  // enforcement when the acting session is a genuine admin (so that
+  // MC.moderatePost's approve/reject actions aren't stomped on by this
+  // same trigger) — which means if an admin account self-edits their OWN
+  // post through this same form, the trigger alone would leave it
+  // published instead of queuing it for review. Setting status/rejection
+  // here ensures self-edit always re-queues the item for review,
+  // regardless of whether the editor happens to be an admin. For a
+  // non-admin owner this is redundant with what the trigger already
+  // does — harmless.
+  return sb.from(table).update({...build(d),status:'pending',rejection_reason:null}).eq('id',id);
 };
 
 /* Ofertas is two writes: the deal itself, then either a booking (day free)

@@ -348,6 +348,14 @@ const fakeClient = {
   const text = (id) => { const el = doc.getElementById(id); return el ? el.innerHTML : null; };
   const moderationQueueCountFromTitle = (title) => { const m = /\((\d+)\)/.exec(title || ''); return m ? Number(m[1]) : null; };
 
+  // Spy on refreshContent so we can confirm a successful self-edit and a
+  // successful moderateItem() both actually re-fetch/re-render the public
+  // lists, instead of leaving stale content visible until some unrelated
+  // later refresh.
+  let refreshContentCallCount = 0;
+  const realRefreshContent = window.refreshContent;
+  window.refreshContent = (...args) => { refreshContentCallCount++; return realRefreshContent(...args); };
+
   assert(text('news-list') && text('news-list').includes('Titular de prueba'), 'Noticias rendered real fetched data');
   assert(text('news-list').includes('news-desc'), 'a noticia WITH a summary shows its description line');
   assert(text('evt-list') && text('evt-list').includes('Evento de prueba'), 'Eventos rendered real fetched data');
@@ -1330,9 +1338,11 @@ const fakeClient = {
     assert(text('modal-body').includes('Enviado por Automático'), 'an owner-less alerta shows a synthetic submitter, not "Vecino"');
     assert(text('modal-body').includes('Zona test') && text('modal-body').includes('JAPAY'), 'the alerta detail renders its real fields (zona, fuente) from MODERATION_DETAIL_FIELDS');
     assert(text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'the same approve/reject flow is available on an alerta');
+    const refreshCountBeforeModerate = refreshContentCallCount;
     await window.moderateItem('alertas', 'al1', 'published');
     await new Promise(r => setTimeout(r, 20));
     assert(lastUpdate.alertas && lastUpdate.alertas.status === 'published', 'approving an alerta sends status: published to Supabase like any other table');
+    assert(refreshContentCallCount > refreshCountBeforeModerate, 'a successful moderateItem() call re-fetches/re-renders the public content lists, so a newly-approved item appears immediately');
     // moderateItem's success path already stepped back to the list (one
     // level above the account view) — same modal state the block below
     // expects right after the initial openPending().
@@ -1471,11 +1481,14 @@ const fakeClient = {
     assert(doc.getElementById('post-submit-btn').textContent === 'Guardar cambios', 'its submit button says "Guardar cambios", not "Enviar para revisión"');
     doc.getElementById('pf-title').value = 'Aviso test (corregido)';
     delete lastUpdate.avisos;
+    const refreshCountBeforeSelfEdit = refreshContentCallCount;
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 20));
     assert(lastUpdate.avisos && lastUpdate.avisos.title === 'Aviso test (corregido)' && lastUpdate.avisos.category === 'Comunidad', 'saving routes through MC.updatePost — the edited fields reach the row');
-    assert(lastUpdate.avisos.submitted_by === undefined && lastUpdate.avisos.status === undefined, 'the client never sends submitted_by or status on a self-edit — the DB trigger owns those');
+    assert(lastUpdate.avisos.submitted_by === undefined, 'the client never sends submitted_by on a self-edit — the DB trigger owns that');
+    assert(lastUpdate.avisos.status === 'pending' && lastUpdate.avisos.rejection_reason === null, 'the client explicitly re-queues a self-edit as pending and clears any prior rejection reason — this must not rely solely on the edit trigger, since that trigger deliberately no-ops for an admin editing their own post');
     assert(text('toast') === 'Cambios guardados — vuelve a revisión ✓', 'a confirmation toast fires after a successful self-edit');
+    assert(refreshContentCallCount > refreshCountBeforeSelfEdit, 'a successful self-edit re-fetches/re-renders the public content lists too, not just Mis Publicaciones');
 
     // Back out to the account view for the admin test that follows.
     window.mcModalBack('account');
