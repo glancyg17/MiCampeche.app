@@ -486,9 +486,12 @@ const fakeClient = {
     const inicioScr = doc.getElementById('scr-inicio');
     const indicator = doc.getElementById('pull-indicator');
 
-    function touch(type, clientY, cancelable) {
+    // clientX fixed at 200 (no horizontal drift) unless a test overrides it —
+    // makes these genuinely vertical-only gestures instead of relying on
+    // clientX being incidentally undefined.
+    function touch(type, clientY, cancelable, clientX = 200) {
       const ev = new window.Event(type, { bubbles: true, cancelable: !!cancelable });
-      ev.touches = [{ clientY }];
+      ev.touches = [{ clientX, clientY }];
       screensEl.dispatchEvent(ev);
     }
 
@@ -515,6 +518,28 @@ const fakeClient = {
     assert(text('news-list').includes('Titular actualizado por pull-to-refresh'), 'releasing past the threshold genuinely re-fetched content — the NEW headline actually appears, not the old cached one');
     assert(text('toast') === 'Este navegador no soporta actualizaciones automáticas', 'the update-check (checkForUpdates) genuinely ran too, as its own real code path (jsdom has no navigator.serviceWorker, so this specific toast is only reachable by actually calling it)');
     assert(inicioScr.style.transform === '', 'the screen resets cleanly after a completed refresh');
+
+    // ── Regression: a predominantly-horizontal touch (e.g. dragging a
+    // side-scrolling .chiprow) must never engage the pull transform — that
+    // was the actual FAB-jump bug (translateY on a live gesture makes any
+    // position:fixed descendant fixed relative to THAT element instead of
+    // the viewport). This is genuinely testable in jsdom: it's just the
+    // dx/dy branch logic, not the visual rendering. ──
+    touch('touchstart', 100, false, 200);
+    touch('touchmove', 110, true, 260); // dx=60, dy=10 → horizontal dominates → must bail, no transform
+    assert(inicioScr.style.transform === '', 'a mostly-horizontal drag never applies the pull transform (this is the actual FAB-jump bug)');
+    assert(parseFloat(indicator.style.opacity || '0') === 0, 'and the pull indicator never appears for it either');
+    touch('touchmove', 250, true, 260); // same gesture straightens out vertically (dy=150 > dx=60 now)…
+    assert(inicioScr.style.transform === '', '…but a gesture already identified as horizontal stays abandoned for its whole duration — it can\'t re-engage pull-mode just by straightening out vertically later');
+    touch('touchend', 250);
+    await new Promise(r => setTimeout(r, 10));
+
+    // A genuinely vertical swipe right after still works exactly as before.
+    touch('touchstart', 100);
+    touch('touchmove', 300, true); // dx=0, dy=200 → vertical dominates → normal pull-to-refresh path
+    assert(inicioScr.style.transform.includes('translateY'), 'a real vertical swipe still engages the pull transform normally after a prior horizontal gesture');
+    touch('touchend', 300);
+    await new Promise(r => setTimeout(r, 30));
   } catch (err) {
     assert(false, 'pull-to-refresh threw: ' + err.stack);
   }

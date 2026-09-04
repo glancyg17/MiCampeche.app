@@ -132,7 +132,7 @@ function contactUs(){
    the jsdom test environment (no real finger, no real rendering engine
    to verify the visual pull). Verified by code review here; wants a real
    on-device check after deploying. */
-let pullStartY=0,pullActive=false,pullDistance=0,pullRefreshing=false;
+let pullStartX=0,pullStartY=0,pullActive=false,pullDistance=0,pullRefreshing=false;
 const PULL_THRESHOLD=70,PULL_MAX=100;
 
 function initPullToRefresh(){
@@ -144,6 +144,7 @@ function initPullToRefresh(){
     if(pullRefreshing)return;
     const activeScr=document.querySelector('.scr.on');
     if(!activeScr||activeScr.scrollTop>0)return;
+    pullStartX=e.touches[0].clientX;
     pullStartY=e.touches[0].clientY;
     pullActive=true;
     activeScr.classList.add('pull-active');
@@ -161,7 +162,27 @@ function initPullToRefresh(){
       pullDistance=0;
       return;
     }
+    const dx=e.touches[0].clientX-pullStartX;
     const dy=e.touches[0].clientY-pullStartY;
+    // A real finger swipe is never perfectly axis-aligned — a horizontal
+    // drag across a nested scroller (e.g. the Anuncios filter .chiprow)
+    // almost always carries a small incidental dy too. Left unchecked,
+    // that dy alone was enough to apply the translateY pull transform,
+    // which per spec makes any position:fixed descendant (the FAB) fixed
+    // relative to THIS element instead of the viewport — it visibly jumps
+    // with the transform, then snaps back on touchend. Bail out of
+    // pull-mode entirely (not just skip this one event) the moment
+    // horizontal movement dominates, so the browser's native horizontal
+    // scroll on the nested element can take over cleanly, and a swipe that
+    // starts diagonal-ish can't re-engage pull-mode later just because it
+    // straightens out vertically.
+    if(Math.abs(dx)>Math.abs(dy)){
+      pullActive=false;
+      activeScr.style.transform='';
+      indicator.style.opacity=0;
+      pullDistance=0;
+      return;
+    }
     if(dy<=0){
       pullDistance=0;activeScr.style.transform='';indicator.style.opacity=0;
       return;
