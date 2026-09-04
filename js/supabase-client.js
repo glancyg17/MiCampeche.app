@@ -797,6 +797,16 @@ MC.updatePost=async function(table,id,d){
   return sb.from(table).update({...build(d),status:'pending',rejection_reason:null}).eq('id',id);
 };
 
+/* "Descartar" on a rejected post — a real DELETE, not another status
+   change. Backed by a real RLS policy (owner can delete their own row,
+   ONLY while status='rejected' — already applied and verified live). No
+   trigger involved: unlike self-edit UPDATE, a DELETE has no columns to
+   protect, it either removes exactly the targeted row or the policy
+   blocks it outright. */
+MC.deleteMyPost=async function(table,id){
+  return sb.from(table).delete().eq('id',id);
+};
+
 /* Ofertas is two writes: the deal itself, then either a booking (day free)
    or a waitlist entry (day full) — mirrors the existing slotCalendarHtml
    free/full branching in app.js exactly, just against real tables now.

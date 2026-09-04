@@ -24,7 +24,7 @@ function assert(cond, msg) {
 // ── Fake Supabase client: a generic chainable + thenable proxy per call,
 // resolving to per-table sample data. Mirrors real supabase-js's fluent
 // query builder closely enough to exercise our actual code paths. ──
-function makeChain(getResult) {
+function makeChain(getResult, onEq) {
   let single = false;
   const eqs = [];   // captured .eq(field, value) constraints
   const notNulls = []; // fields required non-null via .not(field, 'is', null)
@@ -52,7 +52,7 @@ function makeChain(getResult) {
       }
       if (prop === 'catch') return (fn) => Promise.resolve(getResult()).catch(fn);
       if (prop === 'single' || prop === 'maybeSingle') { single = true; return () => proxy; }
-      if (prop === 'eq') return (f, v) => { eqs.push([f, v]); return proxy; };
+      if (prop === 'eq') return (f, v) => { eqs.push([f, v]); if (onEq) onEq(f, v); return proxy; };
       if (prop === 'not') return (f, op, v) => { if (op === 'is' && v === null) notNulls.push(f); return proxy; };
       return (..._args) => proxy; // select/order/limit/gte/in/etc all just chain
     }
@@ -70,6 +70,13 @@ const SAMPLE = {
     // Second event, SAME day and near the same time — the moderation
     // duplicate-check should surface and flag it when reviewing e1.
     { id: 'e2', title: 'Evento de prueba (posible copia)', category: 'Cultura', event_date: ds(1), event_time: '8:00 PM', location: 'Centro', source: 'user', status: 'pending' },
+    // e3/e4: owned by the test user (uid-1), for Mis publicaciones'
+    // Activo/Finalizado split — e3's last day is 8 days in the past (past
+    // the isEventoFinished(raw) boundary of "before today"), e4's is in
+    // the future. Both already 'published', so status alone can't tell
+    // them apart — only the date does.
+    { id: 'e3', title: 'Mi evento finalizado', category: 'Cultura', event_date: ds(-8), event_time: '6:00 PM', location: 'Centro', source: 'user', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    { id: 'e4', title: 'Mi evento activo', category: 'Cultura', event_date: ds(5), event_time: '6:00 PM', location: 'Centro', source: 'user', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() },
   ],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
@@ -132,6 +139,7 @@ Object.assign(forcedErrors, { updateUser: null, signIn: null });
 
 const lastInsert = {};
 const lastUpdate = {};
+const lastDelete = {}; // { [table]: id } — id captured from the .eq('id', id) call
 
 const fakeClient = {
   auth: {
@@ -254,7 +262,7 @@ const fakeClient = {
         : { data: [{ ...row, id: 'new-' + Math.random().toString(36).slice(2) }], error: null }); },
       delete: () => makeChain(() => forcedErrors.delete[table]
         ? { data: null, error: forcedErrors.delete[table] }
-        : { data: [], error: null }),
+        : { data: [], error: null }, (f, v) => { if (f === 'id') lastDelete[table] = v; }),
       update: (row) => { lastUpdate[table] = row; return makeChain(() => forcedErrors.update[table]
         ? { data: null, error: forcedErrors.update[table] }
         : { data: [row], error: null }); },
@@ -1328,7 +1336,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (15)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, and the three extra owner-tagged perdidos/avisos rows the Mis-publicaciones tests add) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (17)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the three extra owner-tagged perdidos/avisos rows, and the two extra owner-tagged eventos rows the Mis-publicaciones tests add) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
     assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
@@ -1404,7 +1412,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (14)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (16)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real
@@ -1462,17 +1470,44 @@ const fakeClient = {
     // ── Mis publicaciones: the resident-facing sibling of the admin
     //    Pendiente view. MC.fetchMyPosts returns THIS user's rows across the
     //    self-editable tables, any status, excluding other users' and the
-    //    owner-less alertas table. ──
+    //    owner-less alertas table. Now split into Pendiente/Activo/
+    //    Finalizado tabs — e3 (finished event) and e4 (active event) added
+    //    to the fixtures specifically to exercise the new Finalizado split. ──
     await window.openMyPosts();
     await new Promise(r => setTimeout(r, 20));
     const mp = () => text('modal-body');
-    assert(/^Mis publicaciones \(3\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, pf2 (pending) in perdidos');
+    assert(/^Mis publicaciones \(5\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, pf2 (pending) in perdidos, e3 (finished) + e4 (active) in eventos');
+    // Default tab is Pendiente, and it buckets rejected alongside true
+    // pending — neither is currently live, both need the submitter's attention.
+    assert(mp().includes('Pendiente (2)') && mp().includes('Activo (2)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + pf2 (pending) in Pendiente, av2 + e4 in Activo, e3 in Finalizado');
     assert(mp().includes('Aviso test') && mp().includes('No aprobado') && mp().includes('La descripción no es clara'), 'a rejected post shows the "No aprobado" badge with the rejection reason inline');
-    assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'a published post shows the "Publicado" badge');
     assert(mp().includes('Mi reporte pendiente') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
+    assert(!mp().includes('Mi aviso publicado'), 'a published (active) post does not show up in the default Pendiente tab');
     assert(!mp().includes('Reporte de otra persona'), 'another user\'s post never appears — fetchMyPosts is scoped to the owner');
     assert(!mp().includes('Corte de agua programado en Zona Norte'), 'alertas (owner-less) is excluded from Mis publicaciones entirely');
-    assert(mp().includes("openMyPostEdit('avisos','av1')"), 'each editable row is tappable straight into its edit form');
+    // A rejected post's edit affordance moved into the explicit "Editar y
+    // reenviar" / "Descartar" button pair — the whole card is no longer
+    // itself clickable through to the edit form.
+    assert(mp().includes('Editar y reenviar') && mp().includes('Descartar'), 'a rejected post\'s card shows explicit "Editar y reenviar" and "Descartar" actions');
+    assert(mp().includes("openMyPostEdit('perdidos','pf2')"), 'a plain pending (non-rejected, non-rejected-styled) post is still whole-card tappable into edit, same as before');
+
+    // Switch to Activo: the published aviso shows up here instead, with
+    // no Editar/Descartar actions (those are rejected-only).
+    window.setMyPostsTab('active');
+    assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'a published post shows the "Publicado" badge, now under the Activo tab');
+    assert(mp().includes('Mi evento activo'), 'the future-dated eventos row appears under Activo');
+    assert(!mp().includes('Mi evento finalizado'), 'the past-dated eventos row does not appear under Activo');
+    assert(!mp().includes('Editar y reenviar') && !mp().includes('Descartar'), 'a non-rejected item never shows the Editar y reenviar / Descartar actions');
+    assert(mp().includes("openMyPostEdit('avisos','av2')"), 'a published, still-editable row is tappable straight into its edit form');
+
+    // Switch to Finalizado: only the past-dated event, correctly relabeled
+    // even though its raw DB status is still 'published'.
+    window.setMyPostsTab('finished');
+    assert(mp().includes('Mi evento finalizado') && mp().includes('Finalizado'), 'the finished event shows the "Finalizado" badge');
+    assert(!mp().includes('Mi evento activo'), 'the future-dated event does not appear under Finalizado');
+
+    // Back to Pendiente for the edit-and-resend flow below.
+    window.setMyPostsTab('pending');
 
     // Tapping a row opens the reused post form, pre-filled, routed to an UPDATE.
     await window.openMyPostEdit('avisos', 'av1');
@@ -1489,6 +1524,27 @@ const fakeClient = {
     assert(lastUpdate.avisos.status === 'pending' && lastUpdate.avisos.rejection_reason === null, 'the client explicitly re-queues a self-edit as pending and clears any prior rejection reason — this must not rely solely on the edit trigger, since that trigger deliberately no-ops for an admin editing their own post');
     assert(text('toast') === 'Cambios guardados — vuelve a revisión ✓', 'a confirmation toast fires after a successful self-edit');
     assert(refreshContentCallCount > refreshCountBeforeSelfEdit, 'a successful self-edit re-fetches/re-renders the public content lists too, not just Mis Publicaciones');
+
+    // ── "Descartar" on a rejected post: a real DELETE (RLS-gated to
+    //    status='rejected' rows, verified live against Supabase — nothing
+    //    to re-test here beyond that the client wires the call correctly). ──
+    window.confirmDiscardMyPost('avisos', 'av1');
+    assert(text('modal-title') === 'Descartar publicación', 'confirming discard opens its own confirm screen');
+    assert(text('modal-body').includes('Aviso test'), 'the confirm screen shows which post is about to be deleted');
+
+    forcedErrors.delete.avisos = { message: 'simulated delete failure' };
+    await window.discardMyPost('avisos', 'av1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast').includes('No se pudo descartar'), 'a forced delete error shows the real error toast');
+    assert(text('modal-title') === 'Descartar publicación', 'a failed delete leaves the confirm screen up rather than silently closing/removing anything');
+    forcedErrors.delete.avisos = null;
+
+    delete lastDelete.avisos;
+    await window.discardMyPost('avisos', 'av1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastDelete.avisos === 'av1', 'discardMyPost calls through to MC.deleteMyPost, which deletes exactly the targeted row (table + id)');
+    assert(text('toast') === 'Publicación descartada', 'a successful discard shows its own confirmation toast');
+    assert(text('modal-title').startsWith('Mis publicaciones'), 'a successful discard returns to the Mis publicaciones list');
 
     // Back out to the account view for the admin test that follows.
     window.mcModalBack('account');

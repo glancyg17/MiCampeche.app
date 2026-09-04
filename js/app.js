@@ -2329,8 +2329,10 @@ function renderPendingQueue(){
    but scoped to the current user's own rows (any status) and tappable
    straight into the edit form. Open to every signed-in account. */
 let myPostsList=[];
+let myPostsTab='pending';
 async function openMyPosts(){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  myPostsTab='pending';
   document.getElementById('modal-title').textContent='Mis publicaciones';
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
@@ -2341,10 +2343,34 @@ async function refreshMyPosts(){
   myPostsList=await MC.fetchMyPosts();
   renderMyPosts();
 }
+function setMyPostsTab(tab){myPostsTab=tab;renderMyPosts();}
+/* An event stops being "Activo" once its last day has fully passed — the
+   same boundary the daily cleanup-expired-eventos job uses (falls back
+   to event_date for single-day events), so a finished event sits in the
+   new Finalizado tab for the same ~7-day window before that job deletes
+   it. Only eventos has a natural "finished" state; every other
+   self-editable table only ever buckets into pending or active. */
+function isEventoFinished(raw){
+  if(!raw)return false;
+  const end=raw.end_date||raw.event_date;
+  return !!end&&end<TODAY_DS;
+}
+/* A rejected post buckets into "pending" alongside true pending items —
+   neither is currently live, and both need the submitter's attention
+   (a rejected one gets the extra Editar/Descartar actions below). */
+function myPostBucket(p){
+  if(p.status==='pending'||p.status==='rejected')return 'pending';
+  if(p.table==='eventos'&&isEventoFinished(p.raw))return 'finished';
+  return 'active';
+}
+const MY_POSTS_TABS=[['pending','Pendiente'],['active','Activo'],['finished','Finalizado']];
 /* Status pill — reuses the three labels + colours already used for
    business status (renderBusinessProfile) and the account view, plus
-   --signal for rejected since that row needs action. */
-function postStatusBadge(status){
+   --signal for rejected since that row needs action. `bucket` overrides
+   the label to "Finalizado" for a finished (but still status='published')
+   event — the raw DB status alone can't distinguish that case. */
+function postStatusBadge(status,bucket){
+  if(bucket==='finished')return `<span style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">Finalizado</span>`;
   const map={
     published:['Publicado','var(--gulf)'],
     pending:['En revisión','var(--wall-dk)'],
@@ -2359,18 +2385,62 @@ function renderMyPosts(){
     document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
     return;
   }
-  document.getElementById('modal-body').innerHTML=myPostsList.map(p=>{
-    const editable=!!MY_POST_EDIT[p.table];
+  const buckets={pending:[],active:[],finished:[]};
+  myPostsList.forEach(p=>buckets[myPostBucket(p)].push(p));
+  const tabsHtml=`<div style="display:flex;gap:8px;margin-bottom:14px">${MY_POSTS_TABS.map(([v,l])=>
+    `<button class="chip${v===myPostsTab?' on':''}" onclick="setMyPostsTab('${v}')">${l} (${buckets[v].length})</button>`
+  ).join('')}</div>`;
+  const list=buckets[myPostsTab];
+  const emptyMsgs={pending:'Nada en revisión ahora mismo.',active:'Nada activo todavía.',finished:'Nada finalizado todavía.'};
+  if(!list.length){
+    document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${emptyMsgs[myPostsTab]}</div>`;
+    return;
+  }
+  document.getElementById('modal-body').innerHTML=tabsHtml+list.map(p=>{
+    const isRejected=p.status==='rejected';
+    const editable=!!MY_POST_EDIT[p.table]&&!isRejected;
     return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px${editable?';cursor:pointer':''}"${editable?` onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')"`:''}>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <span style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(p.label)}</span>
-        ${postStatusBadge(p.status)}
+        ${postStatusBadge(p.status,myPostsTab)}
       </div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(p.title)}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${relTimeEs(p.createdAt)}${editable?' · toca para editar':''}</div>
-      ${(p.status==='rejected'&&p.rejectionReason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(p.rejectionReason)}</div>`:''}
+      ${(isRejected&&p.rejectionReason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(p.rejectionReason)}</div>`:''}
+      ${isRejected?`<div style="display:flex;gap:8px;margin-top:10px">
+        <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px" onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')">Editar y reenviar</button>
+        <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px;background:var(--paper2);color:var(--ink)" onclick="confirmDiscardMyPost('${p.table}','${e(String(p.id))}')">Descartar</button>
+      </div>`:''}
     </div>`;
   }).join('');
+}
+/* Look the item up by table+id rather than passing its title through the
+   onclick chain — titles are free text and may contain a single quote
+   (e()'s escaping doesn't cover those), which would break out of the
+   quoted JS-string argument in the onclick attribute. Matches the
+   existing admRm/wireAdminRemove pattern's reason for avoiding the same
+   hazard, just via a lookup instead of a data-attribute round-trip. */
+function confirmDiscardMyPost(table,id){
+  const item=(myPostsList||[]).find(p=>p.table===table&&String(p.id)===String(id));
+  mcModalPushView('myPosts');
+  document.getElementById('modal-title').textContent='Descartar publicación';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:6px">Esto borra la publicación por completo — no se puede deshacer.</div>
+    ${item?`<div style="font-weight:700;font-size:14px;margin:8px 0 12px">${e(item.title)}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('myPosts')">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--signal);color:#fff" id="discard-my-post-btn" onclick="discardMyPost('${table}','${e(String(id))}')">Descartar</button>
+    </div>
+  `;
+}
+async function discardMyPost(table,id){
+  const btn=document.getElementById('discard-my-post-btn');
+  if(btn){btn.disabled=true;btn.textContent='Descartando…';}
+  const {error}=await MC.deleteMyPost(table,id);
+  if(error){toast(pgErrorToast(error,'No se pudo descartar.'));if(btn){btn.disabled=false;btn.textContent='Descartar';}return;}
+  toast('Publicación descartada');
+  mcModalBack('myPosts');
+  refreshMyPosts();
 }
 /* Per-table map from a stored row back to POST_FORMS field keys. Every
    value bucket maps to a field kind the form renderer produced:
