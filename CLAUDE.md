@@ -1,6 +1,6 @@
 # MICAMPECHE — Project Ground Truth
 
-*Derived from Master Codex v2.0 — 30 de agosto de 2026. Working updates layered on since (latest: 31 ago 2026 — phone-number login, verification-as-write-gate, live weather). This file supersedes any earlier assumptions from prior sessions. If this file conflicts with your memory of this project, this file wins.*
+*Derived from Master Codex v2.0 — 30 de agosto de 2026. Working updates layered on since (latest: 4 sep 2026 — Anuncios/Vecinos regrouped: Perdidos moved to Vecinos, Alertas moved to Anuncios, so each tab is internally coherent — broadcast content in Anuncios, neighbor-to-neighbor content in Vecinos). This file supersedes any earlier assumptions from prior sessions. If this file conflicts with your memory of this project, this file wins.*
 
 **Business:** MiCampeche · **Tagline:** "Tu ciudad, un solo lugar." · **Founder:** Glancy
 **Base:** San Francisco de Campeche, Campeche, México
@@ -73,8 +73,8 @@ Real accounts, real businesses, real payments. Mistakes affect real people, not 
 ### Four-Tab Structure
 - **Inicio** — hero + stat strip · Oferta del día · Noticias de hoy · Eventos de hoy (2 random, re-roll every 5 min)
 - **Tienda** — Ofertas carousel above a toggle · Mercado ⇆ Clasificados. *Since 31 ago 2026* listings also carry fulfillment (entrega/recoger/ambos), item condition, availability (ahora/pedido), an exact-typed `price_text`, and per-listing `contact_methods` (whatsapp/llamada/sms). Business profiles carry `payment_methods`, `delivers` + `delivery_info`, `pickup_address`. Buyer↔seller contact is a **direct WhatsApp/call/SMS handoff** from a listing detail view — no in-app chat (deliberate; MiCampeche stays out of the transaction).
-- **Anuncios** — Eventos ⇆ Perdidos ⇆ Empleos
-- **Vecinos** — Avisos ⇆ Reportes ⇆ Alertas (+ Pagar servicios shortcuts)
+- **Anuncios** — Eventos ⇆ Empleos ⇆ Alertas (broadcast/announced content — official or one-directional)
+- **Vecinos** — Avisos ⇆ Reportes ⇆ Perdidos (+ Pagar servicios shortcuts) (neighbor-to-neighbor content — a resident posting for other residents)
 
 Noticias, "Cómo funciona", "Pagar servicios" reachable via Inicio "Ver todo" or hamburger menu, not bottom nav.
 

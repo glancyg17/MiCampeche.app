@@ -118,33 +118,32 @@
       <button class="fab" id="tienda-fab" onclick="openPost('tienda')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
 
-    <!-- ═══ ANUNCIOS (Eventos ⇄ Perdidos ⇄ Empleos) ═══ -->
+    <!-- ═══ ANUNCIOS (Eventos ⇄ Empleos ⇄ Alertas) ═══ -->
     <div class="scr" id="scr-anuncios">
       <div class="pad">
         <div class="sec-title">Anuncios</div>
-        <div class="sec-sub">Eventos, perdidos y trabajo en Campeche</div>
+        <div class="sec-sub">Eventos, trabajo y alertas oficiales</div>
       </div>
       <div class="subtog subtog3">
         <button class="subtog-btn on" data-v="eventos" onclick="setAnunciosMode('eventos')">Eventos</button>
-        <button class="subtog-btn" data-v="perdidos" onclick="setAnunciosMode('perdidos')">Perdidos</button>
         <button class="subtog-btn" data-v="empleos" onclick="setAnunciosMode('empleos')">Empleos</button>
+        <button class="subtog-btn" data-v="alertas" onclick="setAnunciosMode('alertas')">Alertas</button>
       </div>
       <div id="anuncios-eventos">
         <div class="chiprow" id="evt-date-chips"></div>
         <div class="chiprow" id="evt-chips"></div>
         <div class="evt-list" id="evt-list"></div>
       </div>
-      <div id="anuncios-perdidos" style="display:none">
-        <div class="chiprow" id="pf-chips"></div>
-        <div class="pf-list" id="pf-list"></div>
-      </div>
       <div id="anuncios-empleos" style="display:none">
         <div class="job-list" id="job-list"></div>
       </div>
-      <button class="fab" id="anuncios-fab" onclick="openPost(anunciosMode==='empleos'?'empleos':(anunciosMode==='perdidos'?'perdidos':'eventos'))"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div id="anuncios-alertas" style="display:none">
+        <div class="alert-list" id="alert-list"></div>
+      </div>
+      <button class="fab" id="anuncios-fab" onclick="openPost(anunciosMode==='empleos'?'empleos':'eventos')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
 
-    <!-- ═══ VECINOS (Avisos ⇄ Reportes ⇄ Alertas) ═══ -->
+    <!-- ═══ VECINOS (Avisos ⇄ Reportes ⇄ Perdidos) ═══ -->
     <div class="scr" id="scr-reportar">
       <div class="pad">
         <div class="sec-title">Vecinos</div>
@@ -153,7 +152,7 @@
       <div class="subtog subtog3">
         <button class="subtog-btn on" data-v="avisos" onclick="setReportarMode('avisos')">Avisos</button>
         <button class="subtog-btn" data-v="reportes" onclick="setReportarMode('reportes')">Reportes</button>
-        <button class="subtog-btn" data-v="alertas" onclick="setReportarMode('alertas')">Alertas</button>
+        <button class="subtog-btn" data-v="perdidos" onclick="setReportarMode('perdidos')">Perdidos</button>
       </div>
       <div id="reportar-avisos">
         <div class="of-hdr">
@@ -165,13 +164,13 @@
         <div class="chiprow" id="rep-chips"></div>
         <div class="rep-list" id="rep-list"></div>
       </div>
-      <div id="reportar-alertas" style="display:none">
-        <div class="alert-list" id="alert-list"></div>
+      <div id="reportar-perdidos" style="display:none">
+        <div class="chiprow" id="pf-chips"></div>
+        <div class="pf-list" id="pf-list"></div>
       </div>
-      <button class="fab" id="reportar-fab" onclick="openPost(reportarMode==='reportes'?'reportar':'avisos')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="fab" id="reportar-fab" onclick="openPost(reportarMode==='reportes'?'reportar':(reportarMode==='perdidos'?'perdidos':'avisos'))"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
 
-    <!-- ═══ PERDIDOS (full page, no tab — reached via Ver todo) ═══ -->
     <!-- ═══ PAGAR SERVICIOS (reached via hamburger menu, not a tab) ═══ -->
     <div class="scr" id="scr-servicios">
       <div class="back-bar"><button class="back-btn" onclick="mcGoBack()"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Inicio</button></div>

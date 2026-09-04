@@ -663,7 +663,7 @@ function renderStatStrip(){
       <div class="stat-tile-val">${vacantes}</div>
       <div class="stat-tile-lbl">Vacantes</div>
     </div>
-    <div class="stat-tile" onclick="openReportarTo('alertas')">
+    <div class="stat-tile" onclick="openAnunciosTo('alertas')">
       <div class="stat-tile-val${alertasActivas?' alert':''}">${alertasActivas}</div>
       <div class="stat-tile-lbl">Alertas activas</div>
     </div>
@@ -951,8 +951,9 @@ function setAnunciosMode(mode){
   anunciosMode=mode;
   document.querySelectorAll('#scr-anuncios .subtog-btn').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
   document.getElementById('anuncios-eventos').style.display=mode==='eventos'?'block':'none';
-  document.getElementById('anuncios-perdidos').style.display=mode==='perdidos'?'block':'none';
   document.getElementById('anuncios-empleos').style.display=mode==='empleos'?'block':'none';
+  document.getElementById('anuncios-alertas').style.display=mode==='alertas'?'block':'none';
+  document.getElementById('anuncios-fab').style.display=mode==='alertas'?'none':'flex';
 }
 
 let tiendaMode='mercado';
@@ -1189,8 +1190,7 @@ function setReportarMode(mode){
   document.querySelectorAll('#scr-reportar .subtog-btn').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
   document.getElementById('reportar-reportes').style.display=mode==='reportes'?'block':'none';
   document.getElementById('reportar-avisos').style.display=mode==='avisos'?'block':'none';
-  document.getElementById('reportar-alertas').style.display=mode==='alertas'?'block':'none';
-  document.getElementById('reportar-fab').style.display=mode==='alertas'?'none':'flex';
+  document.getElementById('reportar-perdidos').style.display=mode==='perdidos'?'block':'none';
 }
 let repFilter='all';
 const confirmedByMe={};
