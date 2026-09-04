@@ -783,7 +783,7 @@ function renderNoticias(){
       <div class="news-body">
         <div class="news-src">${e(n.source)}</div>
         <div class="news-head">${e(n.title)}</div>
-        <div class="news-desc">${e(n.desc)}</div>
+        ${n.desc?`<div class="news-desc">${e(n.desc)}</div>`:''}
         <div class="news-meta">${n.time}</div>
       </div>
     </div>
@@ -798,7 +798,7 @@ function showNoticia(id){
       <div class="detail-src">${e(n.source)}</div>
       <div class="detail-head">${e(n.title)}</div>
       <div class="detail-meta">${n.time}</div>
-      <div class="detail-desc">${e(n.desc)}</div>
+      ${n.desc?`<div class="detail-desc">${e(n.desc)}</div>`:''}
       <a class="detail-link" href="${n.url}" target="_blank" rel="noopener">
         <div><div class="detail-link-lbl">Leer la publicación original de</div><div class="detail-link-name">${e(n.source.split('·')[0].trim())}</div></div>
         ${svgIco('chevronR','detail-arr')}
@@ -2538,17 +2538,42 @@ function openModerationDetail(table,id){
   if(!item)return;
   mcModalPushView('pendingList');
   document.getElementById('modal-title').textContent=item.label;
+  const isNoticia=table==='noticias';
   document.getElementById('modal-body').innerHTML=`
     <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Enviado por ${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
-    ${renderModerationDetailFields(table,item.raw)}
+    ${isNoticia?renderNoticiaModerationFields(item.raw):renderModerationDetailFields(table,item.raw)}
     ${table==='eventos'?`<div id="evt-dup-check" style="margin:14px 0"></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="submit-btn" style="margin-top:0;flex:1" onclick="moderateItem('${table}','${id}','published')">Aprobar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1" onclick="${isNoticia?`approveNoticia('${id}')`:`moderateItem('${table}','${id}','published')`}">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openRejectReasonPrompt('${table}','${id}')">Rechazar</button>
     </div>
     <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="mcModalBack('pendingList')">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
   if(table==='eventos')fillEventDuplicateCheck(item.raw);
+}
+
+/* Noticias-specific moderation view: image, source, a clickable link to the
+   real post (so the admin can verify before deciding), the raw synced
+   excerpt shown ONLY as an internal reference (never published — see the
+   copyright note in the sync functions), and an editable, optional summary
+   box. Leaving it blank publishes headline + image + source only; typing
+   something publishes that too. Reused as-is whether the row came from an
+   automated sync (source_excerpt present) or a resident submission
+   (source_excerpt null, summary may already be filled in). */
+function renderNoticiaModerationFields(raw){
+  return `
+    ${raw.thumbnail_url?`<img src="${e(raw.thumbnail_url)}" style="max-width:100%;border-radius:var(--rs);margin-bottom:12px;display:block">`:''}
+    <div style="margin-bottom:12px"><div class="fl">Titular</div><div style="font-size:14.5px;font-weight:700;margin-top:2px">${e(raw.headline||'')}</div></div>
+    <div style="margin-bottom:12px"><div class="fl">Fuente</div><div style="font-size:14px;margin-top:2px">${e(raw.source_name||'')}</div></div>
+    ${raw.source_url?`<a href="${e(raw.source_url)}" target="_blank" rel="noopener" style="display:block;font-size:13px;color:var(--gulf);margin-bottom:12px;text-decoration:underline">Ver la publicación original ↗</a>`:''}
+    ${raw.source_excerpt?`<div style="margin-bottom:12px"><div class="fl">Vista previa de la fuente (no se publica)</div><div style="font-size:13px;color:var(--ink3);margin-top:2px;white-space:pre-wrap">${e(raw.source_excerpt)}</div></div>`:''}
+    <label class="fl" style="display:block;margin-top:2px">Resumen (opcional)</label>
+    <textarea class="ft" id="noticia-summary-input" placeholder="Escribe una paráfrasis breve y honesta en tus palabras, o déjalo en blanco para publicar solo el titular.">${e(raw.summary||'')}</textarea>
+  `;
+}
+async function approveNoticia(id){
+  const summary=(document.getElementById('noticia-summary-input').value||'').trim();
+  await moderateItem('noticias',id,'published',null,{summary:summary||null});
 }
 
 function openRejectReasonPrompt(table,id){
@@ -2569,10 +2594,10 @@ async function confirmReject(table,id){
   await moderateItem(table,id,'rejected',reason);
 }
 
-async function moderateItem(table,id,newStatus,reason){
+async function moderateItem(table,id,newStatus,reason,extraPatch){
   const btn=document.getElementById('confirm-reject-btn');
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
-  const {error}=await MC.moderatePost(table,id,newStatus,reason);
+  const {error}=await MC.moderatePost(table,id,newStatus,reason,extraPatch);
   if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));if(btn){btn.disabled=false;btn.textContent='Rechazar';}return;}
   moderationQueue=moderationQueue.filter(i=>!(i.table===table&&i.id===id));
   mcModalBack('pendingList');renderPendingQueue();

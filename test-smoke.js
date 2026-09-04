@@ -64,7 +64,7 @@ const SAMPLE = {
   // profiles moved to a stateful currentProfile object below — see the
   // special-cased 'profiles' handling in from(), needed for real
   // approve/reject/edit-account testing.
-  noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', published_at: NOW.toISOString(), status: 'published' }],
+  noticias: [{ id: 'n1', headline: 'Titular de prueba', summary: 'Resumen', thumbnail_url: '', source_name: 'Reportero X', source_url: 'https://example.com', source_excerpt: 'Nota de prueba, no se publica.', published_at: NOW.toISOString(), status: 'published' }],
   eventos: [
     { id: 'e1', title: 'Evento de prueba', category: 'Cultura', event_date: ds(1), event_time: '7:00 PM', location: 'Centro', description: 'Descripción larga del evento de prueba\nBoletos: https://example.com/boletos', image_url: 'https://example.com/cartel.jpg', website: 'https://example.com/evento', contact_phone: '981 555 1234', price_text: '$150', source: 'user', status: 'published' },
     // Second event, SAME day and near the same time — the moderation
@@ -349,6 +349,7 @@ const fakeClient = {
   const moderationQueueCountFromTitle = (title) => { const m = /\((\d+)\)/.exec(title || ''); return m ? Number(m[1]) : null; };
 
   assert(text('news-list') && text('news-list').includes('Titular de prueba'), 'Noticias rendered real fetched data');
+  assert(text('news-list').includes('news-desc'), 'a noticia WITH a summary shows its description line');
   assert(text('evt-list') && text('evt-list').includes('Evento de prueba'), 'Eventos rendered real fetched data');
   assert(text('evt-list').includes('example.com/cartel.jpg'), 'Event card shows its image thumbnail');
   assert(text('evt-list').includes("openEvento('e1')"), 'Event card is clickable through to its detail page');
@@ -1395,12 +1396,39 @@ const fakeClient = {
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
     assert(text('modal-title') === 'Pendiente (14)', 'rejected item is removed from the queue and the count updates');
 
-    // Approve, now via the detail screen (not the list).
+    // Approve, now via the detail screen (not the list). Noticias gets a
+    // bespoke moderation view instead of the generic field dump — real
+    // headline/source, a genuinely clickable link to the original post,
+    // the internal source excerpt (admin-only reference, never published),
+    // and an editable, optional summary box above Aprobar.
     window.openModerationDetail('noticias', 'n1');
-    await window.moderateItem('noticias', 'n1', 'published');
+    assert(text('modal-body').includes('Titular actualizado por pull-to-refresh') && text('modal-body').includes('Reportero X'), 'the noticia moderation view shows the real headline and source');
+    const noticiaLink = doc.querySelector('#modal-body a[href="https://example.com"]');
+    assert(!!noticiaLink && noticiaLink.target === '_blank', 'the source is a genuinely clickable link to the original post, not plain text');
+    assert(text('modal-body').includes('Nota de prueba, no se publica.'), 'the internal source excerpt is shown for the admin\'s own reference');
+    const summaryBox = doc.getElementById('noticia-summary-input');
+    assert(!!summaryBox, 'an editable, optional summary box is present above the approve button');
+    assert(summaryBox.value === 'Resumen', 'the box is pre-filled with any summary the row already has');
+
+    // Leave the box blank (whitespace-only counts as blank) and approve —
+    // this is the path that makes the public card show headline+image+
+    // source only, with no description line.
+    summaryBox.value = '   ';
+    await window.approveNoticia('n1');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === 'Publicado ✓', 'approving from the detail screen shows the right confirmation toast');
-    assert(lastUpdate.noticias && lastUpdate.noticias.status === 'published', 'approval actually sent status: published to Supabase');
+    assert(text('toast') === 'Publicado ✓', 'approving a noticia shows the right confirmation toast');
+    assert(lastUpdate.noticias && lastUpdate.noticias.status === 'published' && lastUpdate.noticias.summary === null, 'a blank (or whitespace-only) summary box sends summary: null, not an empty string — never silently overwritten with junk');
+
+    // The fake client's update() doesn't mutate SAMPLE (that persistence is
+    // Supabase's job, tested at the DB level) — so mutate it directly here
+    // to reflect what the row now looks like after approval, and re-fetch
+    // for real to prove the RENDER side too: no summary → no empty
+    // description line, just headline/image/source, matching what was
+    // asked for.
+    SAMPLE.noticias[0].summary = null;
+    await window.refreshContent();
+    assert(!text('news-list').includes('news-desc'), 'once a noticia has no summary, the public card omits the description line entirely instead of rendering it empty');
+    assert(text('news-list').includes('Titular actualizado por pull-to-refresh'), 'the headline still renders with no summary');
 
     // Reject, with a genuinely forced failure — item must stay in the
     // queue and show the real error, not silently vanish either way.

@@ -375,7 +375,7 @@ const CONTENT_TABLES=[
    display order. Used to render the FULL submission before an admin
    decides, instead of approving/rejecting blind. */
 const MODERATION_DETAIL_FIELDS={
-  noticias:[['headline','Titular'],['summary','Resumen'],['source_name','Fuente'],['source_url','Enlace'],['thumbnail_url','Imagen']],
+  noticias:[], // rendered by renderNoticiaModerationFields() in app.js instead — needs an editable summary box, not just a field dump
   eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['price_text','Precio'],['website','Sitio web'],['contact_phone','Tel. de contacto'],['description','Descripción'],['image_url','Imagen']],
   productos:[['title','Producto'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['availability','Disponibilidad'],['lead_time','Anticipación'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['seller_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['featured','Destacado']],
   clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['zone','Zona'],['fulfillment','Entrega'],['description','Descripción'],['image_url','Imagen'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
@@ -436,8 +436,8 @@ MC.fetchPendingCount=async function(){
   return content.length+phone.length+password.length;
 };
 
-MC.moderatePost=async function(table,id,newStatus,reason){
-  const patch={status:newStatus};
+MC.moderatePost=async function(table,id,newStatus,reason,extraPatch){
+  const patch={status:newStatus,...(extraPatch||{})};
   if(newStatus==='rejected')patch.rejection_reason=reason||null;
   return sb.from(table).update(patch).eq('id',id);
 };
