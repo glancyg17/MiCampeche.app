@@ -7,6 +7,12 @@
 <meta name="apple-mobile-web-app-title" content="Mi Campeche">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>MiCampeche</title>
+<meta name="description" content="MiCampeche junta noticias, eventos, la tienda local, avisos vecinales, reportes de infraestructura y alertas oficiales de San Francisco de Campeche en un solo lugar, revisado a mano antes de publicarse.">
+<meta property="og:title" content="MiCampeche — Tu ciudad, un solo lugar">
+<meta property="og:description" content="Noticias, eventos, la tienda local, avisos vecinales y alertas oficiales de Campeche, todo en una sola app.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://micampeche.app">
+<meta property="og:image" content="https://micampeche.app/assets/icons/MiCampeche-app-icon.png">
 <meta name="theme-color" content="#000612">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
@@ -16,14 +22,56 @@
 </head>
 <body>
 
-<!-- ═══ DESKTOP GATE ═══ -->
+<!-- ═══ DESKTOP GATE (also this site's only crawlable landing page — real
+     static HTML, not JS-injected) ═══ -->
 <div id="desktop-gate">
-  <div class="gate-card">
-    <img class="gate-icon" src="assets/icons/MiCampeche-app-icon.png" alt="MiCampeche">
-    <h1>MiCampeche vive en tu teléfono</h1>
-    <p>Noticias, eventos, la tienda local, alertas de servicios y más — todo en un solo lugar. Escanea el código para abrirlo en tu celular e instalarlo en un toque.</p>
-    <div class="gate-qr"><img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://micampeche.app&color=000612" alt="QR"></div>
-    <div class="gate-url">O visita <b>micampeche.app</b> desde tu teléfono</div>
+  <div class="gate-page">
+
+    <header class="gate-hero">
+      <img class="gate-icon" src="assets/icons/MiCampeche-app-icon.png" alt="MiCampeche">
+      <h1>Tu ciudad, un solo lugar.</h1>
+      <p class="gate-lead">MiCampeche junta noticias, eventos, la tienda local, avisos vecinales, reportes de infraestructura y alertas oficiales de San Francisco de Campeche — todo en una sola app, revisada a mano antes de publicarse.</p>
+    </header>
+
+    <section class="gate-features" aria-label="Qué hay en MiCampeche">
+      <div class="gate-feature">
+        <span class="gate-feature-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg></span>
+        <h3>Inicio</h3>
+        <p>Noticias, eventos y el clima de hoy, más las alertas activas — todo de un vistazo al abrir la app.</p>
+      </div>
+      <div class="gate-feature">
+        <span class="gate-feature-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M4 8l1.5-4h13L20 8"/><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8z"/><path d="M9 12a3 3 0 0 0 6 0"/></svg></span>
+        <h3>Tienda</h3>
+        <p>Negocios locales y la oferta del día — un espacio limitado, renovado cada mañana.</p>
+      </div>
+      <div class="gate-feature">
+        <span class="gate-feature-ico"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
+        <h3>Anuncios</h3>
+        <p>Eventos de la ciudad, vacantes de empleo y alertas oficiales — cortes de agua, clima fuerte, cierres de calles.</p>
+      </div>
+      <div class="gate-feature">
+        <span class="gate-feature-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/></svg></span>
+        <h3>Vecinos</h3>
+        <p>Avisos de la comunidad, reportes de tu calle y objetos perdidos — vecino a vecino.</p>
+      </div>
+    </section>
+
+    <section class="gate-about" aria-label="Cómo funciona">
+      <div class="gate-about-block">
+        <h3>Revisamos todo antes de publicarlo</h3>
+        <p>Cada producto, aviso, reporte y oferta se revisa a mano antes de aparecer para los demás. Así mantenemos la app libre de spam y de cosas que no ayudan a la comunidad.</p>
+      </div>
+      <div class="gate-about-block">
+        <h3>Hecho en Campeche, para Campeche</h3>
+        <p>MiCampeche es un proyecto local e independiente. Si algo no funciona bien o tienes una idea, escríbenos — leemos todo.</p>
+      </div>
+    </section>
+
+    <section class="gate-cta">
+      <div class="gate-qr"><img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://micampeche.app&color=000612" alt="QR"></div>
+      <div class="gate-url">Escanea el código con tu teléfono, o visita <b>micampeche.app</b> desde ahí, para empezar</div>
+    </section>
+
   </div>
 </div>
 

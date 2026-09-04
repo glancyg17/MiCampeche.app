@@ -295,6 +295,14 @@ const GATE_ICO={
   plus:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
   check:'<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>'
 };
+function installGateHighlightsHtml(){
+  return `<div class="gate-highlights">
+    <span class="gate-highlight">${svgIco('news')}Noticias</span>
+    <span class="gate-highlight">${svgIco('eventos')}Eventos</span>
+    <span class="gate-highlight">${svgIco('tienda')}Tienda</span>
+    <span class="gate-highlight">${svgIco('alertas')}Alertas</span>
+  </div>`;
+}
 function iosAddToHomeStepsHtml(){
   return `<div class="gate-steps">
     <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.share}</span><span>Toca <b>Compartir</b> en la barra de Safari — el cuadro con la flecha hacia arriba.</span></div>
@@ -312,14 +320,17 @@ function showInstallGate(){
   if(iosNoInstall){
     body=`<h1>Ábrelo en Safari para instalarlo</h1>
       <p>En iPhone, MiCampeche solo se puede instalar desde Safari. Abre <b>micampeche.app</b> en Safari y luego:</p>
+      ${installGateHighlightsHtml()}
       ${iosAddToHomeStepsHtml()}`;
   }else if(isIOS){
     body=`<h1>Instala MiCampeche en tu iPhone</h1>
       <p>Se abre más rápido, funciona sin conexión y te llega todo al instante. Toma unos segundos:</p>
+      ${installGateHighlightsHtml()}
       ${iosAddToHomeStepsHtml()}`;
   }else{
     body=`<h1>Instala MiCampeche</h1>
       <p>Se abre más rápido, funciona sin conexión y te llega todo al instante.</p>
+      ${installGateHighlightsHtml()}
       <button class="gate-btn" onclick="gateInstall()">Instalar la app</button>
       <div class="gate-fallback">¿No aparece la opción? Abre el menú de tu navegador y elige <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.</div>`;
   }
