@@ -491,6 +491,7 @@ const WEATHER={city:'Campeche',temp:null,cond:'',condCode:'sun',feelsLike:null,h
 
 let NOTICIAS=[];
 let EVENTOS=[];
+let FEATURED_BOOKINGS=[]; // raw {event_id,start_date,end_date} rows with an active or upcoming window — see activeFeaturedEventIds()
 let TIENDA=[];
 let PERDIDOS=[];
 let ALERTAS=[];
@@ -527,12 +528,12 @@ const SERVICIOS_UTILES=[
    to the same render pipeline that used to run against mock arrays. */
 async function loadAllData(){
   await MC.ready;
-  const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked]=await Promise.all([
+  const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked,featuredBookings]=await Promise.all([
     MC.fetchNoticias(),MC.fetchEventos(),MC.fetchTienda(),MC.fetchOfertas(),MC.fetchPerdidos(),
-    MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates()
+    MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates(),MC.fetchFeaturedBookings()
   ]);
   NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
-  ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;
+  ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
   OFERTAS.forEach(o=>{if(o.iClaimedReal)claimedByMe[o.id]=true;});
   REPORTES.forEach(r=>{
     if(r.iConfirmedReal)confirmedByMe[r.id]=true;
@@ -683,31 +684,78 @@ function renderWelcomeHero(){
   `;
 }
 
-/* ══════════════ EVENTOS DE HOY (Inicio only — today's events, 2 random, re-rolled every 5 min) ══════════════ */
+/* ══════════════ FEATURED EVENTOS ROTATION ══════════════
+   Up to 4 bookings can have an active window right now (today falls
+   within start_date..end_date) — enforced by the capacity trigger on
+   eventos_featured_bookings. Of whichever are active, only `count` are
+   actually shown, rotating hourly: pass 2 for the Eventos section, 1 for
+   Inicio. Both use the same starting index (current hour mod however
+   many are active), so Inicio's one always matches the first of the
+   Eventos section's two — purely computed client-side, nothing stored
+   or scheduled server-side. */
+function activeFeaturedEventIds(count){
+  const active=FEATURED_BOOKINGS.filter(b=>b.start_date<=TODAY_DS&&b.end_date>=TODAY_DS)
+    .sort((a,b)=>a.start_date<b.start_date?-1:a.start_date>b.start_date?1:String(a.event_id).localeCompare(String(b.event_id)));
+  if(!active.length)return [];
+  const n=active.length;
+  const startIdx=new Date().getHours()%n;
+  const ids=[];
+  for(let i=0;i<Math.min(count,n);i++){
+    const id=active[(startIdx+i)%n].event_id;
+    if(!ids.includes(String(id)))ids.push(String(id));
+  }
+  return ids;
+}
+/* ══════════════ EVENTOS ON INICIO — the featured slot + today's full,
+   chronological schedule, both re-rendered every 5 min to pick up the
+   hourly featured rotation reasonably promptly ══════════════ */
 let eventosRotationTimer=null;
 function startEventosRotation(){
   clearInterval(eventosRotationTimer);
-  eventosRotationTimer=setInterval(renderEventosHoySection,5*60*1000);
+  eventosRotationTimer=setInterval(()=>{renderFeaturedEventoSection();renderEventosHoySection();},5*60*1000);
+}
+function renderFeaturedEventoSection(){
+  const slot=document.getElementById('dash-featured-evento');
+  if(!slot)return;
+  const ids=activeFeaturedEventIds(1);
+  const x=ids.length?EVENTOS.find(ev=>String(ev.id)===ids[0]):null;
+  if(!x){slot.innerHTML='';return;} // nothing currently featured, or the featured event fell outside the fetched EVENTOS window
+  slot.innerHTML=dashSection('eventos','Evento destacado','anuncios', `
+    <div class="evt-card" onclick="openEvento('${x.id}')">
+      ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
+      <div class="evt-body">
+        <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
+        <div class="evt-info">
+          <div class="evt-cat">${e(x.cat)}</div>
+          <div class="evt-name">${e(x.name)}</div>
+          <div class="evt-meta">${svgIco('clock')} ${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
+          ${x.price?`<div class="evt-price">${e(x.price)}</div>`:''}
+        </div>
+        ${svgIco('chevronR','evt-arr')}
+      </div>
+    </div>
+  `);
 }
 function renderEventosHoySection(){
   const slot=document.getElementById('dash-eventos-hoy');
   if(!slot)return; // Inicio isn't the active screen (or hasn't rendered yet) — nothing to update
   const today=EVENTOS.filter(x=>x.ds===TODAY_DS);
   if(!today.length){slot.innerHTML='';return;}
-  const picks=shuffle(today.slice()).slice(0,2);
-  slot.innerHTML=dashSection('eventos','Eventos de hoy','anuncios', picks.map(x=>`
+  const featuredIds=activeFeaturedEventIds(2);
+  // Every one of today's events shows now (not a capped random sample),
+  // chronological by time — except a featured event happening today
+  // jumps to the front regardless of its own time.
+  const sorted=today.slice().sort((a,b)=>{
+    const aFeat=featuredIds.includes(String(a.id)),bFeat=featuredIds.includes(String(b.id));
+    if(aFeat!==bFeat)return aFeat?-1:1;
+    return (a.time||'').localeCompare(b.time||'');
+  });
+  slot.innerHTML=dashSection('eventos','Eventos de hoy','anuncios', sorted.map(x=>`
     <div class="dash-card dc-evt" onclick="openEvento('${x.id}')">
-      <div class="dc-evt-date"><div class="dc-evt-day">${x.day}</div><div class="dc-evt-mon">${x.mon}</div></div>
-      <div><div class="dc-evt-name">${e(x.name)}</div><div class="dc-evt-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div></div>
+      <div class="dc-evt-thumb" style="background-image:url('${x.img}')"></div>
+      <div><div class="dc-evt-name">${e(x.name)}</div><div class="dc-evt-meta">${svgIco('clock')} ${x.time?e(x.time):'Hora por confirmar'}${x.loc?' · '+e(x.loc):''}</div></div>
     </div>
   `).join(''));
-}
-function shuffle(arr){
-  for(let i=arr.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]]=[arr[j],arr[i]];
-  }
-  return arr;
 }
 
 function renderInicio(){
@@ -746,10 +794,12 @@ function renderInicio(){
     </div>
   `).join(''));
 
+  h+=`<div id="dash-featured-evento"></div>`;
   h+=`<div id="dash-eventos-hoy"></div>`;
 
   h+=`<div style="height:24px"></div>`;
   document.getElementById('dash-body').innerHTML=h;
+  renderFeaturedEventoSection();
   renderEventosHoySection();
 }
 function dashSection(ico,label,goTab,cardsHtml){
@@ -888,7 +938,11 @@ function renderEventos(){
       : 'Sé el primero en publicar un evento en Campeche.';
     el.innerHTML=pin+emptyState('eventos','Nada por aquí todavía',sub);return;
   }
-  el.innerHTML=pin+list.map(x=>`
+  const featuredIds=activeFeaturedEventIds(2);
+  const featured=list.filter(x=>featuredIds.includes(String(x.id)));
+  const regular=list.filter(x=>!featuredIds.includes(String(x.id)));
+
+  const featuredHtml=featured.map(x=>`
     <div class="evt-card" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
       ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
       <div class="evt-body">
@@ -901,8 +955,34 @@ function renderEventos(){
         </div>
         ${svgIco('chevronR','evt-arr')}
       </div>
+      <span class="evt-featured-badge">Destacado</span>
     </div>
   `).join('');
+
+  // regular is still in event_date-ascending order (list already is, and
+  // filtering preserves order) so grouping just has to watch for the
+  // date changing as it walks through, not re-sort anything.
+  let groupsHtml='';
+  let lastDs=null;
+  regular.forEach(x=>{
+    if(x.ds!==lastDs){
+      lastDs=x.ds;
+      const label=dsToLongEs(x.ds);
+      groupsHtml+=`<div class="evt-group-hdr">${label.charAt(0).toUpperCase()+label.slice(1)}</div>`;
+    }
+    groupsHtml+=`
+      <div class="evt-list-item" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
+        <div class="evt-list-thumb" style="background-image:url('${x.img}')"></div>
+        <div class="evt-list-body">
+          <div class="evt-list-name">${e(x.name)}</div>
+          <div class="evt-list-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
+        </div>
+        ${svgIco('chevronR','evt-arr')}
+      </div>
+    `;
+  });
+
+  el.innerHTML=pin+featuredHtml+groupsHtml;
   wireAdminRemove(el);
 }
 

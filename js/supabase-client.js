@@ -611,7 +611,7 @@ MC.fetchBookedDates=async function(){
    rows only; js/app.js expands each into per-day counts client-side to
    drive the feature-window calendar's full/available cells. */
 MC.fetchFeaturedBookings=async function(){
-  const {data,error}=await sb.from('eventos_featured_bookings').select('start_date,end_date').gte('end_date',TODAY_DS);
+  const {data,error}=await sb.from('eventos_featured_bookings').select('event_id,start_date,end_date').gte('end_date',TODAY_DS);
   if(error){console.error(error);return [];}
   return data;
 };
