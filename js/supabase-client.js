@@ -476,6 +476,24 @@ MC.fetchPendingCount=async function(){
   ]);
   return content.length+phone.length+password.length;
 };
+/* Admin-only worklist — a row exists here for every business removal or
+   Premium cancellation (the primary's $749 relationship, or an
+   additional business's $499/mo upgrade), written automatically by DB
+   triggers regardless of who triggered it (resident self-service or
+   admin). Nothing here talks to Stripe — it's a reminder that a real
+   subscription still needs cancelling by hand. */
+MC.fetchCancellationReminders=async function(){
+  const {data,error}=await sb.from('business_cancellation_reminders').select('*').is('resolved_at',null).order('created_at',{ascending:true});
+  if(error){console.error(error);return [];}
+  return data||[];
+};
+MC.fetchCancellationReminderCount=async function(){
+  const reminders=await MC.fetchCancellationReminders();
+  return reminders.length;
+};
+MC.resolveCancellationReminder=async function(id){
+  return sb.from('business_cancellation_reminders').update({resolved_at:new Date().toISOString()}).eq('id',id);
+};
 
 MC.moderatePost=async function(table,id,newStatus,reason,extraPatch){
   const patch={status:newStatus,...(extraPatch||{})};

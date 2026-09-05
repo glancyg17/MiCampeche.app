@@ -28,6 +28,7 @@ function makeChain(getResult, onEq) {
   let single = false;
   const eqs = [];   // captured .eq(field, value) constraints
   const notNulls = []; // fields required non-null via .not(field, 'is', null)
+  const nullFields = []; // fields required to BE null via .is(field, null) — e.g. MC.fetchCancellationReminders' "unresolved" filter
   const proxy = new Proxy({}, {
     get(target, prop) {
       if (prop === 'then') {
@@ -53,6 +54,9 @@ function makeChain(getResult, onEq) {
           // likewise .eq('is_primary',…), which MC.myBusiness() needs so
           // it resolves to whichever fixture business actually has
           // is_primary:true rather than just the first one in the array.
+          // .is(field,null) is honored the same way .not(field,'is',null)
+          // already is (just the opposite direction) — MC.fetchCancellationReminders'
+          // "still unresolved" filter needs it to be real.
           if (Array.isArray(out.data)) {
             let rows = out.data;
             const hasOwnerFilter = eqs.some(([f]) => f === 'submitted_by');
@@ -63,6 +67,7 @@ function makeChain(getResult, onEq) {
               if (f === 'is_primary') rows = rows.filter(r => r && !!r.is_primary === v);
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
+            nullFields.forEach(f => { rows = rows.filter(r => r && r[f] == null); });
             if (rows !== out.data) out = { ...out, data: rows };
           }
           if (single) out = { ...out, data: Array.isArray(out.data) ? (out.data[0] || null) : out.data };
@@ -73,6 +78,7 @@ function makeChain(getResult, onEq) {
       if (prop === 'single' || prop === 'maybeSingle') { single = true; return () => proxy; }
       if (prop === 'eq') return (f, v) => { eqs.push([f, v]); if (onEq) onEq(f, v); return proxy; };
       if (prop === 'not') return (f, op, v) => { if (op === 'is' && v === null) notNulls.push(f); return proxy; };
+      if (prop === 'is') return (f, v) => { if (v === null) nullFields.push(f); return proxy; };
       return (..._args) => proxy; // select/order/limit/gte/in/etc all just chain
     }
   });
@@ -161,6 +167,14 @@ const SAMPLE = {
   // (which business ids currently have the $499/mo upgrade) — read via
   // the generic select() path, same as eventos_featured_bookings elsewhere.
   business_premium_upgrades: [],
+  // Step C admin worklist. cr3 is already resolved (resolved_at set) —
+  // MC.fetchCancellationReminders' .is('resolved_at',null) filter must
+  // exclude it; cr1/cr2 are the two real unresolved rows the tests exercise.
+  business_cancellation_reminders: [
+    { id: 'cr1', business_id: 'biz-old-1', business_name: 'Negocio Cerrado', reason: 'business_removed', resolved_at: null, created_at: NOW.toISOString() },
+    { id: 'cr2', business_id: 'biz-2', business_name: 'Taco Loco 2', reason: 'premium_downgraded', resolved_at: null, created_at: NOW.toISOString() },
+    { id: 'cr3', business_id: 'biz-old-2', business_name: 'Ya resuelto', reason: 'business_removed', resolved_at: NOW.toISOString(), created_at: NOW.toISOString() },
+  ],
 };
 
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
@@ -1870,6 +1884,44 @@ const fakeClient = {
     // ── Admin unified Pendiente queue (this fixture account is_admin: true) ──
     await window.openAccount();
     assert(text('modal-body').includes('Pendiente'), 'signed-in admin sees the unified Pendiente entry point (a non-admin would not)');
+
+    // ══════════════ Multi-business profiles (Step C): "Cancelaciones
+    //    pendientes" admin worklist ══════════════
+    await new Promise(r => setTimeout(r, 20)); // the count loads after the view paints, then re-renders — same pattern as "N no aprobadas"
+    assert(text('modal-body').includes('Cancelaciones pendientes') && text('modal-body').includes('2 por cancelar'), 'an admin account sees "Cancelaciones pendientes" with the real unresolved count — cr3 is already resolved and excluded');
+
+    // A non-admin never sees this button at all — mirrors the existing
+    // Pendiente admin-only behavior above.
+    currentProfile.is_admin = false;
+    await window.openAccount();
+    await new Promise(r => setTimeout(r, 20));
+    assert(!text('modal-body').includes('Cancelaciones pendientes'), 'a non-admin account never sees the "Cancelaciones pendientes" button');
+    currentProfile.is_admin = true; // restore — later tests (Moderación/Pendiente access) need this fixture to stay admin
+
+    await window.openCancellationReminders();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Cancelaciones pendientes (2)', 'openCancellationReminders() shows the real unresolved count in the title');
+    const crBody = text('modal-body');
+    assert(crBody.includes('Negocio Cerrado') && crBody.includes('Negocio eliminado'), 'a business_removed reminder shows its business name and the Spanish reason label');
+    assert(crBody.includes('Taco Loco 2') && crBody.includes('Premium cancelado'), 'a premium_downgraded reminder shows its business name and the Spanish reason label');
+    assert(!crBody.includes('Ya resuelto'), 'the already-resolved reminder (cr3) never appears in the list to begin with');
+
+    await window.resolveCancellationReminder('cr1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.business_cancellation_reminders && lastUpdate.business_cancellation_reminders.resolved_at, 'resolveCancellationReminder(id) calls MC.resolveCancellationReminder, which sets resolved_at');
+    assert(!text('modal-body').includes('Negocio Cerrado'), 'the resolved reminder is removed from the rendered list');
+    assert(text('modal-body').includes('Taco Loco 2'), 'the still-unresolved reminder remains');
+    assert(text('modal-title') === 'Cancelaciones pendientes (1)', 'the title count updates to reflect the removal');
+    assert(text('toast') === 'Marcado como resuelto ✓', 'a successful resolve shows the right confirmation toast');
+
+    // closeModal() resets mcModalStack outright, then a fresh
+    // openAccount() puts us back in exactly the state the original flow
+    // below expects right before opening Pendiente (modal open, on 'Tu
+    // cuenta', empty stack) — rather than leaving this new block's own
+    // modal navigation (openCancellationReminders pushed 'account' onto
+    // the stack) lingering underneath it.
+    window.closeModal();
+    await window.openAccount();
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
