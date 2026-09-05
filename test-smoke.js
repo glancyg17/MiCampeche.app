@@ -119,6 +119,11 @@ const SAMPLE = {
     { id: 'e6', title: 'Evento de hoy A', category: 'Música', event_date: ds(0), event_time: '7:00 PM', location: 'Centro', image_url: 'https://example.com/hoy-a.jpg', source: 'user', status: 'published' },
     { id: 'e7', title: 'Evento de hoy B', category: 'Música', event_date: ds(0), event_time: '3:00 PM', location: 'Centro', image_url: 'https://example.com/hoy-b.jpg', source: 'user', status: 'published' },
     { id: 'e8', title: 'Evento de hoy C', category: 'Música', event_date: ds(0), event_time: '9:00 PM', location: 'Centro', image_url: 'https://example.com/hoy-c.jpg', source: 'user', status: 'published' },
+    // e11: automated (venue-calendar sync, no submitted_by), used ONLY by
+    // the reject-reason-per-row test below — dedicated so actually
+    // completing its reject doesn't disturb e1/e2/e4, which other tests
+    // still expect present/untouched.
+    { id: 'e11', title: 'Evento sincronizado del calendario', category: 'Cultura', event_date: ds(2), event_time: '5:00 PM', location: 'Centro', source: 'sync', status: 'pending' },
   ],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
@@ -143,7 +148,14 @@ const SAMPLE = {
   // published_at (source post time) is deliberately 3h before created_at
   // (pipeline sync time) so the render can be checked to prefer it.
   // source_url exercises the "ver publicación original" link in the modal.
-  alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'Primer párrafo del aviso oficial.\n\nSegundo párrafo con el detalle de la zona afectada y la duración estimada.', source: 'JAPAY', source_url: 'https://facebook.com/aguakan/posts/123', published_at: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString(), resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
+  alertas: [
+    { id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'Primer párrafo del aviso oficial.\n\nSegundo párrafo con el detalle de la zona afectada y la duración estimada.', source: 'JAPAY', source_url: 'https://facebook.com/aguakan/posts/123', published_at: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString(), resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() },
+    // al2: dedicated to the reject-reason-per-row test below (alertas has
+    // no submitted_by column at all, ever) — separate from al1 so
+    // actually completing its reject doesn't remove al1 from the queue
+    // before the later "Alertas: pipeline-fed" approval test needs it.
+    { id: 'al2', title: 'Corte de luz programado en Zona Sur', alert_type: 'Corte de luz', zone: 'Zona sur', description: 'Aviso oficial de prueba.', source: 'CFE', published_at: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString(), status: 'pending', created_at: NOW.toISOString() },
+  ],
   empleos: [
     { id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' },
     // j2: carries a real description — MC.fetchEmpleos previously fetched
@@ -1963,7 +1975,56 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (23)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, and the three extra public today-eventos rows the Eventos-de-hoy redesign test adds) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (25)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, and the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+
+    // ══════════════ Reject-reason requirement: checks the actual row's
+    //    submitted_by, not a hardcoded table name — the old check keyed
+    //    off table==='noticias' alone, which was wrong for eventos (can be
+    //    either automated or resident-submitted) and alertas (always
+    //    automated, no submitted_by column at all). ══════════════
+    assert(window.isAutomatedContent('noticias', 'n1') === true, 'a noticias row with no submitted_by (automated sync) is treated as automated');
+    assert(window.isAutomatedContent('eventos', 'e4') === false, 'an eventos row WITH a real submitted_by (resident submission) is NOT automated — the old table-name-only check got this wrong');
+    assert(window.isAutomatedContent('eventos', 'e1') === true, 'an eventos row with no submitted_by (automated venue-calendar sync) is treated as automated');
+    assert(window.isAutomatedContent('alertas', 'al1') === true, 'an alertas row (no submitted_by column at all) is treated as automated');
+    assert(window.isAutomatedContent('avisos', 'av1') === false, 'a resident-only table (avisos) with a real submitted_by is still NOT automated, unchanged from before');
+
+    // End-to-end: a resident-submitted eventos row still blocks an empty
+    // reason (non-destructive — a blocked reject never reaches
+    // moderateItem, so e4 stays untouched for the Mis-publicaciones tests
+    // that still need it). openModerationDetail() first, same as any real
+    // reject flow (it's what pushes the 'pendingList' stack entry that a
+    // successful reject later pops back to).
+    window.openModerationDetail('eventos', 'e4');
+    window.openRejectReasonPrompt('eventos', 'e4');
+    assert((text('modal-body') || '').includes('lo verá en su cuenta'), 'a resident-submitted eventos row shows the real (non-automated) explanation copy');
+    delete lastUpdate.eventos;
+    await window.confirmReject('eventos', 'e4');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Escribe un motivo breve antes de rechazar', 'rejecting a resident-submitted eventos row with an empty reason is still blocked');
+    assert(!lastUpdate.eventos, 'and nothing was actually sent to Supabase');
+    window.mcModalBack('pendingList'); // manually back out of the still-open (blocked) reason screen
+
+    // End-to-end: an automated eventos row (e11 — dedicated, so completing
+    // this reject doesn't disturb e1/e2/e4 used elsewhere) succeeds with
+    // an empty reason — the actual regression this step fixes, since the
+    // old table-name-only check would have wrongly required one here.
+    window.openModerationDetail('eventos', 'e11');
+    window.openRejectReasonPrompt('eventos', 'e11');
+    assert((text('modal-body') || '').includes('fuente automática'), 'an automated eventos row shows the automated explanation copy');
+    delete lastUpdate.eventos;
+    await window.confirmReject('eventos', 'e11');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.eventos && lastUpdate.eventos.status === 'rejected' && lastUpdate.eventos.rejection_reason === null, 'rejecting an automated eventos row with an empty reason succeeds — status rejected, rejection_reason null');
+
+    // End-to-end: an alertas row (al2 — dedicated, so al1 stays untouched
+    // for the approval test right below) succeeds with an empty reason —
+    // alertas has no submitted_by column at all, ever.
+    window.openModerationDetail('alertas', 'al2');
+    window.openRejectReasonPrompt('alertas', 'al2');
+    delete lastUpdate.alertas;
+    await window.confirmReject('alertas', 'al2');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.alertas && lastUpdate.alertas.status === 'rejected' && lastUpdate.alertas.rejection_reason === null, 'rejecting an alertas row (no submitted_by column at all) with an empty reason succeeds too');
 
     // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
     assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
@@ -2039,7 +2100,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (22)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (24)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real
