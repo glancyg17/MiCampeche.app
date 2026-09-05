@@ -116,6 +116,8 @@ const STRIPE_LINK_OFERTA='https://buy.stripe.com/eVq28sguZ7uxcEqgr54F200?locale=
 const STRIPE_LINK_PREMIUM='https://buy.stripe.com/bJe5kE7YteWZcEq0s74F201?locale=es-419';
 const STRIPE_LINK_EVENTO_FEATURE='https://buy.stripe.com/9B69AUfqV4il7k64In4F202?locale=es-419';
 const EVENTO_FEATURE_FEE_MXN=99;
+const STRIPE_LINK_BUSINESS_SETUP='https://buy.stripe.com/28E3cw2E98yB47UdeT4F203?locale=es-419';
+const BUSINESS_SETUP_FEE_MXN=99;
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
@@ -1584,10 +1586,12 @@ const POST_FORMS={
 
 let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kind==='oferta'
 let editingPost=null; // {table,id} while the post form is in self-edit mode; set by openMyPostEdit() AFTER openPost() renders, read by submitPost()
+let creatingAdditionalBusiness=false; // set by openAdditionalBusinessForm() AFTER openPost() renders, read by submitPost()'s negocio_verificar branch
 
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
   editingPost=null; // any fresh form start clears a stale edit target; openMyPostEdit re-sets it after this returns
+  creatingAdditionalBusiness=false; // same reasoning — openAdditionalBusinessForm re-sets it after this returns
   monthCalSelected={};monthCalView={}; // reset so a fresh form always starts on the current month with nothing picked; applyPostEditFill overwrites both for a self-edit
   // A real account is required for ANY write, and its phone must already
   // be verified — both enforced at the database layer too (is_verified_writer
@@ -2008,6 +2012,7 @@ async function openAccount(){
 function renderAccountSignedIn(acct){
   lastFetchedAccount=acct;
   const biz=acct.business;
+  const bizList=acct.businesses||[];
   const pvs=acct.phoneVerificationStatus;
   document.getElementById('modal-title').textContent='Tu cuenta';
   document.getElementById('modal-body').innerHTML=`
@@ -2022,8 +2027,17 @@ function renderAccountSignedIn(acct){
     <button class="menu-item" onclick="openEditAccount()" style="border:1.5px solid var(--line2);margin-bottom:4px;justify-content:center">
       <span class="menu-item-lbl">Editar mi cuenta</span>
     </button>
-    ${biz?`
-      <button class="menu-item" onclick="openBusinessProfile()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+    ${bizList.length>1?`
+      <button class="menu-item" onclick="openMyBusinesses()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Mis negocios (${bizList.length})</span>
+          <span class="menu-item-sub">Administra tus negocios</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:biz?`
+      <button class="menu-item" onclick="openBusinessProfile('${biz.id}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
         ${biz.business_image_url
           ?`<img src="${e(biz.business_image_url)}" style="width:34px;height:34px;object-fit:cover;border-radius:9px;flex-shrink:0">`
           :`<span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>`}
@@ -2073,17 +2087,68 @@ function renderAccountSignedIn(acct){
   document.getElementById('modal-bg').classList.add('on');
 }
 
-/* Business profile — a sub-view of "Tu cuenta". One tap from the account
-   view opens the full business record; the edit action here reuses the
-   verification form and sends the changes back to review. Part of the
-   modal view stack, so ✕ / back / hardware-back returns to the account
-   view, and finishing an edit returns here (now showing "En revisión"). */
-async function openBusinessProfile(){
+let myBusinessesList=[];
+let viewingBusinessId=null; // set by openBusinessProfile(id), read by openBusinessEdit()/refreshBusinessProfile() so they act on whichever business is currently open
+
+/* "Mis negocios" — only reachable once an account has 2+ businesses (see
+   renderAccountSignedIn); a single business still goes straight to its
+   own profile, unchanged from before. */
+async function openMyBusinesses(){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
-  document.getElementById('modal-title').textContent='Mi negocio';
+  document.getElementById('modal-title').textContent='Mis negocios';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
-  const biz=await MC.myBusiness();
+  myBusinessesList=await MC.myBusinesses();
+  renderMyBusinesses();
+}
+function renderMyBusinesses(){
+  const primary=myBusinessesList.find(b=>b.is_primary);
+  const canAddMore=!!(primary&&primary.is_premium)&&myBusinessesList.length<5;
+  document.getElementById('modal-title').textContent=`Mis negocios (${myBusinessesList.length})`;
+  document.getElementById('modal-body').innerHTML=myBusinessesList.map(b=>{
+    const statusLbl=b.status==='pending'?'En revisión':b.status==='rejected'?'No aprobado':b.is_premium?'Premium':'Verificado';
+    return `<button class="menu-item" onclick="openBusinessProfile('${b.id}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      ${b.business_image_url?`<img src="${e(b.business_image_url)}" style="width:34px;height:34px;object-fit:cover;border-radius:9px;flex-shrink:0">`:`<span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>`}
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">${e(b.business_name)}${b.is_primary?' · Principal':''}</span>
+        <span class="menu-item-sub">${statusLbl}${b.category?' · '+e(b.category):''}</span>
+      </span>
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>`;
+  }).join('')
+  +(canAddMore?`
+    <button class="menu-item" onclick="openAdditionalBusinessForm()" style="border:1.5px dashed var(--line2);margin-bottom:4px;color:var(--gulf)">
+      <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+      <span class="menu-item-txt"><span class="menu-item-lbl">Agregar otro negocio</span><span class="menu-item-sub">$${BUSINESS_SETUP_FEE_MXN} MXN de configuración</span></span>
+    </button>
+  `:(primary&&!primary.is_premium&&myBusinessesList.length===1?`
+    <div style="color:var(--ink3);font-size:12px;padding:8px 4px;line-height:1.5">Actualiza tu negocio principal a Premium para poder agregar más negocios.</div>
+  `:''));
+}
+/* Starts the $99 "add another business" flow — same submission form as
+   the free first-time one, just flagged so submitPost() routes it
+   through payment first. See the negocio_verificar branch further down. */
+async function openAdditionalBusinessForm(){
+  mcModalPushView('myBusinesses');
+  editingBusinessId=null;
+  await openPost('negocio_verificar');
+  creatingAdditionalBusiness=true;
+  document.getElementById('modal-title').textContent='Agregar otro negocio';
+}
+
+/* Business profile — a sub-view of "Tu cuenta" (direct, for a single
+   business) or of "Mis negocios" (for 2+). One tap opens the full
+   business record; the edit action reuses the verification form and
+   sends the changes back to review. Part of the modal view stack, so
+   ✕ / back / hardware-back returns to wherever it was opened from, and
+   finishing an edit returns here (now showing "En revisión"). */
+async function openBusinessProfile(id){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(myBusinessesList.length>1?'myBusinesses':'account');
+  viewingBusinessId=id;
+  document.getElementById('modal-title').textContent='Negocio';
+  document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
+  document.getElementById('modal-bg').classList.add('on');
+  const biz=await MC.fetchBusinessById(id);
   if(!biz){mcModalBack();return;}
   renderBusinessProfile(biz);
 }
@@ -2120,7 +2185,7 @@ function renderBusinessProfile(biz){
   document.getElementById('modal-bg').classList.add('on');
 }
 async function refreshBusinessProfile(){
-  renderBusinessProfile(await MC.myBusiness());
+  renderBusinessProfile(await MC.fetchBusinessById(viewingBusinessId));
 }
 
 /* Country-code select + phone input pair. Reused by signup, login, and
@@ -3005,7 +3070,7 @@ let editingBusinessId=null; // set by openBusinessEdit(), read by submitPost's n
    The DB trigger (not this code) is what actually forces the business
    back to 'pending' on save, so there's nothing extra to enforce here. */
 async function openBusinessEdit(){
-  const biz=await MC.myBusiness();
+  const biz=await MC.fetchBusinessById(viewingBusinessId);
   if(!biz)return;
   mcModalPushView('bizProfile'); // ✕ / back from the form returns to the business profile
   editingBusinessId=biz.id;
@@ -3202,6 +3267,19 @@ async function submitPost(kind){
       return;
     }
     const isEditing=!!editingBusinessId;
+    if(!isEditing&&creatingAdditionalBusiness){
+      // A 2nd+ business costs $99 up front — pay first, then create it
+      // on return, same reasoning as Ofertas/Eventos: an unpaid
+      // "reservation" would just squat on the 5-business cap. The
+      // creation trigger (enforce_additional_business_rules) still does
+      // the real enforcement server-side regardless of what this UI
+      // already gated on.
+      creatingAdditionalBusiness=false;
+      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+      sessionStorage.setItem('mc_pending_business_setup',JSON.stringify({data}));
+      window.location.href=STRIPE_LINK_BUSINESS_SETUP;
+      return;
+    }
     const {error}=isEditing?await MC.updateBusiness(editingBusinessId,data):await MC.verifyBusiness(data);
     editingBusinessId=null;
     if(btn){btn.disabled=false;btn.textContent=originalLabel;}
@@ -3347,6 +3425,17 @@ async function checkPaymentReturn(){
       return;
     }
     toast('¡Pago recibido! Tu evento quedará destacado en esas fechas ✓');
+  } else if(paid==='business_setup'){
+    const pending=sessionStorage.getItem('mc_pending_business_setup');
+    if(!pending){toast('Pago recibido, pero no encontramos los datos de tu negocio. Escríbenos por WhatsApp.');return;}
+    sessionStorage.removeItem('mc_pending_business_setup');
+    const {data}=JSON.parse(pending);
+    const {error}=await MC.verifyBusiness(data);
+    if(error){
+      toast('Pago recibido, pero no pudimos crear el negocio — quizás llegaste al máximo de 5, o tu negocio principal ya no es Premium. Escríbenos por WhatsApp.');
+      return;
+    }
+    toast('¡Pago recibido! Tu nuevo negocio fue enviado para revisión ✓');
   }
 }
 

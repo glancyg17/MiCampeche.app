@@ -176,14 +176,16 @@ MC.currentAccount=async function(){
   const {data:{session}}=await sb.auth.getSession();
   if(!session||session.user.is_anonymous)return {signedIn:false};
   const uid=session.user.id;
-  // profile + business are independent — fetch them together, not in series.
-  const [{data:prof},{data:business}]=await Promise.all([
+  // profile + businesses are independent — fetch them together, not in series.
+  const [{data:prof},{data:businesses}]=await Promise.all([
     sb.from('profiles').select('display_name,phone,is_admin,phone_verification_status,phone_verification_reason').eq('id',uid).single(),
-    sb.from('businesses').select('*').eq('profile_id',uid).maybeSingle()
+    sb.from('businesses').select('*').eq('profile_id',uid).order('is_primary',{ascending:false}).order('created_at',{ascending:true})
   ]);
+  const all=businesses||[];
+  const primary=all.find(b=>b.is_primary)||null;
   return {
     signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',phone:(prof&&prof.phone)||null,
-    isAdmin:!!(prof&&prof.is_admin),business:business||null,
+    isAdmin:!!(prof&&prof.is_admin),business:primary,businesses:all,
     phoneVerificationStatus:(prof&&prof.phone_verification_status)||'pending',
     phoneVerificationReason:(prof&&prof.phone_verification_reason)||null
   };
@@ -250,8 +252,24 @@ MC.rejectPhoneVerification=async function(profileId,reason){
 MC.myBusiness=async function(){
   const uid=await MC.ready;
   if(!uid)return null;
-  const {data}=await sb.from('businesses').select('*').eq('profile_id',uid).maybeSingle();
+  const {data}=await sb.from('businesses').select('*').eq('profile_id',uid).eq('is_primary',true).maybeSingle();
   return data||null;
+};
+/* Fetch one specific business by id — RLS (owner-read-own / admin-all)
+   already restricts this to businesses the caller can actually see, so
+   no extra ownership check is needed here. Used by the "Mis negocios"
+   list and business profile view once an account can have more than one. */
+MC.fetchBusinessById=async function(id){
+  const {data}=await sb.from('businesses').select('*').eq('id',id).maybeSingle();
+  return data||null;
+};
+/* Every business the signed-in account owns, primary first — backs the
+   "Mis negocios" list once an account has more than one. */
+MC.myBusinesses=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const {data}=await sb.from('businesses').select('*').eq('profile_id',uid).order('is_primary',{ascending:false}).order('created_at',{ascending:true});
+  return data||[];
 };
 
 /* Shared map from the negocio_verificar form payload to business columns,

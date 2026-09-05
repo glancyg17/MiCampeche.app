@@ -45,13 +45,18 @@ function makeChain(getResult, onEq) {
           // present in the same chain (i.e. MC.fetchMyRejections, the one
           // real query that combines both), a chained .eq('status',…) too,
           // so a null-reason rejection is distinguishable from that same
-          // user's non-rejected rows.
+          // user's non-rejected rows. It also always honors .eq('id',…) —
+          // narrowing by exact row id is safe to apply universally (no
+          // existing test relies on an id filter being ignored) and is
+          // what MC.fetchBusinessById needs to return the RIGHT business
+          // out of a multi-business fixture, not just the first one.
           if (Array.isArray(out.data)) {
             let rows = out.data;
             const hasOwnerFilter = eqs.some(([f]) => f === 'submitted_by');
             eqs.forEach(([f, v]) => {
               if (f === 'submitted_by') rows = rows.filter(r => r && r[f] === v);
               if (f === 'status' && hasOwnerFilter) rows = rows.filter(r => r && r[f] === v);
+              if (f === 'id') rows = rows.filter(r => r && String(r.id) === String(v));
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
             if (rows !== out.data) out = { ...out, data: rows };
@@ -153,7 +158,13 @@ const SAMPLE = {
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
 // "has a business" after a real verifyBusiness() insert) — unlike the other
 // tables above, which are static read-only fixtures for these tests.
+// currentBusiness is always the PRIMARY one (is_primary:true, set at
+// creation — real DB behavior per the multi-business trigger) and is what
+// the many existing single-business assertions throughout this file
+// already reference directly; extraBusinesses holds any additional ones a
+// multi-business test adds on top; both feed the same businesses.select().
 let currentBusiness = null;
+let extraBusinesses = [];
 let currentProfile = { id: 'uid-1', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true, phone_verification_status: 'pending', phone_verification_reason: null };
 let fakePhoneAlreadyVerified = false; // controllable flag for MC.isPhoneAlreadyVerified — defaults to "no match" so normal signup/edit tests aren't blocked by a false positive
 
@@ -212,12 +223,21 @@ const fakeClient = {
   from(table) {
     if (table === 'businesses') {
       return {
-        select: (..._a) => makeChain(() => ({ data: currentBusiness ? [currentBusiness] : [], error: null })),
+        select: (..._a) => makeChain(() => ({ data: [...(currentBusiness ? [currentBusiness] : []), ...extraBusinesses], error: null })),
         insert: (row) => { lastInsert.businesses = row; return makeChain(() => {
           if (forcedErrors.insert.businesses) return { data: null, error: forcedErrors.insert.businesses };
-          if (currentBusiness) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "businesses_profile_id_key"' } };
-          currentBusiness = { ...row, id: 'biz-1', status: 'pending' }; // matches the real DB default
-          return { data: [currentBusiness], error: null };
+          if (!currentBusiness) {
+            currentBusiness = { ...row, id: 'biz-1', status: 'pending', is_primary: true }; // matches the real DB default — first business per profile is primary
+            return { data: [currentBusiness], error: null };
+          }
+          // A 2nd+ business for the same profile — legitimate now (capped
+          // at 5, primary must be Premium — enforced by a real DB trigger
+          // this fake doesn't simulate, since nothing here tests the cap
+          // itself). Appended as a new, non-primary business rather than
+          // the old single-business "duplicate key" rejection.
+          const extraBiz = { ...row, id: 'biz-' + (extraBusinesses.length + 2), status: 'pending', is_primary: false };
+          extraBusinesses.push(extraBiz);
+          return { data: [extraBiz], error: null };
         }); },
         update: (row) => { lastUpdate.businesses = row; return makeChain(() => {
           if (currentBusiness) currentBusiness = { ...currentBusiness, ...row };
@@ -1268,11 +1288,14 @@ const fakeClient = {
 
     await window.openAccount();
     assert(text('modal-body').includes('Taco Loco'), 'the signed-in account view shows the verified business as a single tappable box');
-    assert(text('modal-body').includes("openBusinessProfile()") && !text('modal-body').includes('Editar mi negocio'), 'the account view has ONE business box (no separate edit button) — it opens the business profile');
+    assert(text('modal-body').includes("openBusinessProfile('biz-1')") && !text('modal-body').includes('Editar mi negocio'), 'the account view has ONE business box (no separate edit button) — it opens the business profile');
 
     // The business profile sub-view: full record + the edit action, one tap in.
-    await window.openBusinessProfile();
+    await window.openBusinessProfile('biz-1');
     await new Promise(r => setTimeout(r, 20));
+    // renderBusinessProfile() itself sets the final title to 'Mi negocio'
+    // once the fetch resolves (openBusinessProfile's own 'Negocio' is only
+    // the transient loading-state title) — unaffected by this step.
     assert(text('modal-title') === 'Mi negocio', 'tapping the business box opens the business profile view');
     assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Lun-Sáb 9am-8pm'), 'the profile shows the full business record, not just the name');
     assert(text('modal-body').includes('Editar negocio'), 'the profile carries the edit action that sends changes back to review');
@@ -1283,7 +1306,7 @@ const fakeClient = {
     // Same business, same approved status — only is_admin changes — proves the admin check is what gates the upsell.
     currentProfile.is_admin = false;
     await window.openAccount(); // refresh the account view so lastFetchedAccount reflects the non-admin state
-    await window.openBusinessProfile();
+    await window.openBusinessProfile('biz-1');
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-body').includes('Actualizar a Premium'), 'a non-admin with the exact same approved, non-premium business DOES see the upsell in the profile');
     window.mcModalBack();
@@ -1304,6 +1327,84 @@ const fakeClient = {
     assert(text('modal-title') === 'Mi negocio' && doc.getElementById('modal-bg').classList.contains('on'), 'after saving an edit you land back on the business profile, not dumped to the home screen');
     assert(lastUpdate.businesses && lastUpdate.businesses.phone === '981 000 1234', 'the real edited field was sent as an UPDATE');
     assert(!lastInsert.businesses, 'editing an existing business never creates a second (duplicate) business row via insert');
+
+    // ══════════════ Multi-business profiles (Step A) ══════════════
+    // A second business for the SAME profile, is_primary:false (per the
+    // real "first business is primary" trigger). This is also the
+    // regression test for the actual bug this step fixes: currentAccount()
+    // and myBusiness() used to run .maybeSingle() against a query
+    // matching ALL of a profile's businesses by profile_id alone, which
+    // throws for real the moment a profile has 2+ (maybeSingle() requires
+    // 0 or 1 row).
+    // With just the one (non-Premium) business still in place, the list
+    // view shows the "upgrade to Premium to add more" hint — renderMyBusinesses()
+    // only shows this hint at exactly 1 business (once a 2nd already
+    // exists, whether to add a 3rd is a different question the hint isn't
+    // meant to answer), so this has to be checked before extraBusinesses
+    // is added below.
+    await window.openMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Actualiza tu negocio principal a Premium'), 'without a Premium primary, the list shows the "upgrade to add more" hint');
+    assert(!text('modal-body').includes('Agregar otro negocio'), 'and does NOT offer "Agregar otro negocio" while the primary isn\'t Premium');
+    window.mcModalBack();
+
+    extraBusinesses = [{ id: 'biz-2', profile_id: 'uid-1', business_name: 'Taco Loco 2', description: 'Segunda sucursal', category: 'Comida', address: 'Calle 20', phone: '981 000 5678', is_primary: false, status: 'published', is_premium: false }];
+    let currentAccountThrew = false;
+    try { await window.openAccount(); } catch (err) { currentAccountThrew = true; }
+    await new Promise(r => setTimeout(r, 20));
+    assert(!currentAccountThrew, 'MC.currentAccount() no longer throws once a profile has 2+ businesses (the real maybeSingle() crash this step fixes)');
+    assert(text('modal-body').includes('Mis negocios (2)'), 'the account view routes to the "Mis negocios" list once there are 2+ businesses');
+
+    await window.openMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Mis negocios (2)', 'openMyBusinesses() shows the real count in the title');
+    assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Taco Loco 2'), 'both businesses are listed');
+
+    // Make the primary Premium: the add-business entry point appears instead.
+    currentBusiness.is_premium = true;
+    await window.openMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Agregar otro negocio') && text('modal-body').includes('$99 MXN'), 'once the primary is Premium, "Agregar otro negocio" appears with the real $99 fee');
+    assert(!text('modal-body').includes('Actualiza tu negocio principal a Premium'), 'and the upgrade hint is gone');
+
+    // Additional-business submission pays FIRST — never calls
+    // MC.verifyBusiness (i.e. never reaches a real insert) directly.
+    await window.openAdditionalBusinessForm();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Agregar otro negocio', 'the additional-business form has its own distinct title');
+    doc.getElementById('pf-name').value = 'Taco Loco 3';
+    doc.getElementById('pf-desc').value = 'Tercera sucursal';
+    doc.getElementById('pf-address').value = 'Calle 30';
+    doc.getElementById('pf-phone').value = '981 000 9999';
+    doc.getElementById('pf-cat').value = 'Comida';
+    delete lastInsert.businesses;
+    window.sessionStorage.removeItem('mc_pending_business_setup');
+    await window.submitPost('negocio_verificar');
+    await new Promise(r => setTimeout(r, 20));
+    assert(!lastInsert.businesses, 'submitting an additional business does NOT call MC.verifyBusiness directly — payment comes first');
+    const pendingBizSetupRaw = window.sessionStorage.getItem('mc_pending_business_setup');
+    assert(!!pendingBizSetupRaw, 'the pending business data is persisted to sessionStorage before the payment redirect');
+    const pendingBizSetup = JSON.parse(pendingBizSetupRaw);
+    assert(pendingBizSetup.data && pendingBizSetup.data.name === 'Taco Loco 3', 'the persisted pending data carries the real submitted business fields');
+
+    // Simulate landing back from Stripe with ?paid=business_setup.
+    window.history.pushState({}, '', '/?paid=business_setup');
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco 3', 'checkPaymentReturn calls MC.verifyBusiness with the real stashed data');
+    assert(!window.sessionStorage.getItem('mc_pending_business_setup'), 'sessionStorage is cleared after the additional business is created');
+    assert(text('toast') === '¡Pago recibido! Tu nuevo negocio fue enviado para revisión ✓', 'a successful additional-business creation shows the right confirmation toast');
+
+    // The normal (non-additional, non-editing) path still calls
+    // MC.verifyBusiness directly, unaffected by this step — proven
+    // earlier in this same describe block ("verification submission
+    // shows a 'sent for review' toast..."/"the real business data...
+    // was sent to Supabase") back when this profile had zero businesses.
+
+    // Back to a single-business fixture for every test after this point.
+    extraBusinesses = [];
+    currentBusiness.is_premium = false;
+    await window.openAccount();
 
     // Product cap error now routes to the real Premium upgrade prompt
     // (with the actual Stripe payment link), not a dead-end toast.
