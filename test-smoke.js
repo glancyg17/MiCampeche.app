@@ -49,7 +49,10 @@ function makeChain(getResult, onEq) {
           // narrowing by exact row id is safe to apply universally (no
           // existing test relies on an id filter being ignored) and is
           // what MC.fetchBusinessById needs to return the RIGHT business
-          // out of a multi-business fixture, not just the first one.
+          // out of a multi-business fixture, not just the first one — and
+          // likewise .eq('is_primary',…), which MC.myBusiness() needs so
+          // it resolves to whichever fixture business actually has
+          // is_primary:true rather than just the first one in the array.
           if (Array.isArray(out.data)) {
             let rows = out.data;
             const hasOwnerFilter = eqs.some(([f]) => f === 'submitted_by');
@@ -57,6 +60,7 @@ function makeChain(getResult, onEq) {
               if (f === 'submitted_by') rows = rows.filter(r => r && r[f] === v);
               if (f === 'status' && hasOwnerFilter) rows = rows.filter(r => r && r[f] === v);
               if (f === 'id') rows = rows.filter(r => r && String(r.id) === String(v));
+              if (f === 'is_primary') rows = rows.filter(r => r && !!r.is_primary === v);
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
             if (rows !== out.data) out = { ...out, data: rows };
@@ -153,6 +157,10 @@ const SAMPLE = {
     // .av-img thumbnail render on the public Avisos card.
     { id: 'av2', category: 'Seguridad', title: 'Mi aviso publicado', description: 'x', image_url: 'https://example.com/aviso-photo.jpg', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } },
   ],
+  // Mutated directly by the Step B multi-business Premium-upgrade tests
+  // (which business ids currently have the $499/mo upgrade) — read via
+  // the generic select() path, same as eventos_featured_bookings elsewhere.
+  business_premium_upgrades: [],
 };
 
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
@@ -321,7 +329,7 @@ const fakeClient = {
         : { data: [{ ...row, id: 'new-' + Math.random().toString(36).slice(2) }], error: null }); },
       delete: () => makeChain(() => forcedErrors.delete[table]
         ? { data: null, error: forcedErrors.delete[table] }
-        : { data: [], error: null }, (f, v) => { if (f === 'id') lastDelete[table] = v; }),
+        : { data: [], error: null }, (f, v) => { if (f === 'id' || f === 'business_id') lastDelete[table] = v; }),
       update: (row) => { lastUpdate[table] = row; return makeChain(() => forcedErrors.update[table]
         ? { data: null, error: forcedErrors.update[table] }
         : { data: [row], error: null }); },
@@ -1743,6 +1751,121 @@ const fakeClient = {
 
     SAMPLE.eventos_featured_bookings = [];
     await window.refreshContent();
+
+    // ══════════════ Multi-business profiles (Step B) ══════════════
+    // A second published, non-primary business — same shape as Step A's
+    // biz-2, but with a distinct name/phone/delivers so tests here can
+    // tell exactly which business a given render/submission resolved to.
+    extraBusinesses = [{ id: 'biz-2', profile_id: 'uid-1', business_name: 'Taco Loco 2', description: 'Segunda sucursal', category: 'Comida', address: 'Calle 20', phone: '981 000 5678', delivers: false, is_primary: false, status: 'published', is_premium: false }];
+
+    // ── Business picker on Producto: 2 published businesses ──
+    await window.openPost('producto');
+    assert(!!doc.getElementById('pf-post-business'), 'with 2 published businesses, the producto form shows the "¿Cuál negocio?" picker');
+    assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-1', 'the picker defaults to the primary business');
+    assert(!doc.querySelector('#row-fulfillment .field-note'), 'the default-selected (delivering) primary business shows no delivery-disabled hint');
+    assert((text('row-contact_methods') || '').includes('981 000 1234'), 'the contact-method hint matches the default-selected business\'s own phone');
+
+    // Switching the picker's selection re-applies the hints for the newly
+    // selected business — the picker's onclick is an inline HTML
+    // attribute (segPick(this);selectedPostBusinessId=...;
+    // applyProductoBusinessHints(...)), which jsdom (runScripts:
+    // 'outside-only') doesn't execute — same limitation documented
+    // elsewhere in this suite for the month/feature calendars — so this
+    // calls the real applyProductoBusinessHints() function directly with
+    // the 2nd business's data, exactly as that onclick would have.
+    window.applyProductoBusinessHints(extraBusinesses[0]);
+    assert(doc.querySelector('#pf-fulfillment .seg-btn[data-v="entrega"]').classList.contains('seg-btn-off'), 'switching to a non-delivering business disables "entrega" live');
+    assert((text('row-contact_methods') || '').includes('981 000 5678') && !(text('row-contact_methods') || '').includes('981 000 1234'), 'and the contact hint updates to the newly-selected business\'s own phone, replacing the old one');
+
+    // With only 1 published business, no picker at all — unchanged from before.
+    extraBusinesses = [];
+    await window.openPost('producto');
+    assert(!doc.getElementById('pf-post-business'), 'with only 1 published business, no picker appears');
+
+    // MC.submitProducto/MC.submitOferta actually resolve to whichever
+    // business was selected, not hardcoded to the account's original
+    // sole business — proven here by flipping is_primary so the OTHER
+    // (distinctly-named) business is what the real defaultBiz logic
+    // resolves to, then checking the submitted row's own snapshot fields.
+    extraBusinesses = [{ id: 'biz-2', profile_id: 'uid-1', business_name: 'Taco Loco 2', description: 'Segunda sucursal', category: 'Comida', address: 'Calle 20', phone: '981 000 5678', delivers: true, is_primary: true, status: 'published', is_premium: false }];
+    currentBusiness.is_primary = false;
+
+    await window.openPost('producto');
+    assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the picker\'s default follows real is_primary data — now biz-2');
+    doc.getElementById('pf-name').value = 'Producto de biz-2';
+    doc.getElementById('pf-price').value = '$99';
+    delete lastInsert.productos;
+    await window.submitPost('producto');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.productos && lastInsert.productos.business_id === 'biz-2' && lastInsert.productos.business_name_snapshot === 'Taco Loco 2', 'MC.submitProducto is called with the selected (here, non-original) business id, not hardcoded to biz-1');
+
+    await window.openPost('oferta');
+    assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the same real default-selection applies to the Oferta form');
+    doc.getElementById('pf-item').value = 'Oferta de biz-2';
+    doc.getElementById('pf-priceWas').value = '100';
+    doc.getElementById('pf-priceNow').value = '50';
+    const bizPickerOpenSlot = doc.querySelector('.slot-day:not(.full)');
+    window.pickSlotDay(bizPickerOpenSlot, false);
+    delete lastInsert.ofertas;
+    await window.submitPost('oferta');
+    await new Promise(r => setTimeout(r, 20));
+    const pendingOfertaRaw = window.sessionStorage.getItem('mc_pending_oferta');
+    assert(!!pendingOfertaRaw && JSON.parse(pendingOfertaRaw).businessId === 'biz-2', 'the oferta pay-first flow stashes the selected businessId in mc_pending_oferta');
+    window.history.pushState({}, '', '/?paid=oferta');
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.ofertas && lastInsert.ofertas.business_id === 'biz-2' && lastInsert.ofertas.business_name_snapshot === 'Taco Loco 2', 'the ?paid=oferta return passes businessId through to MC.submitOferta, resolving to the real selected business');
+
+    // Restore: biz-1 primary again, biz-2 gone, ready for the Premium-upgrade tests below.
+    currentBusiness.is_primary = true;
+    extraBusinesses = [{ id: 'biz-2', profile_id: 'uid-1', business_name: 'Taco Loco 2', description: 'Segunda sucursal', category: 'Comida', address: 'Calle 20', phone: '981 000 5678', delivers: false, is_primary: false, status: 'published', is_premium: false }];
+
+    // ── $499/mo per-business Premium upgrade ──
+    SAMPLE.business_premium_upgrades = [];
+    await window.openMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Subir a Premium') && text('modal-body').includes('499 MXN/mes'), '"Subir a Premium" appears on a non-primary published business with no upgrade row yet');
+    assert(!text('modal-body').includes('Cancelar Premium'), 'and "Cancelar Premium" does not, since no upgrade exists yet');
+
+    window.sessionStorage.removeItem('mc_pending_business_premium_upgrade');
+    window.startBusinessPremiumUpgrade('biz-2');
+    const pendingPremiumRaw = window.sessionStorage.getItem('mc_pending_business_premium_upgrade');
+    assert(!!pendingPremiumRaw && JSON.parse(pendingPremiumRaw).businessId === 'biz-2', 'starting the upgrade stores the real businessId in sessionStorage before the (jsdom-unfollowable) redirect to STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE');
+
+    window.history.pushState({}, '', '/?paid=business_premium_upgrade');
+    delete lastInsert.business_premium_upgrades;
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.business_premium_upgrades && lastInsert.business_premium_upgrades.business_id === 'biz-2', 'the ?paid=business_premium_upgrade return calls MC.submitBusinessPremiumUpgrade with the real stashed businessId');
+    assert(!window.sessionStorage.getItem('mc_pending_business_premium_upgrade'), 'sessionStorage is cleared after the upgrade is created');
+    assert(text('toast') === '¡Pago recibido! Este negocio ahora puede tener hasta 10 productos ✓', 'a successful upgrade shows the right confirmation toast');
+
+    // Now simulate the upgrade actually existing (the fake insert above
+    // doesn't mutate SAMPLE, same as every other fake insert in this
+    // suite) and re-open the list: "Cancelar Premium" replaces "Subir a Premium".
+    SAMPLE.business_premium_upgrades = [{ business_id: 'biz-2', business_name: 'Taco Loco 2', profile_id: 'uid-1' }];
+    await window.openMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-body').includes('Cancelar Premium'), 'once an upgrade row exists, "Cancelar Premium" appears instead');
+    assert(!text('modal-body').includes('Subir a Premium'), 'and "Subir a Premium" no longer does');
+
+    window.confirmCancelBusinessPremium('biz-2');
+    assert(text('modal-title') === 'Cancelar Premium de este negocio', 'confirming cancel opens its own confirm screen');
+    assert(text('modal-body').includes('Taco Loco 2'), 'the confirm screen shows which business is losing Premium');
+    delete lastDelete.business_premium_upgrades;
+    await window.cancelBusinessPremiumUpgrade('biz-2');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastDelete.business_premium_upgrades === 'biz-2', 'cancelBusinessPremiumUpgrade calls through to MC.cancelBusinessPremiumUpgrade with the right business id');
+    assert(text('toast') === 'Premium cancelado para este negocio', 'a successful cancel shows the right confirmation toast');
+    assert(text('modal-title') === 'Mis negocios (2)', 'a successful cancel returns to (and refreshes) the Mis negocios list');
+
+    // Clean up for every test after this point — closeModal() resets
+    // mcModalStack outright, regardless of how deep the confirm-cancel /
+    // re-list navigation above left it, so the nested-modal-view tests
+    // further down start from the same clean slate they always have.
+    SAMPLE.business_premium_upgrades = [];
+    extraBusinesses = [];
+    window.closeModal();
 
     // ── Admin unified Pendiente queue (this fixture account is_admin: true) ──
     await window.openAccount();

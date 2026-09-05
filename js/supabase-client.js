@@ -271,6 +271,29 @@ MC.myBusinesses=async function(){
   const {data}=await sb.from('businesses').select('*').eq('profile_id',uid).order('is_primary',{ascending:false}).order('created_at',{ascending:true});
   return data||[];
 };
+/* Which of the account's businesses currently have the $499/mo upgrade
+   — drives "Subir a Premium" vs "Cancelar Premium" per row in Mis
+   negocios. */
+MC.myBusinessPremiumUpgrades=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const {data}=await sb.from('business_premium_upgrades').select('business_id').eq('profile_id',uid);
+  return (data||[]).map(r=>r.business_id);
+};
+/* Only called from checkPaymentReturn() after a real Stripe redirect
+   back with ?paid=business_premium_upgrade — the RLS insert policy
+   already restricts this to the caller's own non-primary business, and
+   enforce_producto_cap picks up the new row immediately. */
+MC.submitBusinessPremiumUpgrade=async function(businessId){
+  return sb.from('business_premium_upgrades').insert({business_id:businessId});
+};
+/* Self-service, month-to-month cancel — the resident's own RLS delete
+   policy on this table already scopes it to their own row. Writes an
+   admin cancellation reminder automatically (a DB trigger, not this
+   code) so the founder knows to stop the actual Stripe subscription. */
+MC.cancelBusinessPremiumUpgrade=async function(businessId){
+  return sb.from('business_premium_upgrades').delete().eq('business_id',businessId);
+};
 
 /* Shared map from the negocio_verificar form payload to business columns,
    used by both insert (verify) and update (edit) so the two never drift.
@@ -787,9 +810,9 @@ MC.submitEvento=async function(d){
    routes here only when the Mercado sub-tab is active. If somehow called
    without one (shouldn't happen given app.js's own gate, but defense in
    depth), returns needsBusiness so the UI can show the verify prompt. */
-MC.submitProducto=async function(d){
+MC.submitProducto=async function(d,businessId){
   const uid=await MC.ready;
-  const biz=await MC.myBusiness();
+  const biz=businessId?await MC.fetchBusinessById(businessId):await MC.myBusiness();
   if(!biz)return {needsBusiness:true};
   return sb.from('productos').insert({
     ...CONTENT_PAYLOAD.productos(d),
@@ -867,9 +890,9 @@ MC.deleteMyPost=async function(table,id){
    Pricing/scheduling ($99/slot, 1/day, 2-week window) is IDENTICAL
    regardless of premium — only the concurrent-slot cap (enforced by a real
    DB trigger, not here) differs by tier. */
-MC.submitOferta=async function(d,slotDs,isFull){
+MC.submitOferta=async function(d,slotDs,isFull,businessId){
   const uid=await MC.ready;
-  const biz=await MC.myBusiness();
+  const biz=businessId?await MC.fetchBusinessById(businessId):await MC.myBusiness();
   if(!biz)return {needsBusiness:true};
   if(isFull){
     const {error}=await sb.from('ofertas_waitlist').insert({business_name:biz.business_name,requested_date:slotDs,submitted_by:uid});

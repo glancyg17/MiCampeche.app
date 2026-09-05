@@ -118,6 +118,8 @@ const STRIPE_LINK_EVENTO_FEATURE='https://buy.stripe.com/9B69AUfqV4il7k64In4F202
 const EVENTO_FEATURE_FEE_MXN=99;
 const STRIPE_LINK_BUSINESS_SETUP='https://buy.stripe.com/28E3cw2E98yB47UdeT4F203?locale=es-419';
 const BUSINESS_SETUP_FEE_MXN=99;
+const STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE='https://buy.stripe.com/9B6fZiceJ1698oaeiX4F204?locale=es-419';
+const BUSINESS_PREMIUM_UPGRADE_FEE_MXN=499;
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
@@ -1587,6 +1589,8 @@ const POST_FORMS={
 let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kind==='oferta'
 let editingPost=null; // {table,id} while the post form is in self-edit mode; set by openMyPostEdit() AFTER openPost() renders, read by submitPost()
 let creatingAdditionalBusiness=false; // set by openAdditionalBusinessForm() AFTER openPost() renders, read by submitPost()'s negocio_verificar branch
+let postBusinessOptions=[]; // this account's published businesses eligible for a new producto/oferta — set inside openPost() itself, just below
+let selectedPostBusinessId=null; // which one the picker (if shown) currently has selected
 
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
@@ -1602,10 +1606,18 @@ async function openPost(kind){
   // Selling in Tienda or posting an Oferta requires a verified AND
   // admin-approved business — verification alone used to be enough
   // (instant self-serve), but now goes through the same moderation queue
-  // as everything else, same as any other submission.
+  // as everything else, same as any other submission. An account can
+  // now own more than one — postBusinessOptions/selectedPostBusinessId
+  // (below) track which one this particular submission is for.
+  postBusinessOptions=[];
+  selectedPostBusinessId=null;
   if(kind==='producto'||kind==='oferta'){
-    if(!acct.business){openBusinessPrompt(kind);return;}
-    if(acct.business.status!=='published'){openBusinessStatusPrompt(acct.business);return;}
+    const owned=acct.businesses||[];
+    if(!owned.length){openBusinessPrompt(kind);return;}
+    postBusinessOptions=owned.filter(b=>b.status==='published');
+    if(!postBusinessOptions.length){openBusinessStatusPrompt(acct.business||owned[0]);return;}
+    const defaultBiz=postBusinessOptions.find(b=>b.is_primary)||postBusinessOptions[0];
+    selectedPostBusinessId=defaultBiz.id;
   }
   // Refresh which days are actually booked right before showing the
   // calendar — bookedDates from initial load could already be stale by
@@ -1614,6 +1626,12 @@ async function openPost(kind){
   if(kind==='eventos')featuredBookingCounts=computeFeatureDayCounts(await MC.fetchFeaturedBookings());
   document.getElementById('modal-title').textContent=form.title;
   let h='';
+  if((kind==='producto'||kind==='oferta')&&postBusinessOptions.length>1){
+    h+=`<div class="form-row" id="row-post-business">
+      <label class="fl">¿Cuál negocio?</label>
+      <div class="seg" id="pf-post-business">${postBusinessOptions.map((b,i)=>`<div class="seg-btn${b.id===selectedPostBusinessId?' on':''}" data-v="${b.id}" onclick="segPick(this);selectedPostBusinessId=this.dataset.v;applyProductoBusinessHints(postBusinessOptions.find(x=>String(x.id)===this.dataset.v));">${e(b.business_name)}</div>`).join('')}</div>
+    </div>`;
+  }
   form.fields.forEach(f=>{
     if(f.type==='note'){h+=`<div class="field-note" id="row-${f.k}">${f.text||''}</div>`;return;}
     h+=`<div class="form-row" id="row-${f.k}"><label class="fl">${f.lbl}</label>`;
@@ -1641,20 +1659,8 @@ async function openPost(kind){
   uploadedImageUrls={};
   form.fields.forEach(f=>{if(f.type==='imgupload')renderPhotoUploadButton(f.k);});
   applyConditionalRows(form);
-  if(kind==='producto'&&acct.business){
-    // A business can only offer fulfillment methods it actually supports —
-    // disable the delivery options if the business profile says it doesn't
-    // deliver, and point back there to change it.
-    if(!acct.business.delivers){
-      document.querySelectorAll('#pf-fulfillment .seg-btn').forEach(b=>{
-        if(b.dataset.v==='entrega'||b.dataset.v==='ambos')b.classList.add('seg-btn-off');
-      });
-      const fr=document.getElementById('row-fulfillment');
-      if(fr)fr.insertAdjacentHTML('beforeend','<div class="field-note">Activa la entrega a domicilio en el perfil de tu negocio para ofrecerla aquí.</div>');
-    }
-    // Buyers reach a business on its business line, not a per-post number.
-    const cr=document.getElementById('row-contact_methods');
-    if(cr&&acct.business.phone)cr.insertAdjacentHTML('beforeend',`<div class="field-note">Los clientes te contactarán al número de tu negocio: ${e(acct.business.phone)}.</div>`);
+  if(kind==='producto'){
+    applyProductoBusinessHints(postBusinessOptions.find(b=>String(b.id)===String(selectedPostBusinessId)));
   }
   if(kind==='clasificado'||kind==='avisos'||kind==='perdidos'||kind==='empleos'){
     // Prefill the contact number from the account so a signed-in poster
@@ -1665,6 +1671,31 @@ async function openPost(kind){
       const cp=document.getElementById('pf-contact_phone');
       if(cp&&!cp.value)cp.value=acct.phone;
     }
+  }
+}
+/* A business can only offer fulfillment methods it actually supports —
+   disable the delivery options if it doesn't deliver, and point back to
+   its profile to change that. Buyers also reach a business on its own
+   business line, not a per-post number. Called once at initial render
+   AND again from the business-picker's onclick above, so switching
+   which business a producto is for keeps these hints in sync rather
+   than showing stale info from whichever business was selected first. */
+function applyProductoBusinessHints(biz){
+  document.querySelectorAll('#pf-fulfillment .seg-btn').forEach(b=>b.classList.remove('seg-btn-off'));
+  const existingFrNote=document.querySelector('#row-fulfillment .field-note');
+  if(existingFrNote)existingFrNote.remove();
+  if(biz&&!biz.delivers){
+    document.querySelectorAll('#pf-fulfillment .seg-btn').forEach(b=>{
+      if(b.dataset.v==='entrega'||b.dataset.v==='ambos')b.classList.add('seg-btn-off');
+    });
+    const fr=document.getElementById('row-fulfillment');
+    if(fr)fr.insertAdjacentHTML('beforeend','<div class="field-note">Activa la entrega a domicilio en el perfil de tu negocio para ofrecerla aquí.</div>');
+  }
+  const cr=document.getElementById('row-contact_methods');
+  if(cr){
+    const existingCrNote=cr.querySelector('.field-note');
+    if(existingCrNote)existingCrNote.remove();
+    if(biz&&biz.phone)cr.insertAdjacentHTML('beforeend',`<div class="field-note">Los clientes te contactarán al número de tu negocio: ${e(biz.phone)}.</div>`);
   }
 }
 
@@ -2088,6 +2119,7 @@ function renderAccountSignedIn(acct){
 }
 
 let myBusinessesList=[];
+let myBusinessUpgradedIds=[];
 let viewingBusinessId=null; // set by openBusinessProfile(id), read by openBusinessEdit()/refreshBusinessProfile() so they act on whichever business is currently open
 
 /* "Mis negocios" — only reachable once an account has 2+ businesses (see
@@ -2098,7 +2130,9 @@ async function openMyBusinesses(){
   document.getElementById('modal-title').textContent='Mis negocios';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
-  myBusinessesList=await MC.myBusinesses();
+  const [list,upgraded]=await Promise.all([MC.myBusinesses(),MC.myBusinessPremiumUpgrades()]);
+  myBusinessesList=list;
+  myBusinessUpgradedIds=upgraded;
   renderMyBusinesses();
 }
 function renderMyBusinesses(){
@@ -2106,15 +2140,24 @@ function renderMyBusinesses(){
   const canAddMore=!!(primary&&primary.is_premium)&&myBusinessesList.length<5;
   document.getElementById('modal-title').textContent=`Mis negocios (${myBusinessesList.length})`;
   document.getElementById('modal-body').innerHTML=myBusinessesList.map(b=>{
-    const statusLbl=b.status==='pending'?'En revisión':b.status==='rejected'?'No aprobado':b.is_premium?'Premium':'Verificado';
-    return `<button class="menu-item" onclick="openBusinessProfile('${b.id}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
-      ${b.business_image_url?`<img src="${e(b.business_image_url)}" style="width:34px;height:34px;object-fit:cover;border-radius:9px;flex-shrink:0">`:`<span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>`}
-      <span class="menu-item-txt">
-        <span class="menu-item-lbl">${e(b.business_name)}${b.is_primary?' · Principal':''}</span>
-        <span class="menu-item-sub">${statusLbl}${b.category?' · '+e(b.category):''}</span>
-      </span>
-      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-    </button>`;
+    const isUpgraded=myBusinessUpgradedIds.includes(b.id);
+    const statusLbl=b.status==='pending'?'En revisión':b.status==='rejected'?'No aprobado':(b.is_premium||isUpgraded)?'Premium':'Verificado';
+    const showPremiumAction=!b.is_primary&&b.status==='published';
+    return `<div style="margin-bottom:4px">
+      <button class="menu-item" onclick="openBusinessProfile('${b.id}')" style="border:1.5px solid var(--line2);${showPremiumAction?'border-bottom:none;border-radius:var(--rs) var(--rs) 0 0':'border-radius:var(--rs)'}">
+        ${b.business_image_url?`<img src="${e(b.business_image_url)}" style="width:34px;height:34px;object-fit:cover;border-radius:9px;flex-shrink:0">`:`<span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>`}
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">${e(b.business_name)}${b.is_primary?' · Principal':''}</span>
+          <span class="menu-item-sub">${statusLbl}${b.category?' · '+e(b.category):''}</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      ${showPremiumAction?(isUpgraded?`
+        <button class="menu-item" onclick="confirmCancelBusinessPremium('${b.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--signal);font-size:12.5px;padding:9px">Cancelar Premium de este negocio</button>
+      `:`
+        <button class="menu-item" onclick="startBusinessPremiumUpgrade('${b.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--gulf);font-size:12.5px;padding:9px">Subir a Premium — $${BUSINESS_PREMIUM_UPGRADE_FEE_MXN} MXN/mes</button>
+      `):''}
+    </div>`;
   }).join('')
   +(canAddMore?`
     <button class="menu-item" onclick="openAdditionalBusinessForm()" style="border:1.5px dashed var(--line2);margin-bottom:4px;color:var(--gulf)">
@@ -2124,6 +2167,40 @@ function renderMyBusinesses(){
   `:(primary&&!primary.is_premium&&myBusinessesList.length===1?`
     <div style="color:var(--ink3);font-size:12px;padding:8px 4px;line-height:1.5">Actualiza tu negocio principal a Premium para poder agregar más negocios.</div>
   `:''));
+}
+/* Look the business up by id rather than passing its name through the
+   onclick chain — names are free text and may contain a single quote,
+   which e()'s escaping doesn't cover and would break the quoted
+   JS-string argument. Same reasoning as confirmDiscardMyPost. */
+function confirmCancelBusinessPremium(businessId){
+  const biz=(myBusinessesList||[]).find(b=>String(b.id)===String(businessId));
+  mcModalPushView('myBusinesses');
+  document.getElementById('modal-title').textContent='Cancelar Premium de este negocio';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:6px">Este negocio vuelve al límite de 2 productos ahora mismo. Detendremos el cobro de $${BUSINESS_PREMIUM_UPGRADE_FEE_MXN} MXN/mes en los próximos días.</div>
+    ${biz?`<div style="font-weight:700;font-size:14px;margin:8px 0 12px">${e(biz.business_name)}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('myBusinesses')">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--signal);color:#fff" id="cancel-biz-premium-btn" onclick="cancelBusinessPremiumUpgrade('${businessId}')">Sí, cancelar Premium</button>
+    </div>
+  `;
+}
+async function cancelBusinessPremiumUpgrade(businessId){
+  const btn=document.getElementById('cancel-biz-premium-btn');
+  if(btn){btn.disabled=true;btn.textContent='Cancelando…';}
+  const {error}=await MC.cancelBusinessPremiumUpgrade(businessId);
+  if(error){toast(pgErrorToast(error,'No se pudo cancelar.'));if(btn){btn.disabled=false;btn.textContent='Sí, cancelar Premium';}return;}
+  toast('Premium cancelado para este negocio');
+  mcModalBack('myBusinesses');
+  openMyBusinesses();
+}
+/* Pay first, then create the upgrade row on return — same reasoning as
+   every other paid add-on in this app (Ofertas, Eventos featuring, the
+   $99 additional-business setup): an unpaid "reservation" would just
+   squat on the thing being paid for. */
+function startBusinessPremiumUpgrade(businessId){
+  sessionStorage.setItem('mc_pending_business_premium_upgrade',JSON.stringify({businessId}));
+  window.location.href=STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE;
 }
 /* Starts the $99 "add another business" flow — same submission form as
    the free first-time one, just flagged so submitPost() routes it
@@ -3299,7 +3376,7 @@ async function submitPost(kind){
 
     if(isFull){
       // Joining a waitlist isn't a confirmed booking — no payment needed.
-      const result=await MC.submitOferta(data,selectedSlotDate,isFull);
+      const result=await MC.submitOferta(data,selectedSlotDate,isFull,selectedPostBusinessId);
       if(result.needsBusiness){if(btn){btn.disabled=false;btn.textContent=originalLabel;}openBusinessPrompt('oferta');return;}
       if(result.error){
         if(btn){btn.disabled=false;btn.textContent=originalLabel;}
@@ -3315,9 +3392,9 @@ async function submitPost(kind){
     // someone to pay for something they can't actually use), then pay
     // BEFORE the booking is created — same reasoning as the concurrent-
     // slot cap: an unpaid "reservation" would just squat on the calendar.
-    const biz=await MC.myBusiness();
+    const biz=selectedPostBusinessId?await MC.fetchBusinessById(selectedPostBusinessId):await MC.myBusiness();
     if(!biz){if(btn){btn.disabled=false;btn.textContent=originalLabel;}openBusinessPrompt('oferta');return;}
-    sessionStorage.setItem('mc_pending_oferta',JSON.stringify({data,slotDs:selectedSlotDate}));
+    sessionStorage.setItem('mc_pending_oferta',JSON.stringify({data,slotDs:selectedSlotDate,businessId:selectedPostBusinessId}));
     window.location.href=STRIPE_LINK_OFERTA;
     return;
   }
@@ -3356,7 +3433,7 @@ async function submitPost(kind){
 
   const handler=SUBMIT_HANDLERS[kind];
   if(!handler){closeModal();return;} // unrecognized kind — nothing to send
-  const result=await handler(data);
+  const result=await handler(data,selectedPostBusinessId);
   if(btn){btn.disabled=false;btn.textContent=originalLabel;}
   if(result&&result.needsBusiness){openBusinessPrompt(kind);return;}
   if(result&&result.error){
@@ -3401,8 +3478,8 @@ async function checkPaymentReturn(){
     const pending=sessionStorage.getItem('mc_pending_oferta');
     if(!pending){toast('Pago recibido, pero no encontramos los detalles de tu oferta. Escríbenos por WhatsApp.');return;}
     sessionStorage.removeItem('mc_pending_oferta');
-    const {data,slotDs}=JSON.parse(pending);
-    const result=await MC.submitOferta(data,slotDs,false);
+    const {data,slotDs,businessId}=JSON.parse(pending);
+    const result=await MC.submitOferta(data,slotDs,false,businessId);
     if(result.error){
       if(isCapReachedError(result.error)){
         toast('Pago recibido, pero llegaste al límite de espacios de tu plan justo antes de que se confirmara. Escríbenos por WhatsApp — te ayudamos a resolverlo.');
@@ -3436,6 +3513,17 @@ async function checkPaymentReturn(){
       return;
     }
     toast('¡Pago recibido! Tu nuevo negocio fue enviado para revisión ✓');
+  } else if(paid==='business_premium_upgrade'){
+    const pending=sessionStorage.getItem('mc_pending_business_premium_upgrade');
+    if(!pending){toast('Pago recibido, pero no encontramos a qué negocio corresponde. Escríbenos por WhatsApp.');return;}
+    sessionStorage.removeItem('mc_pending_business_premium_upgrade');
+    const {businessId}=JSON.parse(pending);
+    const {error}=await MC.submitBusinessPremiumUpgrade(businessId);
+    if(error){
+      toast('Pago recibido, pero no pudimos activarlo — escríbenos por WhatsApp y lo resolvemos.');
+      return;
+    }
+    toast('¡Pago recibido! Este negocio ahora puede tener hasta 10 productos ✓');
   }
 }
 
