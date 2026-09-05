@@ -605,6 +605,27 @@ MC.fetchBookedDates=async function(){
   return new Set(data.map(r=>r.booked_date));
 };
 
+/* Existing (not-yet-expired) featured-event bookings — fetched fresh
+   each time the Eventos form opens, same reasoning as fetchBookedDates:
+   local state could be stale by the time someone opens the form. Raw
+   rows only; js/app.js expands each into per-day counts client-side to
+   drive the feature-window calendar's full/available cells. */
+MC.fetchFeaturedBookings=async function(){
+  const {data,error}=await sb.from('eventos_featured_bookings').select('start_date,end_date').gte('end_date',TODAY_DS);
+  if(error){console.error(error);return [];}
+  return data;
+};
+/* Creates the paid booking — only called from checkPaymentReturn() after
+   a real Stripe redirect back with ?paid=evento_feature, same pattern as
+   MC.submitOferta. The event itself was already submitted for free
+   before the payment redirect; this just attaches the feature window to
+   it. RLS + the capacity trigger do the real enforcement — this can
+   still fail (window filled up while they were paying), and the caller
+   needs to handle that. */
+MC.submitEventoFeature=async function(eventId,startDs){
+  return sb.from('eventos_featured_bookings').insert({event_id:eventId,start_date:startDs});
+};
+
 MC.fetchPerdidos=async function(){
   const {data,error}=await sb.from('perdidos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
@@ -741,7 +762,7 @@ const CONTENT_PAYLOAD={
 
 MC.submitEvento=async function(d){
   const uid=await MC.ready;
-  return sb.from('eventos').insert({...CONTENT_PAYLOAD.eventos(d),submitted_by:uid});
+  return sb.from('eventos').insert({...CONTENT_PAYLOAD.eventos(d),submitted_by:uid}).select('id');
 };
 
 /* Selling in Tienda requires a verified business — the FAB in app.js

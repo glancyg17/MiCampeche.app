@@ -185,6 +185,8 @@ svg{display:block}
 .slot-day{border:1.5px solid var(--line2);border-radius:var(--rs);padding:9px 4px;text-align:center;cursor:pointer;background:#fff}
 .slot-day.full{background:var(--paper3);border-color:var(--line)}
 .slot-day.sel{border-color:var(--gulf);background:var(--gulf);color:#fff}
+.slot-day.sel-mid{border-color:var(--gulf-soft);background:var(--gulf-soft);color:#fff}
+.slot-day.sel-mid .slot-day-status{color:rgba(255,255,255,.85)}
 .slot-day-dow{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:inherit;opacity:.7}
 .slot-day-num{font-family:"Fraunces",Georgia,serif;font-size:18px;font-weight:700;line-height:1.3;color:inherit}
 .slot-day-mon{font-size:9.5px;font-weight:600;color:inherit;opacity:.7;margin-bottom:4px}

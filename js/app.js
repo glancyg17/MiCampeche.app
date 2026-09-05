@@ -114,6 +114,8 @@ const MICAMPECHE_EMAIL='hola@micampeche.app';
    language — without it, Stripe auto-detects and can show English. */
 const STRIPE_LINK_OFERTA='https://buy.stripe.com/eVq28sguZ7uxcEqgr54F200?locale=es-419';
 const STRIPE_LINK_PREMIUM='https://buy.stripe.com/bJe5kE7YteWZcEq0s74F201?locale=es-419';
+const STRIPE_LINK_EVENTO_FEATURE='https://buy.stripe.com/9B69AUfqV4il7k64In4F202?locale=es-419';
+const EVENTO_FEATURE_FEE_MXN=99;
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
@@ -511,6 +513,8 @@ function ofertaAgeDays(o){
 const SLOT_FEE_MXN=99;
 const SLOT_WINDOW_DAYS=14;
 let bookedDates=new Set();
+let featuredBookingCounts={}; // ds -> how many active feature windows cover that day, for the feature calendar's full/available cells
+let selectedFeatureStart=null; // set by pickFeatureDay(), read by submitPost() for kind==='eventos'
 
 const SERVICIOS_UTILES=[
   {id:'cfe',name:'CFE — pagar recibo de luz',sub:'Portal oficial · app.cfe.mx',url:'https://app.cfe.mx/Aplicaciones/CCFE/MiEspacio/login.aspx',ico:'bolt'},
@@ -1407,7 +1411,9 @@ const POST_FORMS={
     {k:'website',lbl:'Sitio web o página del evento',type:'url',ph:'https://...',note:'Opcional — página oficial, boletos o red social del evento.'},
     {k:'phone',lbl:'Teléfono de contacto',type:'tel',ph:'981 000 0000',note:'Opcional — se muestra como botón de llamada y WhatsApp.'},
     {k:'photo',lbl:'Foto o cartel del evento',type:'imgupload'},
-    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más...'}
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más...'},
+    {k:'want_feature',lbl:'¿Quieres destacar tu evento?',type:'seg',opts:[['no','No, gracias'],['si',`Sí, destacar por $${EVENTO_FEATURE_FEE_MXN} MXN`]]},
+    {k:'feature_start',lbl:'Elige tu ventana de 3 días',type:'featurecal',showIf:{field:'want_feature',val:'si'},note:'Hasta 4 eventos pueden estar destacados a la vez; se turnan cada hora para que todos tengan visibilidad pareja.'}
   ]},
   producto:{title:'Publicar un producto',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Pastel de tres leches'},
@@ -1521,6 +1527,7 @@ async function openPost(kind){
   // calendar — bookedDates from initial load could already be stale by
   // the time someone opens this form.
   if(kind==='oferta')bookedDates=await MC.fetchBookedDates();
+  if(kind==='eventos')featuredBookingCounts=computeFeatureDayCounts(await MC.fetchFeaturedBookings());
   document.getElementById('modal-title').textContent=form.title;
   let h='';
   form.fields.forEach(f=>{
@@ -1531,6 +1538,7 @@ async function openPost(kind){
     else if(f.type==='seg')h+=`<div class="seg" id="pf-${f.k}">${f.opts.map((o,i)=>`<div class="seg-btn${i===0?' on':''}" data-v="${o[0]}" onclick="segPick(this)">${o[1]}</div>`).join('')}</div>`;
     else if(f.type==='multi')h+=`<div class="fmulti" id="pf-${f.k}">${f.opts.map(o=>`<button type="button" class="mchip${(f.def||[]).includes(o[0])?' on':''}" data-v="${o[0]}" onclick="multiPick(this)">${o[1]}</button>`).join('')}</div>`;
     else if(f.type==='calendar')h+=`<div id="pf-${f.k}">${slotCalendarHtml()}</div>`;
+    else if(f.type==='featurecal')h+=`<div id="pf-${f.k}">${featureCalendarHtml()}</div>`;
     else if(f.type==='monthcal'){
       monthCalView[f.k]=monthCalView[f.k]||{year:new Date().getFullYear(),month:new Date().getMonth()};
       h+=`<div id="pf-${f.k}-cal">${monthCalHtml(f.k)}</div>`;
@@ -1545,6 +1553,7 @@ async function openPost(kind){
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
   selectedSlotDate=null;
+  selectedFeatureStart=null;
   uploadedImageUrls={};
   form.fields.forEach(f=>{if(f.type==='imgupload')renderPhotoUploadButton(f.k);});
   applyConditionalRows(form);
@@ -1622,6 +1631,73 @@ function pickSlotDay(el,isFull){
     btn.textContent=`Pagar $${SLOT_FEE_MXN} y reservar`;
     btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
   }
+}
+/* ══════════════ FEATURE CALENDAR (the 'featurecal' field type) ══════════════
+   Like slotCalendarHtml (Ofertas), but picks a connected 3-day WINDOW
+   instead of a single day, and "full" means picking that day as the
+   START would push some day in the 3-day span to the 4-booking cap —
+   not a simple per-day exact match. featuredBookingCounts is a ds->count
+   map built by computeFeatureDayCounts() from MC.fetchFeaturedBookings(),
+   refreshed each time the form opens. */
+function computeFeatureDayCounts(bookings){
+  const counts={};
+  bookings.forEach(b=>{
+    const end=new Date(b.end_date+'T12:00:00');
+    for(let d=new Date(b.start_date+'T12:00:00');d<=end;d.setDate(d.getDate()+1)){
+      const ds=dToDs(d);
+      counts[ds]=(counts[ds]||0)+1;
+    }
+  });
+  return counts;
+}
+function featureWindowWouldBeFull(startDs){
+  const start=new Date(startDs+'T12:00:00');
+  for(let i=0;i<3;i++){
+    const d=new Date(start);d.setDate(d.getDate()+i);
+    if((featuredBookingCounts[dToDs(d)]||0)>=4)return true;
+  }
+  return false;
+}
+function featureCalendarHtml(){
+  const today=new Date();
+  const days=[];
+  for(let i=0;i<SLOT_WINDOW_DAYS;i++){
+    const d=new Date(today);d.setDate(d.getDate()+i);
+    days.push(d);
+  }
+  const dayNames=['dom','lun','mar','mié','jue','vie','sáb'];
+  const monthNames=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  let h=`<div class="slot-cal-note">${svgIco('clock')}Ventana de 3 días · $${EVENTO_FEATURE_FEE_MXN} MXN</div><div class="slot-cal-grid">`;
+  days.forEach(d=>{
+    const ds=dToDs(d);
+    const isFull=featureWindowWouldBeFull(ds);
+    const isToday=ds===dToDs(today);
+    let selCls='';
+    if(selectedFeatureStart){
+      const start=new Date(selectedFeatureStart+'T12:00:00');
+      const diffDays=Math.round((d-start)/86400000);
+      if(diffDays===0)selCls=' sel';
+      else if(diffDays===1||diffDays===2)selCls=' sel-mid';
+    }
+    h+=`<div class="slot-day${isFull?' full':''}${selCls}" data-ds="${ds}" onclick="pickFeatureDay(this,${isFull})">
+      <div class="slot-day-dow">${dayNames[d.getDay()]}${isToday?' · hoy':''}</div>
+      <div class="slot-day-num">${d.getDate()}</div>
+      <div class="slot-day-mon">${monthNames[d.getMonth()]}</div>
+      <div class="slot-day-status">${isFull?'Ocupado':'Libre'}</div>
+    </div>`;
+  });
+  h+=`</div><div class="slot-cal-selected" id="feature-cal-selected"></div>`;
+  return h;
+}
+function pickFeatureDay(el,isFull){
+  if(isFull)return; // unlike Ofertas there's no waitlist concept here — just pick a different window
+  selectedFeatureStart=el.dataset.ds;
+  document.getElementById(el.closest('.form-row').id).innerHTML=featureCalendarHtml();
+  const start=new Date(selectedFeatureStart+'T12:00:00');
+  const end=new Date(start);end.setDate(end.getDate()+2);
+  const monthNamesLong=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const label=`${start.getDate()} al ${end.getDate()} de ${monthNamesLong[end.getMonth()]}`;
+  document.getElementById('feature-cal-selected').innerHTML=`<div class="slot-cal-ok-msg">${svgIco('checkBadge')}Destacarás tu evento del ${label} por $${EVENTO_FEATURE_FEE_MXN} MXN.</div>`;
 }
 /* ══════════════ MONTH CALENDAR (the 'monthcal' field type) ══════════════
    Unlike slotCalendarHtml() (Ofertas' rolling-future-only, occupied/free
@@ -2612,6 +2688,9 @@ async function openMyPostEdit(table,id){
   document.getElementById('modal-title').textContent='Editar publicación';
   applyPostEditFill(cfg.fill(item.raw));
   applyConditionalRows(POST_FORMS[cfg.form]); // re-sync showIf rows now that seg values are set
+  // Featuring is offered at fresh-submission time only, not via self-edit
+  // (out of scope for this step) — hide both rows during edit.
+  ['want_feature','feature_start'].forEach(k=>{const row=document.getElementById('row-'+k);if(row)row.style.display='none';});
   const btn=document.getElementById('post-submit-btn');
   if(btn)btn.textContent='Guardar cambios';
 }
@@ -3085,6 +3164,38 @@ async function submitPost(kind){
     return;
   }
 
+  if(kind==='eventos'){
+    const wantFeature=data.want_feature==='si';
+    if(wantFeature&&!selectedFeatureStart){
+      toast('Elige una ventana de 3 días para destacar tu evento');
+      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+      return;
+    }
+    // The event itself is always free and always goes through the normal
+    // moderation queue — featuring is a paid add-on afterward, never a
+    // gate on the free submission.
+    const result=await MC.submitEvento(data);
+    if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+    if(result.error){toast(pgErrorToast(result.error,'No se pudo enviar tu evento.'));return;}
+    if(!wantFeature){
+      closeModal();
+      toast('Enviado — en revisión antes de publicarse ✓');
+      return;
+    }
+    const eventId=result.data&&result.data[0]&&result.data[0].id;
+    if(!eventId){
+      closeModal();
+      toast('Tu evento fue enviado ✓, pero no pudimos iniciar el pago para destacarlo — escríbenos por WhatsApp.');
+      return;
+    }
+    // Pay BEFORE the featured booking is created — same reasoning as
+    // Ofertas: an unpaid "reservation" would just squat on a scarce
+    // feature window.
+    sessionStorage.setItem('mc_pending_evento_feature',JSON.stringify({eventId,startDs:selectedFeatureStart}));
+    window.location.href=STRIPE_LINK_EVENTO_FEATURE;
+    return;
+  }
+
   const handler=SUBMIT_HANDLERS[kind];
   if(!handler){closeModal();return;} // unrecognized kind — nothing to send
   const result=await handler(data);
@@ -3145,6 +3256,17 @@ async function checkPaymentReturn(){
     toast('¡Pago recibido y espacio reservado! En revisión antes de publicarse ✓');
   } else if(paid==='premium'){
     toast('¡Pago recibido! Activaremos tu cuenta Premium en breve.');
+  } else if(paid==='evento_feature'){
+    const pending=sessionStorage.getItem('mc_pending_evento_feature');
+    if(!pending){toast('Pago recibido, pero no encontramos los detalles de tu evento. Escríbenos por WhatsApp.');return;}
+    sessionStorage.removeItem('mc_pending_evento_feature');
+    const {eventId,startDs}=JSON.parse(pending);
+    const {error}=await MC.submitEventoFeature(eventId,startDs);
+    if(error){
+      toast('Pago recibido, pero esa ventana ya no está disponible — alguien más la reservó mientras pagabas. Escríbenos por WhatsApp para reprogramar.');
+      return;
+    }
+    toast('¡Pago recibido! Tu evento quedará destacado en esas fechas ✓');
   }
 }
 

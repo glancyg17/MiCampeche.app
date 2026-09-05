@@ -1468,6 +1468,82 @@ const fakeClient = {
     assert(text('toast') === '¡Pago recibido! Activaremos tu cuenta Premium en breve.', 'Premium payment return shows a confirmation, not an immediate upgrade');
     assert(!lastUpdate.businesses, 'returning from a Premium payment never calls a client-side update to is_premium — that stays a manual, founder-verified step');
 
+    // ══════════════ Eventos: pay-to-feature ($99, 3-day window) ══════════════
+    // want_feature='no' (the default seg option): the event submits for
+    // free through the normal queue, no Stripe redirect / pending-feature
+    // state at all.
+    await window.openPost('eventos');
+    doc.getElementById('pf-name').value = 'Evento sin destacar';
+    doc.getElementById('pf-loc').value = 'Centro';
+    delete lastInsert.eventos;
+    window.sessionStorage.removeItem('mc_pending_evento_feature');
+    await window.submitPost('eventos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.eventos && lastInsert.eventos.title === 'Evento sin destacar', 'submitting a new event with want_feature="no" calls MC.submitEvento');
+    assert(!window.sessionStorage.getItem('mc_pending_evento_feature'), 'no pending-feature state (and so no Stripe redirect) happens when want_feature is "no"');
+    assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'the normal free-submission toast fires, same as any other event');
+
+    // want_feature='si' + a picked window: MC.submitEvento must run FIRST
+    // (the free event always goes out — featuring is a paid add-on after,
+    // never a gate on the free submission), THEN the pending eventId+
+    // startDs is persisted to sessionStorage before redirecting to pay.
+    // jsdom can't actually follow a cross-origin window.location.href
+    // redirect (same limitation the Ofertas payment-redirect test above
+    // already works around), and Storage objects (sessionStorage) are
+    // legacy platform objects whose built-in methods (setItem) can't be
+    // monkey-patched/spied on the way a plain object or window.open can
+    // — an attempted override is silently dropped per spec, so ordering
+    // isn't verified via a runtime spy. It's instead guaranteed by
+    // submitPost's own code shape: sessionStorage.setItem for the pending
+    // feature data is a single synchronous line that textually follows,
+    // and is unreachable without first passing, the `await
+    // MC.submitEvento(data)` call and its error check — so seeing BOTH
+    // the real insert (lastInsert.eventos) and the persisted pending
+    // record below is exactly what "submitEvento ran first" looks like.
+    await window.openPost('eventos');
+    doc.getElementById('pf-name').value = 'Evento destacado';
+    doc.getElementById('pf-loc').value = 'Centro';
+    window.segPick(doc.querySelector('#pf-want_feature .seg-btn[data-v="si"]'));
+    const featureCell = doc.querySelector('#pf-feature_start .slot-day:not(.full)');
+    assert(!!featureCell, 'the feature-window calendar rendered at least one available start day');
+    window.pickFeatureDay(featureCell, false);
+    const featureStartDs = featureCell.dataset.ds;
+    delete lastInsert.eventos;
+    await window.submitPost('eventos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.eventos && lastInsert.eventos.title === 'Evento destacado', 'MC.submitEvento (the free event insert) is called even when featuring is requested');
+    const pendingFeatureRaw = window.sessionStorage.getItem('mc_pending_evento_feature');
+    assert(!!pendingFeatureRaw, 'the pending eventId+startDs is persisted to sessionStorage before the payment redirect');
+    const pendingFeature = JSON.parse(pendingFeatureRaw);
+    assert(typeof pendingFeature.eventId === 'string' && pendingFeature.eventId.length > 0 && pendingFeature.startDs === featureStartDs, 'the persisted pending data carries the real new event id and the chosen feature-window start date');
+
+    // Simulate landing back from Stripe with ?paid=evento_feature.
+    window.history.pushState({}, '', '/?paid=evento_feature');
+    delete lastInsert.eventos_featured_bookings;
+    await window.checkPaymentReturn();
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.eventos_featured_bookings && lastInsert.eventos_featured_bookings.event_id === pendingFeature.eventId && lastInsert.eventos_featured_bookings.start_date === pendingFeature.startDs, 'checkPaymentReturn calls MC.submitEventoFeature with the real eventId/startDs read back from sessionStorage');
+    assert(text('toast') === '¡Pago recibido! Tu evento quedará destacado en esas fechas ✓', 'a successful feature booking shows the right confirmation toast');
+    assert(!window.sessionStorage.getItem('mc_pending_evento_feature'), 'sessionStorage is cleared after the feature booking completes, so a page refresh cannot re-submit it');
+
+    // featureWindowWouldBeFull: 4 existing bookings all covering the same
+    // 3-day window should block ANY start day whose own 3-day span
+    // touches a day already at the 4-booking cap, and allow any start day
+    // whose span avoids it entirely.
+    SAMPLE.eventos_featured_bookings = [
+      { start_date: ds(10), end_date: ds(12) },
+      { start_date: ds(10), end_date: ds(12) },
+      { start_date: ds(10), end_date: ds(12) },
+      { start_date: ds(10), end_date: ds(12) },
+    ];
+    await window.openPost('eventos'); // re-fetches MC.fetchFeaturedBookings() and recomputes featuredBookingCounts
+    assert(window.featureWindowWouldBeFull(ds(10)) === true, 'a start day that itself is already at the 4-booking cap is full');
+    assert(window.featureWindowWouldBeFull(ds(8)) === true, 'a start day whose 3-day span extends INTO a capped day is full');
+    assert(window.featureWindowWouldBeFull(ds(12)) === true, 'a start day whose 3-day span BEGINS on the last capped day is full');
+    assert(window.featureWindowWouldBeFull(ds(13)) === false, 'a start day whose 3-day span never touches a capped day is available');
+    SAMPLE.eventos_featured_bookings = [];
+    window.closeModal();
+
     // ── Admin unified Pendiente queue (this fixture account is_admin: true) ──
     await window.openAccount();
     assert(text('modal-body').includes('Pendiente'), 'signed-in admin sees the unified Pendiente entry point (a non-admin would not)');
@@ -1684,6 +1760,10 @@ const fakeClient = {
     assert((text('pf-date-cal') || '').includes(e3ExpectedLabel), 'the calendar opens already showing that event\'s own month, not the current month');
     let selCell = doc.querySelector('#pf-date-cal .mcal-day.sel');
     assert(!!selCell && Number(selCell.textContent.trim()) === e3Date.getDate(), 'and with that event\'s exact day already pre-selected');
+    // Featuring is a fresh-submission-only add-on (out of scope to offer
+    // during self-edit) — both new rows must be hidden here.
+    assert(doc.getElementById('row-want_feature') && doc.getElementById('row-want_feature').style.display === 'none', 'self-editing an event hides the "¿Quieres destacar tu evento?" row');
+    assert(doc.getElementById('row-feature_start') && doc.getElementById('row-feature_start').style.display === 'none', 'self-editing an event hides the feature-window calendar row');
 
     // Prev/next navigation re-renders the grid for the adjacent month, and
     // only keeps the sel highlight when the selected date actually falls
