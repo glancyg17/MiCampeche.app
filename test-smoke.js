@@ -33,15 +33,25 @@ function makeChain(getResult, onEq) {
       if (prop === 'then') {
         return (res, rej) => {
           let out = getResult();
-          // The fake ignores MOST filters on purpose (e.g. .eq('status',…) —
-          // several tests rely on getting every SAMPLE row back). It DOES
-          // honor owner-scoping (.eq('submitted_by',…)) and .not(reason,is
-          // null) so the resident-facing "my own posts / my rejections"
-          // queries can be exercised for real.
+          // The fake ignores MOST filters on purpose (e.g. a bare
+          // .eq('status',…) with no owner scoping — several tests rely on
+          // getting every SAMPLE row back, e.g. fetchPendingQueue's real
+          // status='pending' filter is deliberately NOT honored here so
+          // published/rejected fixture rows still surface in those
+          // "queue aggregates..." tests). It DOES honor owner-scoping
+          // (.eq('submitted_by',…)) and .not(reason,is null) so the
+          // resident-facing "my own posts / my rejections" queries can be
+          // exercised for real — and, ONLY when an owner filter is also
+          // present in the same chain (i.e. MC.fetchMyRejections, the one
+          // real query that combines both), a chained .eq('status',…) too,
+          // so a null-reason rejection is distinguishable from that same
+          // user's non-rejected rows.
           if (Array.isArray(out.data)) {
             let rows = out.data;
+            const hasOwnerFilter = eqs.some(([f]) => f === 'submitted_by');
             eqs.forEach(([f, v]) => {
               if (f === 'submitted_by') rows = rows.filter(r => r && r[f] === v);
+              if (f === 'status' && hasOwnerFilter) rows = rows.filter(r => r && r[f] === v);
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
             if (rows !== out.data) out = { ...out, data: rows };
@@ -93,6 +103,10 @@ const SAMPLE = {
     // owned by the test user (uid-1) — a still-pending one and another user's, for MC.fetchMyPosts
     { id: 'pf2', report_type: 'perdido', title: 'Mi reporte pendiente', description: 'x', location: 'Centro', image_url: '', status: 'pending', submitted_by: 'uid-1', created_at: NOW.toISOString() },
     { id: 'pf9', report_type: 'encontrado', title: 'Reporte de otra persona', description: 'x', location: 'Centro', image_url: '', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // pf3: the test user's own REJECTED report with rejection_reason left
+    // NULL — the admin-"Quitar"-without-a-typed-message case. Exercises
+    // MC.fetchMyRejections no longer undercounting a reasonless rejection.
+    { id: 'pf3', report_type: 'perdido', title: 'Mi reporte rechazado sin motivo', description: 'x', location: 'Centro', image_url: '', status: 'rejected', rejection_reason: null, submitted_by: 'uid-1', created_at: NOW.toISOString() },
   ],
   // alertas now also carries pipeline-fed pending rows (status='pending',
   // no submitter). title/source are the automated feed's fields; the
@@ -103,7 +117,13 @@ const SAMPLE = {
   // (pipeline sync time) so the render can be checked to prefer it.
   // source_url exercises the "ver publicación original" link in the modal.
   alertas: [{ id: 'al1', title: 'Corte de agua programado en Zona Norte', alert_type: 'Corte de agua', zone: 'Zona test', description: 'Primer párrafo del aviso oficial.\n\nSegundo párrafo con el detalle de la zona afectada y la duración estimada.', source: 'JAPAY', source_url: 'https://facebook.com/aguakan/posts/123', published_at: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString(), resolved: false, status: 'pending', rejection_reason: 'prueba: no debe aparecer en rechazos de nadie', created_at: NOW.toISOString() }],
-  empleos: [{ id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' }],
+  empleos: [
+    { id: 'j1', title: 'Puesto test', company: 'Empresa test', pay: '$300/día', tags: ['Tiempo completo'], contact_info: '981 555 0001' },
+    // j2: carries a real description — MC.fetchEmpleos previously fetched
+    // it (submitted on the form) but never returned it, so it was never
+    // shown anywhere. Exercises the new openEmpleo() detail view.
+    { id: 'j2', title: 'Mesero/a', company: 'Restaurante El Muelle', pay: '$250/día + propinas', tags: ['Medio tiempo'], description: 'Turno de tarde, de 2pm a 10pm. Se requiere experiencia previa en atención al cliente.', status: 'published', contact_info: '981 555 0002' },
+  ],
   reportes: [{ id: 'r1', category: 'Bache', title: 'Bache test', location_text: 'Calle test', description: 'desc', resolved: false, created_at: NOW.toISOString() }],
   reportes_confirmations: [],
   avisos: [
@@ -111,8 +131,10 @@ const SAMPLE = {
     // count badge and the rejection-reason surfacing in Mis publicaciones.
     { id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', status: 'rejected', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' },
     // av2: the same user's PUBLISHED aviso — so Mis publicaciones spans
-    // more than one status (and, with pf2, more than one table).
-    { id: 'av2', category: 'Seguridad', title: 'Mi aviso publicado', description: 'x', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } },
+    // more than one status (and, with pf2, more than one table). Carries
+    // an image_url (avisos.image_url is a new column) to exercise the
+    // .av-img thumbnail render on the public Avisos card.
+    { id: 'av2', category: 'Seguridad', title: 'Mi aviso publicado', description: 'x', image_url: 'https://example.com/aviso-photo.jpg', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } },
   ],
 };
 
@@ -464,8 +486,23 @@ const fakeClient = {
   assert(!doc.getElementById('modal-bg').classList.contains('on'), 'single-view modal: back / ✕ closes it outright, no nested stack left behind');
   assert(text('job-list') && text('job-list').includes('Puesto test'), 'Empleos rendered real fetched data');
   assert(text('job-list').includes('tel:+529815550001'), 'an Empleos listing with a contact number shows a call button');
+
+  // ── Empleo detail view: the description residents type on submission
+  //    was previously captured but never fetched/shown anywhere. j2
+  //    carries a real description, company, pay, and tags to exercise it. ──
+  assert(text('job-list').includes("openEmpleo('j2')"), 'an Empleos card is clickable through to its detail view');
+  window.openEmpleo('j2');
+  const jobDetail = text('modal-body') || '';
+  assert(doc.getElementById('modal-bg').classList.contains('on'), 'openEmpleo opens the modal');
+  assert(text('modal-title') === 'Mesero/a', 'the modal title shows the job title');
+  assert(jobDetail.includes('$250/día + propinas'), 'the detail view shows the pay');
+  assert(jobDetail.includes('Restaurante El Muelle'), 'the detail view shows the company');
+  assert(jobDetail.includes('Medio tiempo'), 'the detail view shows the tags');
+  assert(jobDetail.includes('Turno de tarde, de 2pm a 10pm'), 'the detail view shows the real description — previously fetched by nothing and shown nowhere');
+  window.closeModal();
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
   assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
+  assert(text('av-list').includes('av-img') && text('av-list').includes("background-image:url('https://example.com/aviso-photo.jpg')"), 'a fetched aviso with an image_url renders the .av-img thumbnail (avisos.image_url is a new column, not previously fetched/rendered at all)');
 
   // ── Reportes "ya no está": social-proof resolution. An open report shows
   //    a distinct resolve-vote button alongside confirm; once 2 different
@@ -980,6 +1017,27 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Elige al menos una forma de contacto' && !lastInsert.avisos, 'a contact number with no channels selected is blocked, nothing written');
 
+    // ── Avisos photo upload: avisos.image_url is a new column — same real
+    //    upload pipeline already exercised for Producto further below,
+    //    just confirming CONTENT_PAYLOAD.avisos actually carries the
+    //    uploaded URL through to the insert. ──
+    await window.openPost('avisos');
+    {
+      const avisoCanvas = createCanvas(400, 400);
+      const actx = avisoCanvas.getContext('2d');
+      actx.fillStyle = 'blue'; actx.fillRect(0, 0, 400, 400);
+      const avisoJpeg = avisoCanvas.toBuffer('image/jpeg');
+      const avisoFile = new window.File([avisoJpeg], 'aviso.jpg', { type: 'image/jpeg' });
+      await window.handlePhotoSelect({ files: [avisoFile] }, 'photo');
+      await new Promise(r => setTimeout(r, 100));
+    }
+    doc.getElementById('pf-title').value = 'Aviso con foto';
+    doc.getElementById('pf-desc').value = 'Descripción con foto adjunta';
+    delete lastInsert.avisos;
+    await window.submitPost('avisos');
+    await new Promise(r => setTimeout(r, 50));
+    assert(lastInsert.avisos && typeof lastInsert.avisos.image_url === 'string' && lastInsert.avisos.image_url.length > 0, 'MC.updatePost/CONTENT_PAYLOAD.avisos includes image_url once a photo was uploaded');
+
     // Claim/unclaim mechanics, now as a real signed-in user.
     const beforeHtml = text('of-list');
     await window.toggleClaim('o1');
@@ -1385,7 +1443,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (18)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the three extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, and the extra public past-eventos row the Pasados-filter test adds) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (20)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, and the extra empleos row the openEmpleo test adds) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
     assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
@@ -1461,7 +1519,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (17)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (19)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real
@@ -1513,7 +1571,7 @@ const fakeClient = {
     await window.openAccount();
     await new Promise(r => setTimeout(r, 20)); // the "N no aprobadas" count loads after the view paints, then re-renders
     assert(text('modal-body').includes('Mis publicaciones'), 'the account view has a "Mis publicaciones" entry for every signed-in resident');
-    assert(text('modal-body').includes('1 no aprobada'), 'it flags the count of rejected posts inline — the trimmed quick-indicator that replaced the full inline list');
+    assert(text('modal-body').includes('2 no aprobadas'), 'it flags the count of rejected posts inline — now includes pf3, a rejected report with rejection_reason left null (e.g. an admin "Quitar" with no typed message), which used to be undercounted');
     assert(!text('modal-body').includes('La descripción no es clara'), 'the full rejection reason is no longer duplicated inline in the account view — it lives in the Mis publicaciones view now');
 
     // ── Mis publicaciones: the resident-facing sibling of the admin
@@ -1525,28 +1583,34 @@ const fakeClient = {
     await window.openMyPosts();
     await new Promise(r => setTimeout(r, 20));
     const mp = () => text('modal-body');
-    assert(/^Mis publicaciones \(5\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, pf2 (pending) in perdidos, e3 (finished) + e4 (active) in eventos');
+    assert(/^Mis publicaciones \(6\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, pf2 (pending) + pf3 (rejected, no reason) in perdidos, e3 (finished) + e4 (active) in eventos');
     // Default tab is Pendiente, and it buckets rejected alongside true
     // pending — neither is currently live, both need the submitter's attention.
-    assert(mp().includes('Pendiente (2)') && mp().includes('Activo (2)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + pf2 (pending) in Pendiente, av2 + e4 in Activo, e3 in Finalizado');
+    assert(mp().includes('Pendiente (3)') && mp().includes('Activo (2)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + pf2 (pending) + pf3 (rejected) in Pendiente, av2 + e4 in Activo, e3 in Finalizado');
     assert(mp().includes('Aviso test') && mp().includes('No aprobado') && mp().includes('La descripción no es clara'), 'a rejected post shows the "No aprobado" badge with the rejection reason inline');
     assert(mp().includes('Mi reporte pendiente') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
     assert(!mp().includes('Mi aviso publicado'), 'a published (active) post does not show up in the default Pendiente tab');
     assert(!mp().includes('Reporte de otra persona'), 'another user\'s post never appears — fetchMyPosts is scoped to the owner');
     assert(!mp().includes('Corte de agua programado en Zona Norte'), 'alertas (owner-less) is excluded from Mis publicaciones entirely');
-    // A rejected post's edit affordance moved into the explicit "Editar y
-    // reenviar" / "Descartar" button pair — the whole card is no longer
-    // itself clickable through to the edit form.
-    assert(mp().includes('Editar y reenviar') && mp().includes('Descartar'), 'a rejected post\'s card shows explicit "Editar y reenviar" and "Descartar" actions');
+    // A rejected post keeps its explicit "Editar y reenviar" action. The
+    // old separate "Descartar" text button is gone — discard is now a
+    // universal trash-icon action in the card header for EVERY status,
+    // backed by the widened "owner can delete own row, any status" RLS
+    // policy (previously rejected-only).
+    assert(mp().includes('Editar y reenviar'), 'a rejected post\'s card still shows "Editar y reenviar"');
+    assert(mp().includes("confirmDiscardMyPost('avisos','av1')"), 'a rejected post\'s card carries the universal discard (trash icon) action, targeting its own table/id');
+    assert(mp().includes("confirmDiscardMyPost('perdidos','pf2')"), 'a non-rejected (pending) post\'s card ALSO carries the discard action, now that the DB allows discarding any status');
     assert(mp().includes("openMyPostEdit('perdidos','pf2')"), 'a plain pending (non-rejected, non-rejected-styled) post is still whole-card tappable into edit, same as before');
 
     // Switch to Activo: the published aviso shows up here instead, with
-    // no Editar/Descartar actions (those are rejected-only).
+    // no "Editar y reenviar" (that stays rejected-only) but it DOES still
+    // get the universal discard action.
     window.setMyPostsTab('active');
     assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'a published post shows the "Publicado" badge, now under the Activo tab');
     assert(mp().includes('Mi evento activo'), 'the future-dated eventos row appears under Activo');
     assert(!mp().includes('Mi evento finalizado'), 'the past-dated eventos row does not appear under Activo');
-    assert(!mp().includes('Editar y reenviar') && !mp().includes('Descartar'), 'a non-rejected item never shows the Editar y reenviar / Descartar actions');
+    assert(!mp().includes('Editar y reenviar'), 'a non-rejected item never shows the rejected-specific "Editar y reenviar" action');
+    assert(mp().includes("confirmDiscardMyPost('avisos','av2')"), 'a published (active) post still carries the universal discard action');
     assert(mp().includes("openMyPostEdit('avisos','av2')"), 'a published, still-editable row is tappable straight into its edit form');
 
     // Switch to Finalizado: only the past-dated event, correctly relabeled

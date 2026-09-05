@@ -17,6 +17,7 @@ const ICO={
   rain:'<path d="M16.5 17a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.4-1.5A4.5 4.5 0 0 0 5.5 17h11z"/><path d="M8 20l-1 2M12 20l-1 2M16 20l-1 2"/>',
   close:'<path d="M18 6L6 18M6 6l12 12"/>',
   checkBadge:'<path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/>',
+  trash:'<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/><path d="M10 11v6M14 11v6"/>',
   phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .3 2 .6 2.9a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1 2.1-.5c.9.3 1.9.5 2.9.6a2 2 0 0 1 1.8 2.1z"/>',
   camera:'<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
   download:'<path d="M12 3v13m0 0l-4-4m4 4l4-4"/><path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
@@ -203,7 +204,13 @@ function initPullToRefresh(){
     activeScr.classList.add('pull-snap');
     if(pullDistance>=PULL_THRESHOLD){
       pullRefreshing=true;
-      activeScr.style.transform=`translateY(${PULL_THRESHOLD}px)`;
+      // Previously snapped straight to PULL_THRESHOLD here regardless of
+      // how far past it the finger actually pulled — a visible backward
+      // jump any time someone overpulled (the common case, since people
+      // tend to pull past the point they feel confident it'll trigger).
+      // The transform is already sitting at the real pulled-to distance
+      // from the last touchmove (capped at PULL_MAX) — just leave it
+      // there through the refresh instead of resetting it.
       indicator.classList.add('spinning');
       indicator.style.opacity='1';
       indicator.style.transform='translate(-50%,-50%) scale(1) rotate(0deg)';
@@ -1145,7 +1152,7 @@ function renderEmpleos(){
      'Envíalo: quien busca trabajo te contacta directo.'],
     'Publicar una vacante',"openPost('empleos')");
   el.innerHTML=pin+EMPLEOS.map(x=>`
-    <div class="job-card" ${admRm('empleos',x.id,x.title)}>
+    <div class="job-card" style="cursor:pointer" onclick="openEmpleo('${x.id}')" ${admRm('empleos',x.id,x.title)}>
       <div class="job-top"><div class="job-title">${e(x.title)}</div><div class="job-pay">${e(x.pay)}</div></div>
       ${x.co?`<div class="job-co">${e(x.co)}</div>`:''}
       ${x.tags.length?`<div class="job-tags">${x.tags.map(t=>`<span class="job-tag">${e(t)}</span>`).join('')}</div>`:''}
@@ -1153,6 +1160,24 @@ function renderEmpleos(){
     </div>
   `).join('');
   wireAdminRemove(el);
+}
+/* Full job detail — modal-based, same pattern as openProdView (Tienda),
+   not a dedicated screen: job content is short enough not to need one.
+   The description residents type in the submission form is stored but
+   was never fetched or displayed anywhere before this — that's the core
+   thing this adds. */
+function openEmpleo(id){
+  const x=EMPLEOS.find(i=>String(i.id)===String(id));
+  if(!x)return;
+  document.getElementById('modal-title').textContent=x.title;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="font-size:16px;font-weight:800;color:var(--signal)">${e(x.pay)}</div>
+    ${x.co?`<div style="font-size:13px;color:var(--ink3)">${e(x.co)}</div>`:''}
+    ${x.tags.length?`<div class="job-tags" style="margin-top:8px">${x.tags.map(t=>`<span class="job-tag">${e(t)}</span>`).join('')}</div>`:''}
+    ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap;margin-top:12px">${e(x.desc)}</div>`:''}
+    <div style="margin-top:14px">${contactCtaRow(x,`Hola, vi la vacante "${x.title}" en MiCampeche y me interesa.`)}</div>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
 }
 
 /* ══════════════ RENDER: PERDIDOS (full page) ══════════════ */
@@ -1303,8 +1328,13 @@ function renderAvisos(){
   el.innerHTML=pin+AVISOS.map(a=>`
     <div class="av-card" ${admRm('avisos',a.id,a.title)}>
       <div class="av-top"><span class="av-cat">${e(a.cat)}</span><span class="av-time">${a.time}</span></div>
-      <div class="av-title">${e(a.title)}</div>
-      <div class="av-desc">${e(a.desc)}</div>
+      <div class="av-main">
+        ${a.img?`<div class="av-img" style="background-image:url('${e(a.img)}')"></div>`:''}
+        <div class="av-main-body">
+          <div class="av-title">${e(a.title)}</div>
+          <div class="av-desc">${e(a.desc)}</div>
+        </div>
+      </div>
       ${contactCtaRow(a,`Hola, vi tu aviso "${a.title}" en MiCampeche.`)}
       <div class="av-foot">
         <span class="av-author">${e(a.author)}</span>
@@ -1432,6 +1462,7 @@ const POST_FORMS={
   avisos:{title:'Publicar un aviso',note:'Un aviso por persona al día. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
     {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Otro']},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Buscamos a un familiar'},
+    {k:'photo',lbl:'Foto (opcional)',type:'imgupload'},
     {k:'desc',lbl:'Mensaje',type:'textarea',ph:'Cuenta los detalles a tus vecinos...'},
     {k:'anon',lbl:'¿Cómo lo firmas?',type:'seg',opts:[['no','Con mi nombre'],['si','Anónimo']]},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['no','No hace falta'],['si','Sí, que me contacten']]},
@@ -2398,14 +2429,16 @@ function renderMyPosts(){
     return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px${editable?';cursor:pointer':''}"${editable?` onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')"`:''}>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <span style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(p.label)}</span>
-        ${postStatusBadge(p.status,myPostsTab)}
+        <div style="display:flex;align-items:center;gap:10px">
+          ${postStatusBadge(p.status,myPostsTab)}
+          <button aria-label="Descartar" style="background:none;border:none;padding:2px;cursor:pointer;color:var(--ink3);display:flex" onclick="event.stopPropagation();confirmDiscardMyPost('${p.table}','${e(String(p.id))}')">${svgIco('trash')}</button>
+        </div>
       </div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(p.title)}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${relTimeEs(p.createdAt)}${editable?' · toca para editar':''}</div>
       ${(isRejected&&p.rejectionReason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(p.rejectionReason)}</div>`:''}
       ${isRejected?`<div style="display:flex;gap:8px;margin-top:10px">
         <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px" onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')">Editar y reenviar</button>
-        <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px;background:var(--paper2);color:var(--ink)" onclick="confirmDiscardMyPost('${p.table}','${e(String(p.id))}')">Descartar</button>
       </div>`:''}
     </div>`;
   }).join('');
@@ -2421,7 +2454,7 @@ function confirmDiscardMyPost(table,id){
   mcModalPushView('myPosts');
   document.getElementById('modal-title').textContent='Descartar publicación';
   document.getElementById('modal-body').innerHTML=`
-    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:6px">Esto borra la publicación por completo — no se puede deshacer.</div>
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:6px">Esto borra la publicación por completo — no se puede deshacer.${item&&item.status==='published'?' Está publicada ahora mismo — otros vecinos ya pueden verla.':''}</div>
     ${item?`<div style="font-weight:700;font-size:14px;margin:8px 0 12px">${e(item.title)}</div>`:''}
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('myPosts')">Cancelar</button>
@@ -2446,7 +2479,8 @@ const MY_POST_EDIT={
   avisos:{form:'avisos',fill:r=>({
     input:{title:r.title,desc:r.description,cat:r.category,contact_phone:r.contact_phone},
     seg:{anon:r.anonymous?'si':'no',want_contact:r.contact_phone?'si':'no'},
-    multi:{contact_methods:r.contact_methods}
+    multi:{contact_methods:r.contact_methods},
+    img:{photo:r.image_url}
   })},
   empleos:{form:'empleos',fill:r=>({
     input:{title:r.title,co:r.company,pay:r.pay,desc:r.description,contact_phone:r.contact_phone},

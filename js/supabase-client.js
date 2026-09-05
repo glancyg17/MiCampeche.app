@@ -473,7 +473,12 @@ MC.fetchMyRejections=async function(){
   const uid=await MC.ready;
   if(!uid)return [];
   const results=await Promise.all(MY_POST_TABLES.map(async ({table,label,titleField,ownerField})=>{
-    const {data,error}=await sb.from(table).select('*').eq(ownerField,uid).eq('status','rejected').not('rejection_reason','is',null);
+    // No longer filters out a rejected row just because rejection_reason
+    // is null (e.g. an admin used the long-press "Quitar" action without
+    // typing the optional message) — that's still a real rejection and
+    // should still count toward "N no aprobadas". A null reason just
+    // means the reason line downstream shows nothing.
+    const {data,error}=await sb.from(table).select('*').eq(ownerField,uid).eq('status','rejected');
     if(error){console.error(error);return [];}
     return (data||[]).map(r=>({table,label,id:r.id,title:r[titleField]||'(sin título)',reason:r.rejection_reason,createdAt:r.created_at}));
   }));
@@ -628,7 +633,7 @@ MC.fetchEmpleos=async function(){
   const {data,error}=await sb.from('empleos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,title:r.title,co:r.company||'',pay:r.pay||'A convenir',tags:r.tags||[],
+  return data.map(r=>({id:r.id,title:r.title,co:r.company||'',pay:r.pay||'A convenir',tags:r.tags||[],desc:r.description||'',
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
 };
 
@@ -672,7 +677,7 @@ MC.fetchAvisos=async function(){
   const {data,error}=await sb.from('avisos').select('*, profiles(display_name)')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',
+  return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',img:r.image_url||'',
     author:r.anonymous?'Vecino anónimo':((r.profiles&&r.profiles.display_name)||'Vecino'),
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[],
     time:relTimeEs(r.created_at)}));
@@ -712,7 +717,7 @@ const CONTENT_PAYLOAD={
     website:(d.website||'').trim()||null,contact_phone:(d.phone||'').trim()||null,
     price_text:(d.price||'').trim()||null
   }),
-  avisos:(d)=>({category:d.cat||null,title:d.title,description:d.desc||null,...optContactFields(d),anonymous:d.anon==='si'}),
+  avisos:(d)=>({category:d.cat||null,title:d.title,description:d.desc||null,image_url:d.photo||null,...optContactFields(d),anonymous:d.anon==='si'}),
   empleos:(d)=>({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,description:d.desc||null,...optContactFields(d)}),
   perdidos:(d)=>({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d)}),
   reportes:(d)=>({category:d.cat||null,title:d.title,location_text:d.loc||null,description:d.desc||null,image_url:d.photo||null}),
