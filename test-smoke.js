@@ -369,6 +369,25 @@ const fakeClient = {
   const realRefreshContent = window.refreshContent;
   window.refreshContent = (...args) => { refreshContentCallCount++; return realRefreshContent(...args); };
 
+  // ── Inicio dashboard: the stat strip is gone, the welcome hero photo
+  //    cycles with the same greeting/time-of-day bucket as the greeting
+  //    text, and Oferta del día is now a hero-style card. ──
+  assert(doc.getElementById('stat-strip') === null, 'the stat strip element no longer exists in the DOM');
+  assert(typeof window.renderStatStrip === 'undefined', 'renderStatStrip is no longer a function');
+  const dashBody = text('dash-body') || '';
+  assert(dashBody.includes('dc-of-hero-img') && dashBody.includes('dc-of-hero-overlay') && !dashBody.includes('dc-of-img'), 'the Oferta del día card uses the new hero-style classes, not the old 48px-thumbnail ones');
+  assert(dashBody.includes('class="dash-card dc-of-hero" onclick="nav(\'tienda\')"'), 'the Oferta del día card still links to Tienda');
+  // Computed from the REAL current hour, the same way renderWelcomeHero()
+  // itself buckets it — no mocking the Date global, matching how ds()
+  // elsewhere in this file already derives fixture dates from real time.
+  const heroHour = new Date().getHours();
+  const expectedHeroCls = (heroHour >= 3 && heroHour < 12) ? 'wh-am' : (heroHour >= 12 && heroHour < 19 ? 'wh-pm' : 'wh-noche');
+  const expectedGreet = (heroHour >= 3 && heroHour < 12) ? 'Buenos días' : (heroHour >= 12 && heroHour < 19 ? 'Buenas tardes' : 'Buenas noches');
+  const heroEl = doc.getElementById('welcome-hero');
+  const heroClasses = ['wh-am', 'wh-pm', 'wh-noche'].filter(c => heroEl.classList.contains(c));
+  assert(heroClasses.length === 1 && heroClasses[0] === expectedHeroCls, 'the welcome hero carries exactly one wh-am/wh-pm/wh-noche class, matching the real current time-of-day bucket');
+  assert((heroEl.innerHTML || '').includes(expectedGreet), 'the hero class matches whichever greeting text is actually showing');
+
   assert(text('news-list') && text('news-list').includes('Titular de prueba'), 'Noticias rendered real fetched data');
   assert(text('news-list').includes('news-desc'), 'a noticia WITH a summary shows its description line');
   assert(text('evt-list') && text('evt-list').includes('Evento de prueba'), 'Eventos rendered real fetched data');

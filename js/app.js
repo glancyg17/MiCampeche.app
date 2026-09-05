@@ -652,36 +652,23 @@ const WELCOME_TAGLINES=[
   'Lo que pasa en Campeche, primero aquí.',
   'Tu ciudad, un solo lugar.'
 ];
+/* The hero photo cycles with the same greeting/time-of-day bucket
+   computed below — one real photo per part of the day, not an autoplay
+   carousel. See .welcome-hero.wh-* in css/styles.css. */
 function renderWelcomeHero(){
   const hour=new Date().getHours();
   // Buenos días: 3am–11:59am · Buenas tardes: 12pm–6:59pm · Buenas noches: 7pm–2:59am (wraps past midnight)
-  const greet=(hour>=3&&hour<12)?'Buenos días':(hour>=12&&hour<19)?'Buenas tardes':'Buenas noches';
+  const isAm=hour>=3&&hour<12,isPm=hour>=12&&hour<19;
+  const greet=isAm?'Buenos días':(isPm?'Buenas tardes':'Buenas noches');
+  const heroCls=isAm?'wh-am':(isPm?'wh-pm':'wh-noche');
   const tagline=WELCOME_TAGLINES[new Date().getDate()%WELCOME_TAGLINES.length];
-  document.getElementById('welcome-hero').innerHTML=`
+  const hero=document.getElementById('welcome-hero');
+  hero.className='welcome-hero '+heroCls;
+  hero.innerHTML=`
     <div class="welcome-greet">${greet} 👋</div>
     <div class="welcome-city">San Francisco de Campeche</div>
     <div class="welcome-tag">${tagline}</div>
     <div class="welcome-crenel"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
-  `;
-}
-/* ══════════════ KANBAN STAT STRIP ══════════════ */
-function renderStatStrip(){
-  const vacantes=EMPLEOS.length;
-  const alertasActivas=ALERTAS.filter(a=>a.cls!=='resolved').length;
-  const reportesAbiertos=REPORTES.filter(r=>r.status==='abierto').length;
-  document.getElementById('stat-strip').innerHTML=`
-    <div class="stat-tile" onclick="openAnunciosTo('empleos')">
-      <div class="stat-tile-val">${vacantes}</div>
-      <div class="stat-tile-lbl">Vacantes</div>
-    </div>
-    <div class="stat-tile" onclick="openAnunciosTo('alertas')">
-      <div class="stat-tile-val${alertasActivas?' alert':''}">${alertasActivas}</div>
-      <div class="stat-tile-lbl">Alertas activas</div>
-    </div>
-    <div class="stat-tile" onclick="openReportarTo('reportes')">
-      <div class="stat-tile-val${reportesAbiertos?' alert':''}">${reportesAbiertos}</div>
-      <div class="stat-tile-lbl">Reportes abiertos</div>
-    </div>
   `;
 }
 
@@ -715,7 +702,6 @@ function shuffle(arr){
 function renderInicio(){
   const w=WEATHER;
   renderWelcomeHero();
-  renderStatStrip();
   startEventosRotation();
 
   const topNews=NOTICIAS.slice(0,2);
@@ -731,13 +717,13 @@ function renderInicio(){
     const claimed=o.claimed+(claimedByMe[o.id]?1:0);
     const pct=Math.round((1-o.priceNow/o.priceWas)*100);
     h+=dashSection('tienda','Oferta del día','tienda', `
-      <div class="dash-card dc-of" onclick="nav('tienda')">
-        <div class="dc-of-img" style="background-image:url('${o.img}')"></div>
-        <div class="dc-of-body">
-          <div class="dc-of-name">${e(o.name)}</div>
-          <div class="dc-of-price">$${o.priceNow} <span>en vez de $${o.priceWas}</span></div>
+      <div class="dash-card dc-of-hero" onclick="nav('tienda')">
+        <div class="dc-of-hero-img" style="background-image:url('${o.img}')"></div>
+        <span class="dc-of-hero-pct">-${pct}%</span>
+        <div class="dc-of-hero-overlay">
+          <div class="dc-of-hero-name">${e(o.name)}</div>
+          <div class="dc-of-hero-price">$${o.priceNow} <span>en vez de $${o.priceWas}</span></div>
         </div>
-        <span class="dc-of-pct">-${pct}%</span>
       </div>
     `);
   }
@@ -770,9 +756,6 @@ function dashSection(ico,label,goTab,cardsHtml){
     </div>
   `;
 }
-// Jump into a tab AND pre-select its sub-toggle in one action, used by dashboard cards
-function openAnunciosTo(mode){nav('anuncios');setAnunciosMode(mode);}
-function openReportarTo(mode){nav('reportar');setReportarMode(mode);}
 
 /* ══════════════ RENDER: NOTICIAS (now a plain full page, no toggle) ══════════════ */
 function renderNoticias(){
