@@ -511,14 +511,23 @@ MC.fetchNoticias=async function(){
 };
 
 MC.fetchEventos=async function(){
+  // Widen the lower bound to 7 days back (from "today onward") so a
+  // finished event stays fetchable — and filterable via the new
+  // "Pasados" date chip — for the same ~7-day window the daily
+  // cleanup-expired-eventos job keeps it in the DB before deleting it.
+  // The default/upcoming date filters (Todas las fechas, Hoy, Esta
+  // semana, Próximamente) still only show what hasn't finished yet —
+  // see evtFinished()/evtInDateRange() in js/app.js, which exclude a
+  // finished event from every bucket except Pasados.
+  const sevenDaysAgo=dToDs(new Date(Date.now()-7*86400000));
   const {data,error}=await sb.from('eventos').select('*')
-    .eq('status','published').gte('event_date',TODAY_DS).order('event_date',{ascending:true}).limit(60);
+    .eq('status','published').gte('event_date',sevenDaysAgo).order('event_date',{ascending:true}).limit(60);
   if(error){console.error(error);return [];}
   return data.map(r=>{
     const {day,mon}=dsToDayMon(r.event_date);
     const hasRange=r.end_date&&r.end_date!==r.event_date;
     return {
-      id:r.id,cat:r.category||'Otro',name:r.title,ds:r.event_date,day,mon,
+      id:r.id,cat:r.category||'Otro',name:r.title,ds:r.event_date,endDs:r.end_date||r.event_date,day,mon,
       time:r.event_time||'',loc:r.location||'',
       desc:r.description||'',img:r.image_url||'',
       website:r.website||'',phone:r.contact_phone||'',

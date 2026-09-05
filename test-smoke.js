@@ -77,6 +77,11 @@ const SAMPLE = {
     // them apart — only the date does.
     { id: 'e3', title: 'Mi evento finalizado', category: 'Cultura', event_date: ds(-8), event_time: '6:00 PM', location: 'Centro', source: 'user', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() },
     { id: 'e4', title: 'Mi evento activo', category: 'Cultura', event_date: ds(5), event_time: '6:00 PM', location: 'Centro', source: 'user', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    // e5: a PUBLIC (not owned by uid-1) finished event, inside the 7-day
+    // grace window MC.fetchEventos now widens to — for the Eventos tab's
+    // new "Pasados" date filter, as distinct from e3's Mis-publicaciones
+    // Finalizado-tab coverage above.
+    { id: 'e5', title: 'Evento de la semana pasada', category: 'Cultura', event_date: ds(-3), event_time: '5:00 PM', location: 'Centro', source: 'user', status: 'published' },
   ],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
@@ -382,6 +387,31 @@ const fakeClient = {
   assert(evd.includes('wa.me/529815551234') && evd.includes('tel:+529815551234'), 'event detail offers WhatsApp + call handoff to the organizer number');
   assert(evd.includes('Precio') && evd.includes('$150'), 'event detail shows the ticket price');
   assert(text('evt-list').includes('$150'), 'event card shows the ticket price');
+
+  // ── "Pasados" date filter: MC.fetchEventos now fetches back to 7 days
+  //    ago (matching the daily cleanup-expired-eventos job's own grace
+  //    window), and evtInDateRange/evtFinished hide anything finished from
+  //    every OTHER bucket, surfacing it only under Pasados. e5 (published,
+  //    3 days in the past) exercises this; e3 (Mis publicaciones' own
+  //    finished-event fixture, 8 days in the past — still inside the
+  //    7-day fetch window) doubles as a second, owner-tagged case. ──
+  window.setEvtDateFilter('all');
+  assert(!text('evt-list').includes('Evento de la semana pasada'), 'a finished event does not appear under the default "Todas las fechas" filter');
+  window.setEvtDateFilter('hoy');
+  assert(!text('evt-list').includes('Evento de la semana pasada'), 'a finished event does not appear under "Hoy" either');
+  window.setEvtDateFilter('semana');
+  assert(!text('evt-list').includes('Evento de la semana pasada'), 'nor under "Esta semana"');
+  window.setEvtDateFilter('proximamente');
+  assert(!text('evt-list').includes('Evento de la semana pasada'), 'nor under "Próximamente" — every upcoming-facing bucket excludes it');
+  window.setEvtDateFilter('pasados');
+  assert(text('evt-list').includes('Evento de la semana pasada'), 'the new "Pasados" filter is the one place a finished event shows up');
+  assert(!text('evt-list').includes('Evento de prueba<'), 'a genuinely future event (e1) does not appear under "Pasados"');
+  // Category filtering still combines correctly with the Pasados date filter.
+  window.setEvtFilter('Cultura');
+  assert(text('evt-list').includes('Evento de la semana pasada'), 'Pasados + a matching category still shows the finished event');
+  window.setEvtFilter('all');
+  window.setEvtDateFilter('all');
+
   window.nav('inicio'); // restore the default screen for the pull-to-refresh test below
 
   // ── Weather modal shows the date & time it was opened ──
@@ -1336,7 +1366,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (17)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the three extra owner-tagged perdidos/avisos rows, and the two extra owner-tagged eventos rows the Mis-publicaciones tests add) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (18)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the three extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, and the extra public past-eventos row the Pasados-filter test adds) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
     assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
@@ -1412,7 +1442,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
-    assert(text('modal-title') === 'Pendiente (16)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (17)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real

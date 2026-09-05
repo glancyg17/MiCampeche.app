@@ -844,8 +844,11 @@ function renderEvtChips(){
 }
 function setEvtFilter(c){evtFilter=c;renderEvtChips();renderEventos();}
 /* Quick date filter — same chip control as the category row, just a
-   separate scroll row above it (#evt-date-chips). */
-const EVT_DATE_OPTS=[['all','Todas las fechas'],['hoy','Hoy'],['semana','Esta semana'],['proximamente','Próximamente']];
+   separate scroll row above it (#evt-date-chips). "Pasados" is the odd
+   one out: every other option is implicitly upcoming-only (see
+   evtInDateRange below) — Pasados is the sole way to see an event whose
+   last day has already passed. */
+const EVT_DATE_OPTS=[['all','Todas las fechas'],['hoy','Hoy'],['semana','Esta semana'],['proximamente','Próximamente'],['pasados','Pasados']];
 function renderEvtDateChips(){
   const el=document.getElementById('evt-date-chips');
   if(!el)return;
@@ -854,19 +857,29 @@ function renderEvtDateChips(){
   ).join('');
 }
 function setEvtDateFilter(v){evtDateFilter=v;renderEvtDateChips();renderEventos();}
-/* MC.fetchEventos already drops anything before today, so the buckets are:
-   hoy = exactly today · semana = today..+6d · proximamente = 7+ days out. */
-function evtInDateRange(ds){
-  if(evtDateFilter==='all'||!ds)return true;
-  if(evtDateFilter==='hoy')return ds===TODAY_DS;
-  const diffDays=Math.round((new Date(ds+'T12:00:00')-new Date(TODAY_DS+'T12:00:00'))/86400000);
+/* An event is "finished" once its last day (endDs — end_date, falling
+   back to event_date for single-day events) is before today — the same
+   boundary the daily cleanup-expired-eventos job uses, and the same one
+   "Mis publicaciones" uses for its Finalizado tab. MC.fetchEventos now
+   fetches back to 7 days ago (matching that job's own grace window)
+   specifically so this filter has something to show. */
+function evtFinished(x){return !!x.endDs&&x.endDs<TODAY_DS;}
+/* MC.fetchEventos's window is now [7 days ago .. future], but every
+   bucket except "Pasados" should still mean "hasn't finished yet". */
+function evtInDateRange(x){
+  const finished=evtFinished(x);
+  if(evtDateFilter==='pasados')return finished;
+  if(finished)return false;
+  if(evtDateFilter==='all'||!x.ds)return true;
+  if(evtDateFilter==='hoy')return x.ds===TODAY_DS;
+  const diffDays=Math.round((new Date(x.ds+'T12:00:00')-new Date(TODAY_DS+'T12:00:00'))/86400000);
   if(evtDateFilter==='semana')return diffDays>=0&&diffDays<=6;
   if(evtDateFilter==='proximamente')return diffDays>6;
   return true;
 }
 function renderEventos(){
   renderEvtDateChips();
-  const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&evtInDateRange(x.ds));
+  const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&evtInDateRange(x));
   const el=document.getElementById('evt-list');
   const pin=onboardCard('eventos','eventos','Publica tu propio evento',
     '¿Organizas algo en Campeche? Compártelo aquí, gratis.',
