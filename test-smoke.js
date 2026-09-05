@@ -1038,6 +1038,37 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 50));
     assert(lastInsert.avisos && typeof lastInsert.avisos.image_url === 'string' && lastInsert.avisos.image_url.length > 0, 'MC.updatePost/CONTENT_PAYLOAD.avisos includes image_url once a photo was uploaded');
 
+    // ── Eventos month calendar (new submission): unlike Ofertas' rolling
+    //    slot calendar (rejects "Ocupado" days), the eventos date field has
+    //    NO availability concept at all — every day, including a day in
+    //    the PAST relative to real "now", must be pickable and must reach
+    //    CONTENT_PAYLOAD.eventos as event_date. ──
+    await window.openPost('eventos');
+    assert(!!doc.getElementById('pf-date-cal'), 'the eventos form renders a month-calendar picker, not a native date input');
+    window.shiftMonthCal('date', -1); // navigate back a month — guarantees a definitely-PAST day is selectable regardless of today's date
+    const prevMonthCells = [...doc.querySelectorAll('#pf-date-cal .mcal-day:not(.empty)')];
+    assert(prevMonthCells.length > 0, 'the previous month\'s grid renders real day cells');
+    const nowForCal = new Date();
+    let pastY = nowForCal.getFullYear(), pastM = nowForCal.getMonth() - 1;
+    if (pastM < 0) { pastM = 11; pastY--; }
+    const expectedPastDs = `${pastY}-${String(pastM + 1).padStart(2, '0')}-01`;
+    // jsdom is loaded with runScripts:'outside-only', which — same as
+    // every other inline onclick=".." attribute in this codebase's forms
+    // (segPick/multiPick/pickSlotDay are all invoked the same way in the
+    // rest of this suite) — doesn't execute inline HTML event-handler
+    // attributes; call the real handler the cell's onclick would have
+    // called directly instead of doing el.click().
+    window.pickMonthCalDay('date', expectedPastDs);
+    const clickedSelCell = doc.querySelector('#pf-date-cal .mcal-day.sel');
+    assert(!!clickedSelCell && clickedSelCell.textContent.trim() === '1', 'picking a day cell in the rendered calendar marks it selected');
+    doc.getElementById('pf-name').value = 'Evento con fecha pasada';
+    doc.getElementById('pf-loc').value = 'Centro';
+    delete lastInsert.eventos;
+    await window.submitPost('eventos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.eventos && lastInsert.eventos.event_date === expectedPastDs, 'a PAST date picked in the month calendar is sent as event_date — nothing blocks it, unlike Ofertas\' occupied/free slot calendar');
+    window.closeModal();
+
     // Claim/unclaim mechanics, now as a real signed-in user.
     const beforeHtml = text('of-list');
     await window.toggleClaim('o1');
@@ -1637,6 +1668,32 @@ const fakeClient = {
     assert(lastUpdate.avisos.status === 'pending' && lastUpdate.avisos.rejection_reason === null, 'the client explicitly re-queues a self-edit as pending and clears any prior rejection reason — this must not rely solely on the edit trigger, since that trigger deliberately no-ops for an admin editing their own post');
     assert(text('toast') === 'Cambios guardados — vuelve a revisión ✓', 'a confirmation toast fires after a successful self-edit');
     assert(refreshContentCallCount > refreshCountBeforeSelfEdit, 'a successful self-edit re-fetches/re-renders the public content lists too, not just Mis Publicaciones');
+
+    // ── Eventos month calendar: self-editing e3 (event_date 8 days in the
+    //    past) should open the calendar already showing THAT event's month
+    //    with that exact day pre-selected — MY_POST_EDIT.eventos moved
+    //    `date` out of the plain `input` bucket into a new `monthcal`
+    //    bucket specifically so applyPostEditFill can drive this. ──
+    const MCAL_MONTHS_ES_TEST = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const e3Raw = SAMPLE.eventos.find(x => x.id === 'e3');
+    const e3Date = new Date(e3Raw.event_date + 'T12:00:00');
+    await window.openMyPostEdit('eventos', 'e3');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Editar publicación' && !!doc.getElementById('pf-date-cal'), 'self-editing an event opens the real post form with the month-calendar field');
+    const e3ExpectedLabel = `${MCAL_MONTHS_ES_TEST[e3Date.getMonth()]} ${e3Date.getFullYear()}`;
+    assert((text('pf-date-cal') || '').includes(e3ExpectedLabel), 'the calendar opens already showing that event\'s own month, not the current month');
+    let selCell = doc.querySelector('#pf-date-cal .mcal-day.sel');
+    assert(!!selCell && Number(selCell.textContent.trim()) === e3Date.getDate(), 'and with that event\'s exact day already pre-selected');
+
+    // Prev/next navigation re-renders the grid for the adjacent month, and
+    // only keeps the sel highlight when the selected date actually falls
+    // within whatever month is now showing.
+    window.shiftMonthCal('date', 1); // one month forward from e3's month — the selected day does NOT live here
+    assert(!doc.querySelector('#pf-date-cal .mcal-day.sel'), 'navigating to a month that doesn\'t contain the selected date shows no sel highlight at all');
+    window.shiftMonthCal('date', -1); // back to e3's real month
+    selCell = doc.querySelector('#pf-date-cal .mcal-day.sel');
+    assert(!!selCell && Number(selCell.textContent.trim()) === e3Date.getDate(), 'navigating back to the month that DOES contain the selected date re-shows its sel highlight — the selection itself was never lost, just not rendered while viewing elsewhere');
+    window.mcModalBack('myPosts');
 
     // ── "Descartar" on a rejected post: a real DELETE (RLS-gated to
     //    status='rejected' rows, verified live against Supabase — nothing

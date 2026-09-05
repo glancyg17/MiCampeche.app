@@ -1400,7 +1400,7 @@ const POST_FORMS={
   eventos:{title:'Publicar un evento',fields:[
     {k:'name',lbl:'Nombre del evento',type:'text',ph:'Ej. Tianguis nocturno'},
     {k:'cat',lbl:'Categoría',type:'select',opts:['Mercado','Cultura','Deporte','Comunidad','Música','Otro']},
-    {k:'date',lbl:'Fecha',type:'date'},
+    {k:'date',lbl:'Fecha',type:'monthcal'},
     {k:'time',lbl:'Hora',type:'time'},
     {k:'loc',lbl:'Lugar',type:'text',ph:'Dirección o punto de referencia'},
     {k:'price',lbl:'Precio de entrada',type:'text',ph:'Ej. Gratis, $150, $150–$300',note:'Opcional — déjalo en blanco si no aplica.'},
@@ -1502,6 +1502,7 @@ let editingPost=null; // {table,id} while the post form is in self-edit mode; se
 async function openPost(kind){
   const form=POST_FORMS[kind];if(!form)return;
   editingPost=null; // any fresh form start clears a stale edit target; openMyPostEdit re-sets it after this returns
+  monthCalSelected={};monthCalView={}; // reset so a fresh form always starts on the current month with nothing picked; applyPostEditFill overwrites both for a self-edit
   // A real account is required for ANY write, and its phone must already
   // be verified — both enforced at the database layer too (is_verified_writer
   // RLS), not just here for UX. Comes first, before the business check
@@ -1530,6 +1531,10 @@ async function openPost(kind){
     else if(f.type==='seg')h+=`<div class="seg" id="pf-${f.k}">${f.opts.map((o,i)=>`<div class="seg-btn${i===0?' on':''}" data-v="${o[0]}" onclick="segPick(this)">${o[1]}</div>`).join('')}</div>`;
     else if(f.type==='multi')h+=`<div class="fmulti" id="pf-${f.k}">${f.opts.map(o=>`<button type="button" class="mchip${(f.def||[]).includes(o[0])?' on':''}" data-v="${o[0]}" onclick="multiPick(this)">${o[1]}</button>`).join('')}</div>`;
     else if(f.type==='calendar')h+=`<div id="pf-${f.k}">${slotCalendarHtml()}</div>`;
+    else if(f.type==='monthcal'){
+      monthCalView[f.k]=monthCalView[f.k]||{year:new Date().getFullYear(),month:new Date().getMonth()};
+      h+=`<div id="pf-${f.k}-cal">${monthCalHtml(f.k)}</div>`;
+    }
     else if(f.type==='imgupload')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else h+=`<input class="fi" id="pf-${f.k}" type="${f.type}" placeholder="${f.ph||''}">`;
     if(f.note)h+=`<div class="field-note">${f.note}</div>`;
@@ -1617,6 +1622,51 @@ function pickSlotDay(el,isFull){
     btn.textContent=`Pagar $${SLOT_FEE_MXN} y reservar`;
     btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
   }
+}
+/* ══════════════ MONTH CALENDAR (the 'monthcal' field type) ══════════════
+   Unlike slotCalendarHtml() (Ofertas' rolling-future-only, occupied/free
+   day picker), this is a real month-grid with prev/next navigation and
+   NO availability concept — every day is selectable, including the past.
+   monthCalView tracks which month is currently displayed per field key;
+   monthCalSelected tracks the picked date per field key. Both reset to
+   defaults at the top of openPost() and are overwritten by
+   applyPostEditFill() for a self-edit. */
+let monthCalView={};
+let monthCalSelected={};
+const MCAL_MONTHS_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const MCAL_DOW_ES=['D','L','M','M','J','V','S'];
+function monthCalHtml(fieldKey){
+  const v=monthCalView[fieldKey];
+  const daysInMonth=new Date(v.year,v.month+1,0).getDate();
+  const leadBlanks=new Date(v.year,v.month,1).getDay();
+  let cells='';
+  for(let i=0;i<leadBlanks;i++)cells+=`<div class="mcal-day empty"></div>`;
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=`${v.year}-${String(v.month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday=ds===TODAY_DS;
+    const isSel=monthCalSelected[fieldKey]===ds;
+    cells+=`<div class="mcal-day${isToday?' today':''}${isSel?' sel':''}" onclick="pickMonthCalDay('${fieldKey}','${ds}')">${d}</div>`;
+  }
+  return `
+    <div class="mcal-hdr">
+      <button type="button" class="mcal-nav mcal-prev" onclick="shiftMonthCal('${fieldKey}',-1)">${svgIco('chevronR')}</button>
+      <span class="mcal-label">${MCAL_MONTHS_ES[v.month]} ${v.year}</span>
+      <button type="button" class="mcal-nav" onclick="shiftMonthCal('${fieldKey}',1)">${svgIco('chevronR')}</button>
+    </div>
+    <div class="mcal-dow">${MCAL_DOW_ES.map(d=>`<span>${d}</span>`).join('')}</div>
+    <div class="mcal-grid">${cells}</div>
+  `;
+}
+function shiftMonthCal(fieldKey,delta){
+  const v=monthCalView[fieldKey];
+  let m=v.month+delta,y=v.year;
+  if(m<0){m=11;y--;} else if(m>11){m=0;y++;}
+  monthCalView[fieldKey]={year:y,month:m};
+  document.getElementById(`pf-${fieldKey}-cal`).innerHTML=monthCalHtml(fieldKey);
+}
+function pickMonthCalDay(fieldKey,ds){
+  monthCalSelected[fieldKey]=ds;
+  document.getElementById(`pf-${fieldKey}-cal`).innerHTML=monthCalHtml(fieldKey);
 }
 function segPick(el){
   if(el.classList.contains('seg-btn-off'))return;
@@ -2494,8 +2544,9 @@ const MY_POST_EDIT={
     img:{photo:r.image_url}
   })},
   eventos:{form:'eventos',fill:r=>({
-    input:{name:r.title,cat:r.category,date:r.event_date,time:r.event_time,loc:r.location,price:r.price_text,website:r.website,phone:r.contact_phone,desc:r.description},
-    img:{photo:r.image_url}
+    input:{name:r.title,cat:r.category,time:r.event_time,loc:r.location,price:r.price_text,website:r.website,phone:r.contact_phone,desc:r.description},
+    img:{photo:r.image_url},
+    monthcal:{date:r.event_date}
   })},
   reportes:{form:'reportar',fill:r=>({
     input:{cat:r.category,title:r.title,loc:r.location_text,desc:r.description},
@@ -2537,6 +2588,14 @@ function applyPostEditFill(fill){
       <button type="button" onclick="removePhotoSelection('${k}')" aria-label="Quitar foto"
         style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
     </div>`;
+  });
+  Object.entries(fill.monthcal||{}).forEach(([k,ds])=>{
+    if(!ds)return;
+    const d=new Date(ds+'T12:00:00');
+    monthCalView[k]={year:d.getFullYear(),month:d.getMonth()};
+    monthCalSelected[k]=ds;
+    const cal=document.getElementById('pf-'+k+'-cal');
+    if(cal)cal.innerHTML=monthCalHtml(k);
   });
 }
 /* Opens the post form for kind, pre-filled, routed to an UPDATE. Mirrors
@@ -2939,6 +2998,7 @@ async function submitPost(kind){
     if(f.type==='seg'){const sel=document.querySelector(`#pf-${f.k} .seg-btn.on`);data[f.k]=sel?sel.dataset.v:'';}
     else if(f.type==='multi'){data[f.k]=[...document.querySelectorAll(`#pf-${f.k} .mchip.on`)].map(b=>b.dataset.v);}
     else if(f.type==='calendar'){data[f.k]=selectedSlotDate;}
+    else if(f.type==='monthcal'){data[f.k]=monthCalSelected[f.k]||'';}
     else if(f.type==='imgupload'){data[f.k]=uploadedImageUrls[f.k]||null;}
     else{const el=document.getElementById('pf-'+f.k);data[f.k]=el?el.value:'';}
   });

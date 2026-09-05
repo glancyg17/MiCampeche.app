@@ -192,6 +192,17 @@ svg{display:block}
 .slot-day.full .slot-day-status{color:var(--signal)}
 .slot-day.sel .slot-day-status{color:rgba(255,255,255,.85)}
 .slot-cal-selected{margin-top:12px}
+.mcal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.mcal-nav{background:none;border:none;padding:6px;cursor:pointer;color:var(--ink2);display:flex}
+.mcal-prev .ico{transform:rotate(180deg)}
+.mcal-label{font-family:"Fraunces",Georgia,serif;font-size:15px;font-weight:700;color:var(--ink);text-transform:capitalize}
+.mcal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.mcal-dow span{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink3);text-align:center;display:block}
+.mcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.mcal-day{aspect-ratio:1;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;background:#fff;border:1.5px solid transparent}
+.mcal-day.empty{visibility:hidden;cursor:default}
+.mcal-day.today{border-color:var(--gulf-soft)}
+.mcal-day.sel{background:var(--gulf);color:#fff;border-color:var(--gulf)}
 .slot-cal-ok-msg,.slot-cal-full-msg{display:flex;align-items:flex-start;gap:8px;border-radius:var(--rs);padding:10px 12px;font-size:12px;font-weight:600;line-height:1.5}
 .slot-cal-ok-msg{background:var(--palm-bg);color:var(--palm)}
 .slot-cal-full-msg{background:var(--paper3);color:var(--ink2)}
