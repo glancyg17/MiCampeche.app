@@ -2037,6 +2037,17 @@ const fakeClient = {
     assert(!text('news-list').includes('news-desc'), 'once a noticia has no summary, the public card omits the description line entirely instead of rendering it empty');
     assert(text('news-list').includes('Titular actualizado por pull-to-refresh'), 'the headline still renders with no summary');
 
+    // A noticia is a feed sync, not a resident's own submission — there's
+    // no uploader to notify, so unlike every other content type (already
+    // proven above for avisos), an empty reason doesn't block the reject.
+    window.openRejectReasonPrompt('noticias', 'n1');
+    assert(text('modal-title') === 'Motivo del rechazo', 'rejecting a noticia opens the same reason screen as any other content type');
+    delete lastUpdate.noticias;
+    await window.confirmReject('noticias', 'n1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'an empty-reason noticia rejection is NOT blocked — it succeeds like a real reject');
+    assert(lastUpdate.noticias && lastUpdate.noticias.status === 'rejected' && lastUpdate.noticias.rejection_reason === null, 'the rejection actually goes through with status: rejected and rejection_reason: null, not an empty string');
+
     // Reject, with a genuinely forced failure — item must stay in the
     // queue and show the real error, not silently vanish either way.
     forcedErrors.update.eventos = { code: '42501', message: 'simulated failure' };

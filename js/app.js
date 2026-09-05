@@ -3092,9 +3092,12 @@ async function approveNoticia(id){
 function openRejectReasonPrompt(table,id){
   mcModalPushView('itemDetail');
   document.getElementById('modal-title').textContent='Motivo del rechazo';
+  const isNoticia=table==='noticias';
   document.getElementById('modal-body').innerHTML=`
-    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Este mensaje se guarda junto con la publicación para que la persona que la envió sepa por qué no se publicó — lo verá en su cuenta.</div>
-    <textarea class="ft" id="reject-reason-input" placeholder="Ej. La foto no es clara, o el precio no coincide con la descripción..."></textarea>
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">${isNoticia
+      ?'Esta nota viene de una fuente automática, no de una persona — el motivo es solo para tu propio registro y es opcional.'
+      :'Este mensaje se guarda junto con la publicación para que la persona que la envió sepa por qué no se publicó — lo verá en su cuenta.'}</div>
+    <textarea class="ft" id="reject-reason-input" placeholder="${isNoticia?'Opcional — ej. nota duplicada, fuente poco confiable...':'Ej. La foto no es clara, o el precio no coincide con la descripción...'}"></textarea>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('itemDetail')">Cancelar</button>
       <button class="submit-btn" style="margin-top:0;flex:1" id="confirm-reject-btn" onclick="confirmReject('${table}','${id}')">Rechazar</button>
@@ -3103,8 +3106,8 @@ function openRejectReasonPrompt(table,id){
 }
 async function confirmReject(table,id){
   const reason=(document.getElementById('reject-reason-input').value||'').trim();
-  if(!reason){toast('Escribe un motivo breve antes de rechazar');return;}
-  await moderateItem(table,id,'rejected',reason);
+  if(!reason&&table!=='noticias'){toast('Escribe un motivo breve antes de rechazar');return;}
+  await moderateItem(table,id,'rejected',reason||null);
 }
 
 async function moderateItem(table,id,newStatus,reason,extraPatch){
