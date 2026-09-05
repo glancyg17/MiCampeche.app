@@ -639,6 +639,33 @@ const fakeClient = {
     assert(false, 'hardware back button flow threw: ' + err.stack);
   }
 
+  // ── Aviso de Privacidad / Términos y Condiciones: two real screens
+  //    reachable via the existing generic nav(), same as "Cómo funciona" —
+  //    no new screen-registration logic to test, just that the content is
+  //    real and back navigation actually returns to Inicio. ──
+  assert(doc.getElementById('scr-inicio').classList.contains('on'), 'set-up: sitting on Inicio before testing the legal screens');
+  window.nav('privacidad');
+  assert(doc.getElementById('scr-privacidad').classList.contains('on'), 'nav(\'privacidad\') shows the Aviso de Privacidad screen');
+  assert(text('scr-privacidad').includes('Aviso de Privacidad') && text('scr-privacidad').includes('LFPDPPP') && text('scr-privacidad').includes('hola@micampeche.app'), 'the privacy screen renders its real content, not a placeholder');
+  assert(text('scr-privacidad').includes("nav('terminos')"), 'the privacy screen cross-links to Términos y Condiciones');
+  window.mcGoBack();
+  assert(doc.getElementById('scr-inicio').classList.contains('on'), 'mcGoBack() from Aviso de Privacidad returns to Inicio');
+
+  window.nav('terminos');
+  assert(doc.getElementById('scr-terminos').classList.contains('on'), 'nav(\'terminos\') shows the Términos y Condiciones screen');
+  assert(text('scr-terminos').includes('Términos y Condiciones') && text('scr-terminos').includes('San Francisco de Campeche, Campeche, México') && text('scr-terminos').includes('Stripe'), 'the terms screen renders its real content, not a placeholder');
+  assert(text('scr-terminos').includes("nav('privacidad')"), 'the terms screen cross-links back to Aviso de Privacidad');
+  window.mcGoBack();
+  assert(doc.getElementById('scr-inicio').classList.contains('on'), 'mcGoBack() from Términos y Condiciones returns to Inicio');
+
+  // The hamburger menu's new entry — jsdom (runScripts:'outside-only')
+  // can't fire its compound inline onclick (closeMenu();nav('privacidad')),
+  // same limitation documented elsewhere in this suite for other inline
+  // handlers, so this checks the real wiring is present rather than
+  // simulating a click; nav('privacidad') itself is already proven above.
+  const menuPrivacyBtn = [...doc.querySelectorAll('#menu-drawer .menu-item')].find(b => (b.getAttribute('onclick') || '').includes("nav('privacidad')"));
+  assert(!!menuPrivacyBtn && menuPrivacyBtn.textContent.includes('Aviso de privacidad y Términos'), 'the hamburger menu has a new "Aviso de privacidad y Términos" entry wired to nav(\'privacidad\')');
+
   // ── Pull to refresh: real simulated touch gestures (jsdom dispatches
   // the events fine; the code only reads e.touches[...] as plain
   // properties, so a constructed Event with a manually-attached .touches
@@ -756,6 +783,17 @@ const fakeClient = {
     await window.openAccount();
     assert(text('modal-title') === 'Crear cuenta', 'openAccount() while anonymous shows the signup form, not a signed-in view');
     assert(!!doc.getElementById('acct-phone'), 'signup form includes the (now required) phone field');
+
+    // Consent line: signup only, both links wired to the real nav() calls
+    // proven above — jsdom can't fire the inline onclick itself (same
+    // documented limitation as the menu item above), so this checks the
+    // real wiring instead of simulating a tap.
+    assert(text('modal-body').includes('Aviso de Privacidad') && text('modal-body').includes('Términos y Condiciones') && text('modal-body').includes("nav('privacidad')") && text('modal-body').includes("nav('terminos')"), 'the signup form shows the consent line with both links, wired to nav(\'privacidad\')/nav(\'terminos\')');
+    window.setAccountMode('login');
+    assert(text('modal-title') === 'Iniciar sesión', 'set-up: switched to the login form');
+    assert(!text('modal-body').includes('Aviso de Privacidad') && !text('modal-body').includes("nav('privacidad')"), 'the login form does NOT show the consent line — signup only');
+    window.setAccountMode('signup');
+    assert(text('modal-title') === 'Crear cuenta', 'back to signup for the rest of this test');
     assert(doc.getElementById('acct-phone-cc').value === '52', 'country-code selector defaults to Mexico (+52)');
 
     // Phone validation: too short / missing should block signup entirely.

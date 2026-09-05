@@ -468,6 +468,13 @@ svg{display:block}
 
 /* ═══ CÓMO FUNCIONA (info page) ═══ */
 .info-body{padding:6px 18px 40px;display:flex;flex-direction:column;gap:16px}
+.legal-body{padding:6px 18px 40px}
+.legal-crosslink{display:inline-block;font-size:12.5px;color:var(--gulf);text-decoration:underline;margin-bottom:16px;cursor:pointer}
+.legal-h{font-family:"Fraunces",Georgia,serif;font-size:15.5px;font-weight:700;color:var(--ink);margin:20px 0 6px}
+.legal-h:first-of-type{margin-top:0}
+.legal-p{font-size:14px;line-height:1.7;color:var(--ink2);margin-bottom:10px}
+.legal-list{margin:0 0 10px 20px;padding:0}
+.legal-list li{font-size:14px;line-height:1.6;color:var(--ink2);margin-bottom:5px}
 .info-block{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--sh1)}
 .info-block-hdr{display:flex;align-items:center;gap:11px;margin-bottom:9px}
 .info-block-ico{width:34px;height:34px;border-radius:10px;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
