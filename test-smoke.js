@@ -710,6 +710,20 @@ const fakeClient = {
   const menuPrivacyBtn = [...doc.querySelectorAll('#menu-drawer .menu-item')].find(b => (b.getAttribute('onclick') || '').includes("nav('privacidad')"));
   assert(!!menuPrivacyBtn && menuPrivacyBtn.textContent.includes('Aviso de privacidad y Términos'), 'the hamburger menu has a new "Aviso de privacidad y Términos" entry wired to nav(\'privacidad\')');
 
+  // ── Transporte (Ko'ox): a static reference screen reached from the
+  //    hamburger menu — no live data, links out to the real apps. ──
+  const menuKooxBtn = [...doc.querySelectorAll('#menu-drawer .menu-item')].find(b => (b.getAttribute('onclick') || '').includes('goToKoox()'));
+  assert(!!menuKooxBtn && menuKooxBtn.textContent.includes("Transporte (Ko'ox)"), 'the hamburger menu has a "Transporte (Ko\'ox)" entry wired to goToKoox()');
+  window.goToKoox();
+  assert(doc.getElementById('scr-koox').classList.contains('on'), 'goToKoox() shows the scr-koox screen');
+  assert(text('scr-koox').includes('Qué es Ko\'ox') && text('scr-koox').includes('ARTEC'), 'the screen renders its real explanatory content, not a placeholder');
+  const kooxApps = text('koox-apps-list');
+  assert(kooxApps.includes("Ko'ox Contigo") && kooxApps.includes('Muévete Ya'), 'the apps list links out to both Ko\'ox Contigo and Muévete Ya');
+  assert(kooxApps.includes('play.google.com/store/apps/details?id=mx.gob.campeche.kooxcontigo') && !kooxApps.includes('apps.apple.com'), 'the Ko\'ox Contigo link points at the Play Store URL by default (no iOS user-agent)');
+  assert(kooxApps.includes('MiCampeche no rastrea autobuses'), 'the screen makes clear MiCampeche keeps no route data of its own');
+  window.mcGoBack();
+  assert(doc.getElementById('scr-inicio').classList.contains('on'), 'mcGoBack() from Transporte returns to Inicio');
+
   // ── Pull to refresh: real simulated touch gestures (jsdom dispatches
   // the events fine; the code only reads e.touches[...] as plain
   // properties, so a constructed Event with a manually-attached .touches

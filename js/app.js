@@ -6,6 +6,7 @@ const ICO={
   tienda:'<path d="M4 8l1.5-4h13L20 8"/><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8z"/><path d="M9 12a3 3 0 0 0 6 0"/>',
   perdidos:'<path d="M12 21s-7-4.6-9.3-9A5 5 0 0 1 12 6a5 5 0 0 1 9.3 6c-2.3 4.4-9.3 9-9.3 9z"/>',
   alertas:'<path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>',
+  bus:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M3 12h18"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M6 4v4M18 4v4"/>',
   empleos:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/>',
   reportar:'<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/>',
   chevronR:'<path d="M9 6l6 6-6 6"/>',
@@ -124,6 +125,40 @@ function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
 function goToInfo(){closeMenu();nav('info');}
+function goToKoox(){closeMenu();nav('koox');}
+/* Static reference only — no live data. Ko'ox's routes have changed
+   repeatedly since launch (transbordo eliminations, rerouting to the
+   Mercado, fare collection starting Feb 2026), so we deliberately don't
+   publish our own route list here — it would go stale and mislead
+   people. Ko'ox Contigo is the real official app (ARTEC itself, package
+   mx.gob.campeche.kooxcontigo) so it's the primary link; Muévete Ya is
+   independent but covers combis and other municipal routes Ko'ox
+   Contigo doesn't. */
+function renderKooxApps(){
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const kooxContigoUrl=isIOS
+    ?'https://apps.apple.com/mx/app/koox-contigo/id6755553527'
+    :'https://play.google.com/store/apps/details?id=mx.gob.campeche.kooxcontigo';
+  const el=document.getElementById('koox-apps-list');
+  if(!el)return;
+  el.innerHTML=`
+    <a class="su-card" href="${kooxContigoUrl}" target="_blank" rel="noopener">
+      <div class="su-ico">${svgIco('bus')}</div>
+      <div class="su-body"><div class="su-name">Ko'ox Contigo</div><div class="su-sub">App oficial (ARTEC) · rutas, ubicación en tiempo real, saldo de tarjeta</div></div>
+      ${svgIco('external','su-ext')}
+    </a>
+    <a class="su-card" href="https://app.muevete.site/go/" target="_blank" rel="noopener">
+      <div class="su-ico">${svgIco('bus')}</div>
+      <div class="su-body"><div class="su-name">Muévete Ya</div><div class="su-sub">Independiente · Ko'ox, combis y rutas municipales en tiempo real</div></div>
+      ${svgIco('external','su-ext')}
+    </a>
+    <a class="su-card" href="https://campeche.gob.mx/koox/" target="_blank" rel="noopener">
+      <div class="su-ico">${svgIco('info')}</div>
+      <div class="su-body"><div class="su-name">Rutas y tarifas oficiales</div><div class="su-sub">Portal del Gobierno de Campeche</div></div>
+      ${svgIco('external','su-ext')}
+    </a>
+  `+`<div class="su-note">MiCampeche no rastrea autobuses ni publica un mapa de rutas — te llevamos directo a las apps que sí lo hacen en tiempo real.</div>`;
+}
 function contactUs(){
   closeMenu();
   window.open('mailto:'+MICAMPECHE_EMAIL+'?subject='+encodeURIComponent('Pregunta sobre MiCampeche'));
@@ -3818,6 +3853,7 @@ async function init(){
   setTiendaMode('mercado');
   setAnunciosMode('eventos');
   setReportarMode('avisos');
+  renderKooxApps();
   initPullToRefresh();
   if(!isStandalone()&&sessionStorage.getItem('mc_just_updated')==='1'){
     try{sessionStorage.removeItem('mc_just_updated');}catch(e){}
