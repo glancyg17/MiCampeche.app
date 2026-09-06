@@ -567,11 +567,24 @@ MC.fetchMyPosts=async function(){
   return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
 };
 
+/* Fallback thumbnail when a noticia has no real thumbnail_url — keyed on
+   source_name exactly as the sync-noticias-tribuna / sync-noticias-central
+   Edge Functions set it (confirmed live: 'Tribuna Campeche' / 'Central de
+   Noticias Campeche'). Keeps every noticia card visually consistent
+   instead of a blank background. Anything else (e.g. a manually-inserted
+   row) falls back to a plain generic MiCampeche placeholder. */
+const NOTICIA_SOURCE_PLACEHOLDER={
+  'Tribuna Campeche':'assets/images/Tribuna.jpg',
+  'Central de Noticias Campeche':'assets/images/CNCampeche.jpg'
+};
+const NOTICIA_DEFAULT_PLACEHOLDER='assets/images/Noticias-Generico.jpg';
 MC.fetchNoticias=async function(){
   const {data,error}=await sb.from('noticias').select('*')
     .eq('status','published').order('published_at',{ascending:false}).limit(30);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,source:r.source_name,title:r.headline,desc:r.summary,img:r.thumbnail_url||'',time:relTimeEs(r.published_at),url:r.source_url}));
+  return data.map(r=>({id:r.id,source:r.source_name,title:r.headline,desc:r.summary,
+    img:r.thumbnail_url||NOTICIA_SOURCE_PLACEHOLDER[r.source_name]||NOTICIA_DEFAULT_PLACEHOLDER,
+    time:relTimeEs(r.published_at),url:r.source_url}));
 };
 
 MC.fetchEventos=async function(){
@@ -693,6 +706,16 @@ MC.fetchPerdidos=async function(){
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
 };
 
+/* Fallback thumbnail per alert_type — alertas has no image column at all
+   (confirmed against the live schema), this is purely a client-side
+   visual per category. Keyed lowercase so 'Clima'/'clima' both match.
+   Anything not Clima/Agua (e.g. a future cierre-vial/emergencia type)
+   falls back to a plain generic alert placeholder. */
+const ALERTA_TYPE_PLACEHOLDER={
+  'clima':'assets/images/Alertas-Clima.jpg',
+  'agua':'assets/images/Alertas-Agua.jpg'
+};
+const ALERTA_DEFAULT_PLACEHOLDER='assets/images/Alertas-General.jpg';
 MC.fetchAlertas=async function(){
   const {data,error}=await sb.from('alertas').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);
@@ -700,6 +723,7 @@ MC.fetchAlertas=async function(){
   return data.map(r=>({
     id:r.id,title:r.title||'',type:r.alert_type,cls:r.resolved?'resolved':'',
     zone:r.zone||'',desc:r.description||'',
+    img:ALERTA_TYPE_PLACEHOLDER[(r.alert_type||'').trim().toLowerCase()]||ALERTA_DEFAULT_PLACEHOLDER,
     // published_at is when the source actually posted it (Facebook/RSS
     // bridge); created_at is only when our sync picked it up. Prefer the
     // real event time, fall back for older/manual rows that have no

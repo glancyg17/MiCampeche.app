@@ -538,6 +538,7 @@ async function loadAllData(){
   ]);
   NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
+  alertasExpanded=false; // a fresh data load (incl. pull-to-refresh) collapses Alertas back to the top 10
   OFERTAS.forEach(o=>{if(o.iClaimedReal)claimedByMe[o.id]=true;});
   REPORTES.forEach(r=>{
     if(r.iConfirmedReal)confirmedByMe[r.id]=true;
@@ -1431,13 +1432,16 @@ function renderAvisos(){
   `).join('');
   wireAdminRemove(el);
 }
+const ALERTAS_PAGE_SIZE=10;
+let alertasExpanded=false;
 function renderAlertas(){
   const el=document.getElementById('alert-list');
   const pin=onboardCard('alertas','alertas','Qué son las Alertas',
     'Aquí verás <b>alertas oficiales</b> para toda la ciudad — cortes de agua, clima fuerte, cierres de calles, emergencias. Las publica MiCampeche; tú solo revisa aquí cuando algo esté pasando. ¿Un problema de tu calle (bache, fuga, alumbrado)? Eso va en <b>Reportes</b>.',
     null,
     'Ir a Reportes',"setReportarMode('reportes')");
-  el.innerHTML=pin+ALERTAS.map(x=>{
+  const visible=alertasExpanded?ALERTAS:ALERTAS.slice(0,ALERTAS_PAGE_SIZE);
+  const cards=visible.map(x=>{
     // One-line teaser: first paragraph only, hard-capped so the row stays
     // one line even before CSS truncation kicks in. Full text lives in the
     // detail modal.
@@ -1446,13 +1450,21 @@ function renderAlertas(){
     const truncated=x.desc.length>preview.length;
     return `
     <div class="alert-card ${x.cls}" role="button" tabindex="0" onclick="openAlertaDetail('${x.id}')">
-      <div class="alert-top"><span class="alert-type">${x.cls==='resolved'?'✓ Resuelto — ':''}${e(x.type)}</span><span class="alert-time">${x.time}</span></div>
-      ${x.title?`<div class="alert-headline">${e(x.title)}</div>`:''}
-      ${x.zone?`<div class="alert-zone">${e(x.zone)}</div>`:''}
-      ${preview?`<div class="alert-preview">${e(preview)}${truncated?'…':''}</div>`:''}
+      <div class="alert-thumb" style="background-image:url('${e(x.img)}')"></div>
+      <div class="alert-body">
+        <div class="alert-top"><span class="alert-type">${x.cls==='resolved'?'✓ Resuelto — ':''}${e(x.type)}</span><span class="alert-time">${x.time}</span></div>
+        ${x.title?`<div class="alert-headline">${e(x.title)}</div>`:''}
+        ${x.zone?`<div class="alert-zone">${e(x.zone)}</div>`:''}
+        ${preview?`<div class="alert-preview">${e(preview)}${truncated?'…':''}</div>`:''}
+      </div>
     </div>
   `}).join('');
+  const more=(!alertasExpanded&&ALERTAS.length>ALERTAS_PAGE_SIZE)
+    ?`<button class="menu-item" style="justify-content:center;margin-top:4px" onclick="showAllAlertas()">Ver más</button>`
+    :'';
+  el.innerHTML=pin+cards+more;
 }
+function showAllAlertas(){alertasExpanded=true;renderAlertas();}
 /* Resident-facing detail modal — mirrors openProdView (a content card on a
    screen opening the shared #modal-bg), NOT openModerationDetail (which is
    admin-only and opened from inside an already-open modal, so it pushes a
@@ -1463,6 +1475,7 @@ function openAlertaDetail(id){
   if(!a)return;
   document.getElementById('modal-title').textContent=a.type||'Alerta';
   document.getElementById('modal-body').innerHTML=`
+    <div style="width:100%;height:150px;border-radius:var(--rs);background-size:cover;background-position:center;background-color:var(--paper2);background-image:url('${e(a.img)}');margin-bottom:12px"></div>
     ${a.cls==='resolved'?`<div class="alert-type" style="color:var(--palm);margin-bottom:8px">✓ Resuelto</div>`:''}
     ${a.title?`<div class="alert-headline" style="white-space:normal;margin-bottom:8px">${e(a.title)}</div>`:''}
     ${a.zone?`<div class="alert-zone" style="margin-bottom:10px">${e(a.zone)}</div>`:''}
@@ -2010,7 +2023,7 @@ const COUNTRY_CODES=[
   ['IL','Israel','972'],
   ['AE','Emiratos Árabes Unidos','971']
 ];
-let accountMode='signup';
+let accountMode='login';
 let accountViewSeq=0;
 async function openAccount(){
   // Paint the modal frame immediately — the fetches below take a moment on
@@ -2022,7 +2035,7 @@ async function openAccount(){
 
   const acct=await MC.currentAccount();
   if(myTurn!==accountViewSeq)return; // a newer openAccount() superseded this one
-  if(!acct.signedIn){accountMode='signup';renderAccountForm();return;}
+  if(!acct.signedIn){accountMode='login';renderAccountForm();return;}
 
   // Render the account view now; the rejected-submissions list (a query
   // per content table) and, for admins, the Pendiente count load after
@@ -2476,18 +2489,20 @@ async function openPasswordResetDetail(requestId){
 async function approvePasswordResetRequest(id){
   const {data:code,error}=await MC.approvePasswordReset(id);
   if(error){toast(pgErrorToast(error,'No se pudo aprobar.'));return;}
+  const prevIndex=moderationQueue.findIndex(i=>i.kind==='password'&&i.id===id);
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='password'&&i.id===id));
-  mcModalBack('pendingList');renderPendingQueue();
   toast('Aprobado — código: '+code+' (compártelo por WhatsApp, válido 30 min)');
   refreshPendingBadge();
+  advancePendingQueue(prevIndex);
 }
 async function rejectPasswordResetRequest(id){
   const {error}=await MC.rejectPasswordReset(id,'No se pudo verificar la identidad');
   if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
+  const prevIndex=moderationQueue.findIndex(i=>i.kind==='password'&&i.id===id);
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='password'&&i.id===id));
-  mcModalBack('pendingList');renderPendingQueue();
   toast('Rechazado');
   refreshPendingBadge();
+  advancePendingQueue(prevIndex);
 }
 
 /* This is a security signal only (see MC.updateMyAccount's comment) —
@@ -2515,18 +2530,20 @@ function openPhoneVerificationDetail(profileId){
 async function approvePhoneVerification(profileId){
   const {error}=await MC.approvePhoneVerification(profileId);
   if(error){toast(pgErrorToast(error,'No se pudo aprobar — puede que ese número ya esté verificado en otra cuenta.'));return;}
+  const prevIndex=moderationQueue.findIndex(i=>i.kind==='phone'&&i.id===profileId);
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='phone'&&i.id===profileId));
-  mcModalBack('pendingList');renderPendingQueue();
   toast('Teléfono verificado ✓');
   refreshPendingBadge();
+  advancePendingQueue(prevIndex);
 }
 async function rejectPhoneVerification(profileId){
   const {error}=await MC.rejectPhoneVerification(profileId,'No se pudo confirmar el número por WhatsApp');
   if(error){toast(pgErrorToast(error,'No se pudo rechazar.'));return;}
+  const prevIndex=moderationQueue.findIndex(i=>i.kind==='phone'&&i.id===profileId);
   moderationQueue=moderationQueue.filter(i=>!(i.kind==='phone'&&i.id===profileId));
-  mcModalBack('pendingList');renderPendingQueue();
   toast('Rechazado');
   refreshPendingBadge();
+  advancePendingQueue(prevIndex);
 }
 
 
@@ -2750,6 +2767,29 @@ function renderPendingQueue(){
     </div>`;
   });
   document.getElementById('modal-body').innerHTML=h;
+}
+
+/* After handling one Pendiente item (approve/reject, any of its three
+   kinds), jump straight to whichever item is now in that same list
+   position — instead of dropping back to the list and making the admin
+   tap the next row themselves. Only kicks in when the action came from
+   an actual open detail view (i.e. 'pendingList' really is on the modal
+   stack); the phone-verification quick-approve buttons embedded
+   directly in the list itself skip this and just stay on the
+   (refreshed) list, unchanged from today's behavior. */
+function openPendingItem(item){
+  if(!item)return;
+  if(item.kind==='content')openModerationDetail(item.table,item.id);
+  else if(item.kind==='phone')openPhoneVerificationDetail(item.id);
+  else if(item.kind==='password')openPasswordResetDetail(item.id);
+}
+function advancePendingQueue(prevIndex){
+  const cameFromDetail=mcModalStack.some(s=>s.key==='pendingList');
+  if(cameFromDetail)mcModalBack('pendingList');
+  renderPendingQueue();
+  if(!cameFromDetail||!moderationQueue.length)return;
+  const nextIndex=Math.min(prevIndex,moderationQueue.length-1);
+  openPendingItem(moderationQueue[nextIndex]);
 }
 
 /* ══════════════ RESIDENT: "Mis publicaciones" ══════════════
@@ -3127,14 +3167,15 @@ async function moderateItem(table,id,newStatus,reason,extraPatch){
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
   const {error}=await MC.moderatePost(table,id,newStatus,reason,extraPatch);
   if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));if(btn){btn.disabled=false;btn.textContent='Rechazar';}return;}
+  const prevIndex=moderationQueue.findIndex(i=>i.table===table&&i.id===id);
   moderationQueue=moderationQueue.filter(i=>!(i.table===table&&i.id===id));
-  mcModalBack('pendingList');renderPendingQueue();
   toast(newStatus==='published'?'Publicado ✓':'Rechazado — el motivo quedó guardado');
   refreshPendingBadge();
   refreshContent(); // an approve/reject changes public visibility immediately —
                      // same class of bug as the self-edit fix above: without
                      // this, a newly-approved item wouldn't appear in its
                      // public list until some unrelated later refresh.
+  advancePendingQueue(prevIndex);
 }
 
 /* ══════════════ ADMIN: long-press to remove an already-published post ══════════════

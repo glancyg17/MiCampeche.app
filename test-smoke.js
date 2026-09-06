@@ -773,6 +773,7 @@ const fakeClient = {
     window.openPost('avisos');
     await new Promise(r => setTimeout(r, 20));
     await window.openAccount(); // the gate's own button does this — showing the real form
+    window.setAccountMode('signup'); // form now defaults to login; this test exercises the signup path
     doc.getElementById('acct-name').value = 'Gate Test';
     doc.getElementById('acct-email').value = 'gate-test@example.com';
     doc.getElementById('acct-phone').value = '981 000 1111';
@@ -793,7 +794,9 @@ const fakeClient = {
   // real openAccount/submitAuth/doSignOut, never touching MC directly. ──
   try {
     await window.openAccount();
-    assert(text('modal-title') === 'Crear cuenta', 'openAccount() while anonymous shows the signup form, not a signed-in view');
+    assert(text('modal-title') === 'Iniciar sesión', 'openAccount() while anonymous shows the login form by default, not a signed-in view');
+    window.setAccountMode('signup'); // rest of this block exercises the signup form
+    assert(text('modal-title') === 'Crear cuenta', 'toggling to signup shows the Crear cuenta form');
     assert(!!doc.getElementById('acct-phone'), 'signup form includes the (now required) phone field');
 
     // Consent line: signup only, both links wired to the real nav() calls
@@ -852,6 +855,7 @@ const fakeClient = {
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
     await window.openAccount(); // previous signup closed the modal entirely after the WhatsApp step
+    window.setAccountMode('signup'); // form defaults to login now; this step exercises signup
 
     forcedErrors.profilesUpdateAlways = true;
     doc.getElementById('acct-name').value = 'Fallo Persistente';
@@ -882,6 +886,7 @@ const fakeClient = {
     await window.doSignOut(); // reset back to a fresh anonymous session before the main signup test below
     await new Promise(r => setTimeout(r, 20));
     await window.openAccount(); // the previous signup left the modal on the WhatsApp step screen, not the form
+    window.setAccountMode('signup'); // form defaults to login now; the main signup test needs the signup form
 
     doc.getElementById('acct-name').value = 'Ricardo Martín';
     doc.getElementById('acct-email').value = 'ricardo@example.com';
@@ -966,7 +971,8 @@ const fakeClient = {
     await window.approvePasswordResetRequest(theRequest.id);
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast').includes('Aprobado — código:'), 'approving shows the real generated code so the admin can relay it manually');
-    assert(moderationQueueCountFromTitle(text('modal-title')) === beforeApproveCount - 1, 'approved request is removed from the unified pending list, back on the list view');
+    window.renderPendingQueue(); // approve now auto-advances to the next item's detail; re-render the list to check the count dropped
+    assert(moderationQueueCountFromTitle(text('modal-title')) === beforeApproveCount - 1, 'approved request is removed from the unified pending queue and the list count drops by one');
     assert(theRequest.status === 'approved' && /^\d{6}$/.test(theRequest.reset_code), 'the request now genuinely holds a real 6-digit code, not a placeholder');
 
     // ── Completing the reset with that real code ──
@@ -1043,6 +1049,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Teléfono verificado ✓', 'approving shows the right confirmation');
     assert(currentProfile.phone_verification_status === 'verified', 'the real status was actually updated, not just the UI');
+    window.renderPendingQueue(); // approve auto-advances to the next item's detail from here; re-render the list to check the row is gone
     assert(!text('modal-body').includes('Ricardo Editado'), 'the approved phone-verification request is removed from the unified pending list (other unrelated pending content remains, since this fake\'s content tables don\'t filter by status)');
 
     await window.openAccount();
@@ -2015,6 +2022,7 @@ const fakeClient = {
     await window.confirmReject('eventos', 'e11');
     await new Promise(r => setTimeout(r, 20));
     assert(lastUpdate.eventos && lastUpdate.eventos.status === 'rejected' && lastUpdate.eventos.rejection_reason === null, 'rejecting an automated eventos row with an empty reason succeeds — status rejected, rejection_reason null');
+    window.mcModalBack('pendingList'); // a successful reject now auto-advances into the next item's detail — step back to the list baseline for the next sub-test
 
     // End-to-end: an alertas row (al2 — dedicated, so al1 stays untouched
     // for the approval test right below) succeeds with an empty reason —
@@ -2025,6 +2033,7 @@ const fakeClient = {
     await window.confirmReject('alertas', 'al2');
     await new Promise(r => setTimeout(r, 20));
     assert(lastUpdate.alertas && lastUpdate.alertas.status === 'rejected' && lastUpdate.alertas.rejection_reason === null, 'rejecting an alertas row (no submitted_by column at all) with an empty reason succeeds too');
+    window.mcModalBack('pendingList'); // reject auto-advanced into the next item's detail — back to the list to inspect the al1 row
 
     // ── Alertas: pipeline-fed, owner-less, but still a real moderation item ──
     assert(text('modal-body').includes('Corte de agua programado en Zona Norte'), 'a pending alerta (no submitter) shows up in the unified queue, listed by its title');
@@ -2039,9 +2048,11 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(lastUpdate.alertas && lastUpdate.alertas.status === 'published', 'approving an alerta sends status: published to Supabase like any other table');
     assert(refreshContentCallCount > refreshCountBeforeModerate, 'a successful moderateItem() call re-fetches/re-renders the public content lists, so a newly-approved item appears immediately');
-    // moderateItem's success path already stepped back to the list (one
-    // level above the account view) — same modal state the block below
-    // expects right after the initial openPending().
+    // moderateItem's success path now auto-advances into the NEXT item's
+    // detail view. Step back to the list explicitly so the nested-modal
+    // navigation below starts from the same modal state (Pendiente list,
+    // one level above the account view) it always has.
+    window.mcModalBack('pendingList');
 
     // ── Nested modal views: ✕ / back / hardware-back step ONE level
     //    (item review → list → account → home), never straight out. ──
@@ -2100,6 +2111,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
+    window.renderPendingQueue(); // reject auto-advanced into the next item's detail; re-render the list to check the count
     assert(text('modal-title') === 'Pendiente (24)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
@@ -2150,6 +2162,7 @@ const fakeClient = {
     // Reject, with a genuinely forced failure — item must stay in the
     // queue and show the real error, not silently vanish either way.
     forcedErrors.update.eventos = { code: '42501', message: 'simulated failure' };
+    window.renderPendingQueue(); // baseline on the list (the prior reject auto-advanced into a detail view) so the count comparison below is meaningful
     const beforeCount = moderationQueueCountFromTitle(text('modal-title'));
     await window.moderateItem('eventos', 'e1', 'rejected', 'motivo de prueba');
     await new Promise(r => setTimeout(r, 20));
@@ -2308,7 +2321,7 @@ const fakeClient = {
     assert(text('toast') === 'Sesión cerrada ✓', 'doSignOut() → real MC.signOut → confirmation toast');
 
     await window.openAccount();
-    assert(text('modal-title') === 'Crear cuenta', 'after sign-out, a fresh anonymous session is active again (openAccount shows signup, not signed-in)');
+    assert(text('modal-title') === 'Iniciar sesión', 'after sign-out, a fresh anonymous session is active again (openAccount shows the auth form, not a signed-in view)');
   } catch (err) {
     assert(false, 'account flow threw: ' + err.stack);
   }
@@ -2317,6 +2330,7 @@ const fakeClient = {
   try {
     forcedErrors.updateUser = { message: 'User already registered' };
     await window.openAccount();
+    window.setAccountMode('signup'); // form defaults to login now; this is a signup error-path test
     doc.getElementById('acct-name').value = 'Otra Persona';
     doc.getElementById('acct-email').value = 'ya@existe.com';
     doc.getElementById('acct-phone').value = '981 999 8888';
