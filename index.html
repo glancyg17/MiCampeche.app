@@ -567,7 +567,11 @@ function swSafeToReload(){
   return true;
 }
 function swMaybeReload(){
-  if(swReloadPending&&!swReloading&&swSafeToReload()){swReloading=true;window.location.reload();}
+  if(swReloadPending&&!swReloading&&swSafeToReload()){
+    swReloading=true;
+    try{sessionStorage.setItem('mc_just_updated','1');}catch(e){}
+    window.location.reload();
+  }
 }
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{

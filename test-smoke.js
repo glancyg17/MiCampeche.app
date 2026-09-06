@@ -457,6 +457,13 @@ const fakeClient = {
   const realRefreshContent = window.refreshContent;
   window.refreshContent = (...args) => { refreshContentCallCount++; return realRefreshContent(...args); };
 
+  // maybeNudgeInstall() schedules a self-dismissing install-reminder toast
+  // ~2.8s after a sign-in / post-update reload. Its timing isn't meaningfully
+  // testable here, and left live it would clobber the toast text later
+  // assertions read once enough real wall-clock time has passed. Stub it out
+  // — the sign-in success toasts it sits beside are still asserted directly.
+  window.maybeNudgeInstall = () => {};
+
   // ── Inicio dashboard: the stat strip is gone, the welcome hero photo
   //    cycles with the same greeting/time-of-day bucket as the greeting
   //    text, and Oferta del día is now a hero-style card. ──

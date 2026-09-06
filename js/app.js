@@ -303,6 +303,16 @@ function isStandalone(){
       || window.navigator.standalone===true
       || document.referrer.startsWith('android-app://');
 }
+/* A brief, self-dismissing nudge toward installing the PWA — lighter
+   than the full install-gate (shown once per browser session on cold
+   load), reinforced specifically right after a real sign-in and right
+   after an app update finishes applying, since those are two moments
+   someone's freshly invested in the app. No-ops entirely once actually
+   running installed. */
+function maybeNudgeInstall(){
+  if(isStandalone())return;
+  setTimeout(()=>toast('💡 Instala MiCampeche desde el menú ☰ para que se abra más rápido'),2800);
+}
 const GATE_ICO={
   share:'<svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
   plus:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
@@ -2681,6 +2691,7 @@ async function submitAuth(){
     const msg='Hola, acabo de crear mi cuenta en MiCampeche. Mi nombre es '+signedUpName+' y mi número es: '+signedUpPhone;
     openWhatsAppStep(msg,'El mensaje tiene que venir del <b>mismo número</b> que registraste ('+e(signedUpPhone)+'). Si llega desde otro número no podremos activar tu cuenta y tendrás que crearla de nuevo con el número correcto. Hasta que la activemos puedes explorar, pero no publicar ni interactuar.',async()=>{
       toast('¡Cuenta creada! Actívala enviando el WhatsApp desde tu número ✓');
+      maybeNudgeInstall();
       const next=pendingPostAfterAuth;
       pendingPostAfterAuth=null;
       if(next){await openPost(next);} else {closeModal();}
@@ -2688,6 +2699,7 @@ async function submitAuth(){
     return;
   }
   toast('Sesión iniciada ✓');
+  maybeNudgeInstall();
   const next=pendingPostAfterAuth;
   pendingPostAfterAuth=null;
   if(next){await openPost(next);} else {closeModal();}
@@ -3755,6 +3767,10 @@ async function init(){
   setAnunciosMode('eventos');
   setReportarMode('avisos');
   initPullToRefresh();
+  if(!isStandalone()&&sessionStorage.getItem('mc_just_updated')==='1'){
+    try{sessionStorage.removeItem('mc_just_updated');}catch(e){}
+    setTimeout(()=>maybeNudgeInstall(),1200);
+  }
   mcBackInit();
 }
 init();
