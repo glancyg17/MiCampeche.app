@@ -417,7 +417,8 @@ const CONTENT_TABLES=[
   {table:'reportes',label:'Reporte',titleField:'title',ownerField:'submitted_by'},
   {table:'avisos',label:'Aviso',titleField:'title',ownerField:'submitted_by'},
   {table:'alertas',label:'Alerta',titleField:'title',ownerField:null},
-  {table:'businesses',label:'Verificación de negocio',titleField:'business_name',ownerField:'profile_id'}
+  {table:'businesses',label:'Verificación de negocio',titleField:'business_name',ownerField:'profile_id'},
+  {table:'mandaditos',label:'Mandadito',titleField:'display_name',ownerField:'submitted_by'}
 ];
 
 /* Detail-view fields per table — label + which raw column to show, in
@@ -434,6 +435,7 @@ const MODERATION_DETAIL_FIELDS={
   reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
   avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['anonymous','Anónimo']],
   alertas:[['title','Título'],['alert_type','Tipo'],['zone','Zona'],['description','Descripción'],['source','Fuente']],
+  mandaditos:[['display_name','Nombre'],['phone','Teléfono'],['vehicle_type','Vehículo'],['zona','Zona'],['description','Descripción'],['image_url','Foto']],
   businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC'],['payment_methods','Métodos de pago'],['delivers','Entrega a domicilio'],['delivery_info','Zonas y costo de entrega'],['pickup_address','Dirección para recoger']]
 };
 
@@ -530,7 +532,7 @@ MC.fetchWeather=async function(){
    it here too would just duplicate it), and noticias/ofertas (no
    resident self-edit path). Every row in "Mis publicaciones" is therefore
    tappable straight into an edit form. */
-const SELF_EDIT_TABLES=['eventos','productos','clasificados','perdidos','empleos','reportes','avisos'];
+const SELF_EDIT_TABLES=['eventos','productos','clasificados','perdidos','empleos','reportes','avisos','mandaditos'];
 const MY_POST_TABLES=CONTENT_TABLES.filter(t=>t.ownerField&&SELF_EDIT_TABLES.includes(t.table));
 
 /* So a rejection reason isn't just stored and forgotten — a submitter can
@@ -550,6 +552,18 @@ MC.fetchMyRejections=async function(){
     return (data||[]).map(r=>({table,label,id:r.id,title:r[titleField]||'(sin título)',reason:r.rejection_reason,createdAt:r.created_at}));
   }));
   return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+};
+
+/* Drives the "Quiero ser mandadito" account-menu entry — only shown when
+   the account doesn't already have one (any status; a pending or
+   rejected one still counts, so the entry becomes "ver mi solicitud"
+   territory instead of inviting a duplicate submission). */
+MC.myMandadito=async function(){
+  const uid=await MC.ready;
+  if(!uid)return null;
+  const {data,error}=await sb.from('mandaditos').select('*').eq('submitted_by',uid).limit(1);
+  if(error){console.error(error);return null;}
+  return (data&&data[0])||null;
 };
 
 /* Every one of the current user's own submissions, any status, across the
@@ -643,6 +657,16 @@ MC.fetchTienda=async function(){
     fulfillment:r.fulfillment||'',zone:r.zone||'',phone:r.contact_phone||'',contactMethods:r.contact_methods||[]
   }));
   return [...negocios,...personales];
+};
+
+MC.fetchMandaditos=async function(){
+  const {data,error}=await sb.from('mandaditos').select('*')
+    .eq('status','published').order('created_at',{ascending:false}).limit(60);
+  if(error){console.error(error);return [];}
+  return data.map(r=>({
+    id:r.id,name:r.display_name,phone:r.phone,vehicle:r.vehicle_type||'',
+    zona:r.zona||'',desc:r.description||'',img:r.image_url||''
+  }));
 };
 
 MC.fetchOfertas=async function(){
@@ -853,6 +877,10 @@ const CONTENT_PAYLOAD={
     description:d.desc||null,image_url:d.photo||null,
     fulfillment:d.fulfillment||null,zone:d.zone||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
     contact_phone:d.contact_phone||null,contact_methods:defaultContactMethods(d)
+  }),
+  mandaditos:(d)=>({
+    display_name:d.display_name,phone:d.phone||null,vehicle_type:d.vehicle_type||null,
+    zona:d.zona||null,description:d.desc||null,image_url:d.photo||null
   })
 };
 
@@ -882,6 +910,18 @@ MC.submitProducto=async function(d,businessId){
 MC.submitClasificado=async function(d){
   const uid=await MC.ready;
   return sb.from('clasificados').insert({...CONTENT_PAYLOAD.clasificados(d),submitted_by:uid});
+};
+
+/* Registering as a mandadito is open to any verified account — no
+   business needed, same spirit as Clasificados. Snapshots display_name
+   and phone from the account at submission time (not a live join —
+   profiles has no public read policy, same reasoning as every other
+   snapshot in this app). After this succeeds, app.js's caller is
+   responsible for showing the WhatsApp ID-verification reminder step —
+   this function only writes the row. */
+MC.submitMandadito=async function(d){
+  const uid=await MC.ready;
+  return sb.from('mandaditos').insert({...CONTENT_PAYLOAD.mandaditos(d),submitted_by:uid}).select('id').single();
 };
 
 MC.submitPerdido=async function(d){

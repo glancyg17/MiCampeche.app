@@ -126,6 +126,7 @@ function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
 function goToInfo(){closeMenu();nav('info');}
 function goToKoox(){closeMenu();nav('koox');}
+function openMandaditoSignup(){closeMenu();editingBusinessId=null;nav('tienda');setTiendaMode('mandaditos');openPost('mandadito');}
 /* Static reference only — no live data. Ko'ox's routes have changed
    repeatedly since launch (transbordo eliminations, rerouting to the
    Mercado, fare collection starting Feb 2026), so we deliberately don't
@@ -577,11 +578,11 @@ const SERVICIOS_UTILES=[
    same render pipeline that used to run against mock arrays. */
 async function loadAllData(){
   await MC.ready;
-  const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked,featuredBookings]=await Promise.all([
+  const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked,featuredBookings,mandaditos]=await Promise.all([
     MC.fetchNoticias(),MC.fetchEventos(),MC.fetchTienda(),MC.fetchOfertas(),MC.fetchPerdidos(),
-    MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates(),MC.fetchFeaturedBookings()
+    MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates(),MC.fetchFeaturedBookings(),MC.fetchMandaditos()
   ]);
-  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
+  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;MANDADITOS=mandaditos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
   alertasExpanded=false; // a fresh data load (incl. pull-to-refresh) collapses Alertas back to the top 10
   REPORTES.forEach(r=>{
@@ -620,6 +621,7 @@ function nav(tab,fromBack){
   if(!fromBack&&tab!==curScreen){
     if(tab==='anuncios')maybeShowTipGate(anunciosMode);
     else if(tab==='reportar')maybeShowTipGate(reportarMode);
+    else if(tab==='tienda')maybeShowTipGate(tiendaMode);
     if(tab==='inicio')mcScreenStack=[];
     // A peer bottom-nav tab is a lateral move, not "deeper" — back from any
     // of them returns to Inicio, and bouncing between tabs never piles up.
@@ -945,7 +947,14 @@ const SECTION_TIPS={
      'Elige <b>Perdido</b> o <b>Encontrado</b>.',
      'Describe qué es y en qué zona, con una foto si puedes.',
      'Envíalo: aparece aquí para que la ciudad esté atenta.'],
-    'Reportar perdido o encontrado',"openPost('perdidos')"]
+    'Reportar perdido o encontrado',"openPost('perdidos')"],
+  mandaditos:['tienda','¿Tienes moto y quieres hacer mandados?',
+    'Regístrate como mandadito y aparece en el directorio para que vecinos y negocios te contacten.',
+    ['Completa tu perfil: foto, vehículo y zona que cubres.',
+     'Te pediremos confirmar tu identidad por WhatsApp — es rápido.',
+     'Una vez aprobado, apareces en el directorio.',
+     'Quien necesite un mandado te contacta directo — el trato y el pago quedan entre ustedes.'],
+    'Quiero ser mandadito',"openMandaditoSignup()"]
 };
 let tipGateShownThisSession=new Set();
 function tipsEnabled(){
@@ -1183,7 +1192,10 @@ function setTiendaMode(mode){
   document.querySelectorAll('#scr-tienda .subtog-btn').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
   document.getElementById('tienda-mercado').style.display=mode==='mercado'?'block':'none';
   document.getElementById('tienda-clasificados').style.display=mode==='clasificados'?'block':'none';
+  document.getElementById('tienda-mandaditos').style.display=mode==='mandaditos'?'block':'none';
+  document.getElementById('tienda-fab').style.display=mode==='mandaditos'?'none':'flex';
   document.getElementById('tienda-fab').onclick=function(){openPost(mode==='mercado'?'producto':'clasificado');};
+  if(curScreen==='tienda')maybeShowTipGate(mode);
 }
 
 /* Shared card markup for both Mercado and Clasificados grids — same visual
@@ -1278,6 +1290,38 @@ function renderClasificados(){
   const el=document.getElementById('clas-grid');
   if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar algo por aquí.');return;}
   el.innerHTML=list.map(prodCardHtml).join('');
+  wireAdminRemove(el);
+}
+
+/* ══════════════ RENDER: MANDADITOS (courier directory) ══════════════
+   A directory, not a job board — no task posting, no in-app acceptance,
+   no status tracking. A customer browses profiles and contacts a
+   mandadito directly by WhatsApp; the deal and payment happen entirely
+   outside the app (same as Tienda/Clasificados). This distinction is
+   deliberate and load-bearing — see the Master Codex. */
+let MANDADITOS=[];
+function renderMandaditos(){
+  const el=document.getElementById('mandaditos-list');
+  if(!MANDADITOS.length){el.innerHTML=emptyState('tienda','Nadie registrado todavía','Sé el primero en registrarte como mandadito.');return;}
+  el.innerHTML=MANDADITOS.map(m=>{
+    const num=digitsOnly(m.phone);
+    const intl=num?(num.length===10?'52'+num:num):'';
+    const msg=encodeURIComponent(`Hola, vi tu perfil de mandadito en MiCampeche y necesito que muevas algo.`);
+    return `
+    <div class="prod-wrap" ${admRm('mandaditos',m.id,m.name)}>
+      <div class="prod-card" style="cursor:default">
+        <div class="prod-img" style="background-image:url('${m.img}')"></div>
+        <div class="prod-body">
+          <div class="prod-name">${e(m.name)}</div>
+          ${m.vehicle?`<div class="prod-seller">${e(m.vehicle)}</div>`:''}
+          ${m.zona?`<div class="prod-seller">${e(m.zona)}</div>`:''}
+          ${m.desc?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${e(m.desc)}</div>`:''}
+          ${intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">Contactar por WhatsApp</a>`
+                :`<div class="field-note">Sin WhatsApp registrado.</div>`}
+        </div>
+      </div>
+    </div>
+  `;}).join('')+`<div class="su-note">MiCampeche solo conecta — el trato, el precio y el pago quedan entre ustedes.</div>`;
   wireAdminRemove(el);
 }
 
@@ -1603,6 +1647,12 @@ const POST_FORMS={
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
     {k:'photo',lbl:'Foto del artículo',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
+  ]},
+  mandadito:{title:'Registrarme como mandadito',note:'Revisamos cada registro — incluida una confirmación rápida por WhatsApp — antes de aparecer en el directorio.',fields:[
+    {k:'vehicle_type',lbl:'¿Cómo te mueves?',type:'select',opts:['Motocicleta','Bicicleta','A pie','Auto']},
+    {k:'zona',lbl:'Zona que cubres',type:'text',ph:'Ej. Centro, San Román, Lerma...'},
+    {k:'photo',lbl:'Tu foto',type:'imgupload'},
+    {k:'desc',lbl:'Cuéntale a la gente sobre ti (opcional)',type:'textarea',ph:'Cuánto tiempo llevas haciendo mandados, qué tipo de cosas puedes mover...'}
   ]},
   perdidos:{title:'Reportar perdido o encontrado',fields:[
     {k:'tag',lbl:'Tipo de reporte',type:'seg',opts:[['perdido','Perdido'],['encontrado','Encontrado']]},
@@ -2112,14 +2162,16 @@ async function openAccount(){
   Promise.all([
     MC.fetchMyRejections(),
     MC.fetchMyActiveOfertas(),
+    MC.myMandadito(),
     acct.isAdmin?MC.fetchPendingCount():Promise.resolve(undefined),
     acct.isAdmin?MC.fetchCancellationReminderCount():Promise.resolve(undefined)
-  ]).then(([rej,activeOfertas,pendingCount,cancellationCount])=>{
+  ]).then(([rej,activeOfertas,myMandadito,pendingCount,cancellationCount])=>{
     if(myTurn!==accountViewSeq)return;
     if(!document.getElementById('modal-bg').classList.contains('on'))return;
     if(document.getElementById('modal-title').textContent!=='Tu cuenta')return; // user navigated on
     acct.rejections=rej;
     acct.myActiveOfertas=activeOfertas;
+    acct.myMandadito=myMandadito;
     acct.pendingCount=pendingCount;
     acct.cancellationCount=cancellationCount;
     renderAccountSignedIn(acct);
@@ -2173,6 +2225,18 @@ function renderAccountSignedIn(acct){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `}
+    ${(!acct.myMandadito||acct.myMandadito.status!=='published')?`
+      <button class="menu-item" onclick="openMandaditoSignup()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2m9-2a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">${acct.myMandadito&&acct.myMandadito.status==='rejected'?'Volver a intentar como mandadito':'Quiero ser mandadito'}</span>
+          <span class="menu-item-sub">${acct.myMandadito
+            ? (acct.myMandadito.status==='pending'?'Tu registro está en revisión':acct.myMandadito.status==='rejected'?(acct.myMandadito.rejection_reason||'No se aprobó tu registro anterior'):'')
+            : 'Regístrate en el directorio de mandaditos'}</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:''}
     ${(()=>{const rej=(acct.rejections||[]).length;return `
       <button class="menu-item" onclick="openMyPosts()" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></span>
@@ -3527,7 +3591,7 @@ async function openPremiumPrompt(context){
 }
 
 const SUBMIT_HANDLERS={
-  eventos:MC.submitEvento, producto:MC.submitProducto, clasificado:MC.submitClasificado,
+  eventos:MC.submitEvento, producto:MC.submitProducto, clasificado:MC.submitClasificado, mandadito:MC.submitMandadito,
   perdidos:MC.submitPerdido, empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
 };
 
@@ -3671,6 +3735,25 @@ async function submitPost(kind){
     return;
   }
 
+  if(kind==='mandadito'){
+    // display_name / phone aren't form fields — they come straight from
+    // the account (snapshotted server-side too). A directory listing, not
+    // a job: the row just goes through the normal Pendiente queue.
+    const acct=await MC.currentAccount();
+    data.display_name=acct.displayName||'';
+    data.phone=acct.phone||'';
+    if(!(data.vehicle_type||'').trim()){stop();toast('Elige cómo te mueves');return;}
+    const result=await MC.submitMandadito(data);
+    if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+    if(result&&result.error){toast(pgErrorToast(result.error,'No se pudo enviar tu registro.'));return;}
+    const msg='Hola, acabo de registrarme como mandadito en MiCampeche. Mi nombre es '+acct.displayName+'.';
+    openWhatsAppStep(msg,'Para confirmar que realmente eres tú, envíanos por este WhatsApp una foto de tu identificación, una selfie, la placa de tu vehículo y tu licencia vigente. Revisamos todo a mano antes de que tu perfil aparezca en el directorio — mientras tanto tu registro queda en revisión.',()=>{
+      toast('¡Registro enviado! Confirma por WhatsApp para que lo revisemos.');
+      closeModal();
+    });
+    return;
+  }
+
   const handler=SUBMIT_HANDLERS[kind];
   if(!handler){closeModal();return;} // unrecognized kind — nothing to send
   const result=await handler(data,selectedPostBusinessId);
@@ -3780,7 +3863,7 @@ async function refreshContent(){
   lastFetchedAccount=await MC.currentAccount();
   renderInicio();
   renderNoticias();
-  renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();
+  renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();renderMandaditos();
   renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
   renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
   refreshPendingBadge();

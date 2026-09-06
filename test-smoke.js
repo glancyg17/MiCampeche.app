@@ -134,6 +134,13 @@ const SAMPLE = {
     { id: 'o2', business_id: 'biz-9', business_name_snapshot: 'Negocio Ajeno', seller_phone: '', title: 'Oferta de otra persona', price_was: 80, price_now: 40, quantity_total: 3, quantity_sold: 0, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] },
   ],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
+  // Mandaditos directory (Step 1/3). md1 is owned by a DIFFERENT account
+  // (uid-2) so it surfaces in the public list but MC.myMandadito() stays
+  // null for the uid-1 test session (drives the "Quiero ser mandadito"
+  // menu-entry appears/disappears test).
+  mandaditos: [
+    { id: 'md1', display_name: 'Mandadito Test', phone: '981 400 5000', vehicle_type: 'Motocicleta', zona: 'Centro', status: 'published', submitted_by: 'uid-2', created_at: NOW.toISOString() },
+  ],
   perdidos: [
     { id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' },
     // owned by the test user (uid-1) — a still-pending one and another user's, for MC.fetchMyPosts
@@ -562,6 +569,10 @@ const fakeClient = {
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test') && text('clas-grid').includes('Ricardo T.'), 'Clasificados rendered real row with joined profile name');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');
   assert(text('of-list').includes('wa.me/529812003000') && text('of-list').includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
+  // Mandaditos directory: a published profile shows up with a working
+  // WhatsApp contact link — a directory, no task/job state.
+  assert(text('mandaditos-list') && text('mandaditos-list').includes('Mandadito Test') && text('mandaditos-list').includes('Motocicleta'), 'a published mandadito renders in the directory list');
+  assert(text('mandaditos-list').includes('wa.me/529814005000') && text('mandaditos-list').includes('Contactar por WhatsApp'), 'the mandadito card carries a direct WhatsApp contact link to that person');
   assert(text('pf-list') && text('pf-list').includes('Gato test'), 'Perdidos rendered real fetched data');
   assert(text('pf-list').includes('tel:+529815550000'), 'a Perdidos report with a contact number shows a call button');
   assert(text('alert-list') && text('alert-list').includes('Corte de agua'), 'Alertas rendered real fetched data');
@@ -1635,6 +1646,45 @@ const fakeClient = {
       assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'a complete clasificado submits successfully');
     }
 
+    // ── Mandaditos (Step 1/3): registration is a directory listing, not a
+    //    job — it flows through the same generic content pipeline, but the
+    //    successful submit lands on the WhatsApp identity-check step (like
+    //    signup) instead of a plain success toast. display_name/phone are
+    //    NOT form fields — they come from the account. ──
+    {
+      // "Quiero ser mandadito" account-menu entry shows while this account
+      // has no mandaditos row (md1 belongs to uid-2).
+      await window.openAccount();
+      await new Promise(r => setTimeout(r, 20)); // myMandadito loads with the rejections/pending counts, then re-renders
+      assert(text('modal-body').includes('Quiero ser mandadito') && text('modal-body').includes('openMandaditoSignup()'), 'the "Quiero ser mandadito" entry appears when the account has no mandadito profile');
+
+      // …and disappears once this account has a PUBLISHED mandadito.
+      SAMPLE.mandaditos.push({ id: 'md-mine', display_name: 'Ricardo Martín', phone: '+529811234567', vehicle_type: 'Auto', zona: 'Centro', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() });
+      await window.openAccount();
+      await new Promise(r => setTimeout(r, 20));
+      assert(!text('modal-body').includes('Quiero ser mandadito'), 'the entry is hidden once this account already has a published mandadito');
+      SAMPLE.mandaditos.pop(); // restore the fixture — later Pendiente-count assertions depend on it
+
+      // The form: no name/phone fields (account-sourced), submit goes to
+      // the WhatsApp identity step, and the row carries the snapshotted
+      // account identity.
+      await window.openMandaditoSignup();
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('modal-title') === 'Registrarme como mandadito', 'openMandaditoSignup() opens the mandadito registration form');
+      assert(!doc.getElementById('pf-display_name') && !doc.getElementById('pf-phone'), 'the form has no name/phone fields — those come from the account');
+      doc.getElementById('pf-vehicle_type').value = 'Motocicleta';
+      doc.getElementById('pf-zona').value = 'San Román';
+      delete lastInsert.mandaditos;
+      await window.submitPost('mandadito');
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('modal-title') === 'Un paso más: WhatsApp', 'a successful mandadito registration lands on the WhatsApp identity-check step, not a plain success toast');
+      const md = lastInsert.mandaditos;
+      assert(!!md && md.display_name === 'Ricardo Martín' && md.phone === '+529811234567' && md.vehicle_type === 'Motocicleta' && md.zona === 'San Román' && md.submitted_by === 'uid-1', 'the row snapshots the account identity and carries the form fields');
+      window.runWhatsAppStepContinue();
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('toast') === '¡Registro enviado! Confirma por WhatsApp para que lo revisemos.', 'completing the WhatsApp step shows the real confirmation and closes the modal');
+    }
+
     // Business profile carries the payment/delivery settings on submit.
     {
       await window.openBusinessEdit();
@@ -2027,7 +2077,7 @@ const fakeClient = {
     await window.openPending();
     window.setPendingTab('cancellations');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (26)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
+    assert(text('modal-title') === 'Pendiente (27)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
     assert(text('modal-body').includes('Cancelaciones (2)'), 'the Cancelaciones tab chip carries the real unresolved count');
     const crBody = text('modal-body');
     assert(crBody.includes('Negocio Cerrado') && crBody.includes('Negocio eliminado'), 'a business_removed reminder shows its business name and the Spanish reason label');
@@ -2053,7 +2103,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (26)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, and the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (27)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test, and the one mandaditos row (md1) added for the Mandaditos directory tests) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ══════════════ Reject-reason requirement: checks the actual row's
     //    submitted_by, not a hardcoded table name — the old check keyed
@@ -2183,7 +2233,7 @@ const fakeClient = {
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
     window.renderPendingQueue(); // reject auto-advanced into the next item's detail; re-render the list to check the count
-    assert(text('modal-title') === 'Pendiente (25)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (26)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real

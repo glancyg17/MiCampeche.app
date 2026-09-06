@@ -151,9 +151,10 @@
       </div>
       <div class="of-list" id="of-list"></div>
       <div class="mkt-divider"><span>Explorar</span></div>
-      <div class="subtog">
+      <div class="subtog subtog3">
         <button class="subtog-btn on" data-v="mercado" onclick="setTiendaMode('mercado')">Tienda</button>
         <button class="subtog-btn" data-v="clasificados" onclick="setTiendaMode('clasificados')">Clasificados</button>
+        <button class="subtog-btn" data-v="mandaditos" onclick="setTiendaMode('mandaditos')">Mandaditos</button>
       </div>
       <div id="tienda-mercado">
         <div class="chiprow" id="mkt-chips"></div>
@@ -165,6 +166,12 @@
         </div>
         <div class="chiprow" id="clas-chips"></div>
         <div class="tienda-grid" id="clas-grid"></div>
+      </div>
+      <div id="tienda-mandaditos" style="display:none">
+        <div class="of-hdr">
+          <div class="of-hdr-txt">MiCampeche solo conecta — el trato y el pago quedan entre ustedes</div>
+        </div>
+        <div id="mandaditos-list"></div>
       </div>
       <button class="fab" id="tienda-fab" onclick="openPost('tienda')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
