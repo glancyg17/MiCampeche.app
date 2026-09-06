@@ -127,8 +127,12 @@ const SAMPLE = {
   ],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
-  ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
-  ofertas_redemptions: [],
+  ofertas: [
+    { id: 'o1', business_id: 'biz-1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, quantity_sold: 2, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] },
+    // Owned by someone else — fetchMyActiveOfertas (scoped by submitted_by)
+    // must never surface this one for the uid-1 test session.
+    { id: 'o2', business_id: 'biz-9', business_name_snapshot: 'Negocio Ajeno', seller_phone: '', title: 'Oferta de otra persona', price_was: 80, price_now: 40, quantity_total: 3, quantity_sold: 0, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] },
+  ],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
   perdidos: [
     { id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' },
@@ -207,8 +211,8 @@ let fakePhoneAlreadyVerified = false; // controllable flag for MC.isPhoneAlready
 // window.MC — this object reference, by contrast, IS shared, since the
 // eval'd code's `sb` variable points at this exact same object) —
 // lets the error-path tests below force a real Postgres-shaped error
-// through the REAL MC.submitAviso/claimOferta code, rather than
-// monkey-patching those functions out of the test.
+// through the REAL MC.submitAviso code, rather than monkey-patching
+// those functions out of the test.
 const forcedErrors = { insert: {}, delete: {}, update: {}, resetPassword: null, requestPasswordReset: null, profilesUpdateFailOnce: false, profilesUpdateAlways: false };
 
 let currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
@@ -314,23 +318,6 @@ const fakeClient = {
           : { data: [], error: null }),
       };
     }
-    if (table === 'ofertas_redemptions') {
-      // The real table auto-fills `code` + `expires_at` via column defaults,
-      // so they never appear in the insert payload the generic fallback
-      // just echoes back. Fabricate them the way the DB would, while still
-      // honoring the forcedErrors hooks the claim/unclaim rollback tests use.
-      return {
-        select: (..._a) => makeChain(() => ({ data: SAMPLE.ofertas_redemptions || [], error: null })),
-        insert: (row) => { lastInsert.ofertas_redemptions = row; return makeChain(() => {
-          if (forcedErrors.insert.ofertas_redemptions) return { data: null, error: forcedErrors.insert.ofertas_redemptions };
-          const fake = { ...row, id: 'redemption-1', code: 'ABCD1234', claimed_at: NOW.toISOString(), expires_at: new Date(NOW.getTime() + 48*3600*1000).toISOString(), used: false, used_at: null };
-          return { data: [fake], error: null };
-        }); },
-        delete: () => makeChain(() => forcedErrors.delete.ofertas_redemptions
-          ? { data: null, error: forcedErrors.delete.ofertas_redemptions }
-          : { data: [], error: null }),
-      };
-    }
     if (table === 'profiles') {
       return {
         select: (...selectArgs) => {
@@ -379,8 +366,23 @@ const fakeClient = {
     };
   },
   rpc: async (name, args) => {
-    if (name === 'get_ofertas_claim_counts') {
-      return { data: (args.p_oferta_ids || []).map(id => ({ oferta_id: id, claimed: 2 })), error: null };
+    if (name === 'increment_oferta_sold') {
+      const oferta = (SAMPLE.ofertas || []).find(o => o.id === args.p_oferta_id);
+      if (!oferta || oferta.status !== 'published') return { data: null, error: { message: 'oferta_not_found_or_not_published' } };
+      // currentSession.user.id simulates auth.uid(); the real function's
+      // ownership check is business.profile_id === auth.uid(). The fixture
+      // treats uid-1 as the owner of biz-1 (see the businesses branch /
+      // currentBusiness setup), so anyone else confirming a biz-1 oferta
+      // must be refused.
+      const callerUid = currentSession && currentSession.user ? currentSession.user.id : null;
+      if (oferta.business_id === 'biz-1' && callerUid !== 'uid-1') {
+        return { data: null, error: { message: 'not_your_business' } };
+      }
+      if ((oferta.quantity_sold || 0) >= oferta.quantity_total) {
+        return { data: null, error: { message: 'already_sold_out' } };
+      }
+      oferta.quantity_sold = (oferta.quantity_sold || 0) + 1;
+      return { data: oferta.quantity_sold, error: null };
     }
     if (name === 'email_for_phone') {
       // login/reset resolve the typed phone to the account email; the
@@ -558,7 +560,8 @@ const fakeClient = {
   window.closeWeatherLightbox();
   assert(text('mkt-grid') && text('mkt-grid').includes('Producto test'), 'Tienda/Mercado rendered real productos row');
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test') && text('clas-grid').includes('Ricardo T.'), 'Clasificados rendered real row with joined profile name');
-  assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('reclamados'), 'Ofertas rendered with real claim count wired in');
+  assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');
+  assert(text('of-list').includes('wa.me/529812003000') && text('of-list').includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
   assert(text('pf-list') && text('pf-list').includes('Gato test'), 'Perdidos rendered real fetched data');
   assert(text('pf-list').includes('tel:+529815550000'), 'a Perdidos report with a contact number shows a call button');
   assert(text('alert-list') && text('alert-list').includes('Corte de agua'), 'Alertas rendered real fetched data');
@@ -783,14 +786,6 @@ const fakeClient = {
     assert(text('modal-body').includes('cuenta'), 'the gate explains an account is needed');
   } catch (err) {
     assert(false, 'sign-in gate for avisos threw: ' + err.stack);
-  }
-
-  try {
-    await window.toggleClaim('o1');
-    await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Inicia sesión para continuar', 'an anonymous visitor tapping claim on an Oferta also gets gated, not silently claimed');
-  } catch (err) {
-    assert(false, 'sign-in gate for toggleClaim threw: ' + err.stack);
   }
 
   // The gate should cascade correctly: tapping "+" while anonymous, then
@@ -1105,11 +1100,6 @@ const fakeClient = {
     await window.openPost('clasificado');
     assert(text('modal-title') === 'Tu cuenta está en revisión', 'a pending account hits the "en revisión" gate instead of the post form');
     assert(text('modal-body').includes('mismo número'), 'the gate explains the WhatsApp must come from the registered number');
-    const ofBeforeGate = text('of-list');
-    await window.toggleClaim('o1');
-    await new Promise(r => setTimeout(r, 10));
-    assert(text('modal-title') === 'Tu cuenta está en revisión', 'a pending account also cannot claim an Oferta');
-    assert(text('of-list') === ofBeforeGate, 'the blocked claim never optimistically changed the rendered state');
 
     currentProfile.phone_verification_status = 'verified'; currentProfile.phone_verification_reason = null; // leave in a clean state for later tests
     currentProfile.display_name = 'Ricardo Martín'; currentProfile.phone = '+529811234567'; // undo the edit-account test's change so downstream assertions (Perdidos/Avisos auto-fill) see the expected original value
@@ -1214,21 +1204,54 @@ const fakeClient = {
     assert(lastInsert.eventos && lastInsert.eventos.event_date === expectedPastDs, 'a PAST date picked in the month calendar is sent as event_date — nothing blocks it, unlike Ofertas\' occupied/free slot calendar');
     window.closeModal();
 
-    // Claim/unclaim mechanics, now as a real signed-in user.
-    const beforeHtml = text('of-list');
-    await window.toggleClaim('o1');
-    await new Promise(r => setTimeout(r, 50));
-    assert(text('of-list') !== beforeHtml, 'toggleClaim() actually changed rendered state (optimistic update path ran)');
+    // ── Ofertas redemption: no customer-side claim state at all anymore.
+    //    "Contactar" is just a wa.me link; the BUSINESS confirms real sales
+    //    from their own account via increment_oferta_sold. Exercised through
+    //    the real window.* flow (MC isn't reachable from out here). ──
+    window.closeModal();
+    const savedClaimSess = currentSession;
 
-    // A successful claim now surfaces the real redemption code (ABCD1234
-    // from the fake DB default) as a WhatsApp CTA prefilled to the
-    // business's snapshotted number (981 200 3000 -> wa.me/529812003000).
-    assert(text('of-list').includes('ABCD1234') && text('of-list').includes('wa.me/529812003000'), 'a claimed oferta shows the redemption code and a WhatsApp CTA to the business phone');
-    await window.toggleClaim('o1'); // unclaim
-    await new Promise(r => setTimeout(r, 50));
-    assert(!text('of-list').includes('ABCD1234') && !text('of-list').includes('wa.me/'), 'unclaiming removes the code and the WhatsApp CTA from the rendered oferta');
-    await window.toggleClaim('o1'); // re-claim, restoring the state the rollback test below expects
-    await new Promise(r => setTimeout(r, 50));
+    // The "Ofertas activas" pill shows in Tu cuenta while there's a live
+    // oferta this account owns (o1.submitted_by === 'uid-1').
+    await window.openAccount();
+    await new Promise(r => setTimeout(r, 20)); // the pill loads alongside the rejections/pending counts, then re-renders
+    assert(text('modal-body').includes('Ofertas activas') && text('modal-body').includes('openMyActiveOfertas()'), 'the "Ofertas activas" pill appears in Tu cuenta while the account owns a live oferta');
+
+    // The list itself, via the real openMyActiveOfertas() -> fetchMyActiveOfertas().
+    await window.openMyActiveOfertas();
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Ofertas activas' && text('modal-body').includes('Negocio Oferta') && text('modal-body').includes('2 de 5 vendidos'), 'openMyActiveOfertas() lists this account\'s own live, not-sold-out oferta with the real counts');
+    assert(!text('modal-body').includes('Oferta de otra persona'), 'fetchMyActiveOfertas() is scoped by submitted_by — another account\'s oferta (o2) never appears');
+
+    // Two-step confirm: quantity_sold 2 -> 3 through the real RPC.
+    window.confirmOfertaSaleStep1('o1');
+    assert(text('modal-title') === 'Confirmar venta' && text('modal-body').includes('no se puede deshacer'), 'step 1 opens a distinct confirm screen (two-step, no undo by design)');
+    await window.confirmOfertaSaleStep2('o1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(SAMPLE.ofertas[0].quantity_sold === 3, 'confirming a sale increments quantity_sold by exactly 1 through the real increment_oferta_sold RPC');
+    assert(text('modal-title') === 'Ofertas activas' && text('modal-body').includes('3 de 5 vendidos'), 'the modal returns to the list and its local state reflects the new count');
+    assert(text('toast') === 'Venta confirmada ✓', 'a successful confirm shows its toast');
+
+    // A non-owner cannot confirm a sale for a business they don't own —
+    // the list still holds o1 locally from the owner's session above.
+    currentSession = { user: { id: 'uid-2', is_anonymous: false, email: 'otra@example.com' } };
+    window.confirmOfertaSaleStep1('o1');
+    await window.confirmOfertaSaleStep2('o1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(SAMPLE.ofertas[0].quantity_sold === 3, 'a non-owner\'s confirm attempt does NOT change the count');
+    assert(text('toast') === 'Esta oferta no es de tu negocio.', 'a non-owner confirm surfaces not_your_business via pgErrorToast');
+    currentSession = savedClaimSess;
+    window.mcModalBack('myActiveOfertas');
+
+    // Sold out: a further confirm is rejected, count never passes the total.
+    SAMPLE.ofertas[0].quantity_sold = 5;
+    window.confirmOfertaSaleStep1('o1');
+    await window.confirmOfertaSaleStep2('o1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(SAMPLE.ofertas[0].quantity_sold === 5, 'a confirm on an already-sold-out oferta never pushes the count past quantity_total');
+    assert(text('toast') === 'Esta oferta ya está agotada.', 'the sold-out rejection surfaces via pgErrorToast');
+    SAMPLE.ofertas[0].quantity_sold = 2; // restore the fixture for any later re-fetch
+    window.closeModal();
 
     // ── Error paths: the newest, most bespoke logic (friendly toasts +
     // optimistic-UI rollback), so worth testing deliberately. ──
@@ -1239,16 +1262,6 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Ya publicaste un aviso hoy — puedes publicar otro mañana.', 'duplicate-submission error (through the REAL MC.submitAviso) maps to the correct friendly Spanish toast, not a generic one');
     forcedErrors.insert.avisos = null;
-
-    forcedErrors.insert.ofertas_redemptions = { code: '23505', message: 'duplicate key value violates unique constraint "one_claim_per_person_per_oferta"' };
-    forcedErrors.delete.ofertas_redemptions = { code: '23505', message: 'duplicate key value violates unique constraint "one_claim_per_person_per_oferta"' };
-    const beforeClaim = text('of-list');
-    await window.toggleClaim('o1');
-    await new Promise(r => setTimeout(r, 20));
-    assert(text('of-list') === beforeClaim, 'toggleClaim() (through the REAL MC.claimOferta/unclaimOferta) rolled back the optimistic UI update after a failed write, instead of leaving it stuck');
-    assert(text('toast') === 'Ya habías reclamado esta oferta.', 'claim-toggle failure surfaced the correct friendly toast');
-    forcedErrors.insert.ofertas_redemptions = null;
-    forcedErrors.delete.ofertas_redemptions = null;
 
     // Perdidos: the contact toggle defaults to "sí" and the number is
     // pre-filled from the account, so a normal report still carries a phone
@@ -2000,7 +2013,7 @@ const fakeClient = {
     await window.openPending();
     window.setPendingTab('cancellations');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (25)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
+    assert(text('modal-title') === 'Pendiente (26)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
     assert(text('modal-body').includes('Cancelaciones (2)'), 'the Cancelaciones tab chip carries the real unresolved count');
     const crBody = text('modal-body');
     assert(crBody.includes('Negocio Cerrado') && crBody.includes('Negocio eliminado'), 'a business_removed reminder shows its business name and the Spanish reason label');
@@ -2026,7 +2039,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (25)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, and the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (26)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, and the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ══════════════ Reject-reason requirement: checks the actual row's
     //    submitted_by, not a hardcoded table name — the old check keyed
@@ -2156,7 +2169,7 @@ const fakeClient = {
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
     window.renderPendingQueue(); // reject auto-advanced into the next item's detail; re-render the list to check the count
-    assert(text('modal-title') === 'Pendiente (24)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (25)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real

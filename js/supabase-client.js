@@ -362,7 +362,6 @@ function pgErrorToast(error,fallback){
     if(m.includes('one_aviso_per_person_per_day'))return 'Ya publicaste un aviso hoy — puedes publicar otro mañana.';
     if(m.includes('one_clasificado_per_person'))return 'Ya tienes un artículo publicado en Clasificados (uno por persona).';
     if(m.includes('ofertas_bookings_booked_date_key'))return 'Ese día ya fue reservado por otro negocio — intenta con otro.';
-    if(m.includes('one_claim_per_person_per_oferta'))return 'Ya habías reclamado esta oferta.';
     if(m.includes('reportes_resolution_votes'))return 'Ya habías marcado este reporte como resuelto.';
     if(m.includes('reportes_confirmations'))return 'Ya habías confirmado este reporte.';
     if(m.includes('businesses_profile_id_key'))return 'Ya tienes un negocio verificado en esta cuenta.';
@@ -374,6 +373,15 @@ function pgErrorToast(error,fallback){
     if(m.includes('oferta_concurrent_slot_cap_reached'))return 'Ya tienes el máximo de espacios reservados para tu plan. Espera a que pase la fecha de uno, o actualiza a Premium para tener hasta 3 a la vez.';
   }
   if(error.code==='42501')return 'No tienes permiso para hacer esto — intenta de nuevo en un momento.';
+  // increment_oferta_sold's RAISE EXCEPTION messages — arrive as P0001 in
+  // production, but the message text is the stable signal so match on it
+  // directly (a bare-message error from a fake/edge case still resolves).
+  {
+    const m=error.message||'';
+    if(m.includes('already_sold_out'))return 'Esta oferta ya está agotada.';
+    if(m.includes('not_your_business'))return 'Esta oferta no es de tu negocio.';
+    if(m.includes('oferta_not_found_or_not_published'))return 'Esta oferta ya no está disponible.';
+  }
   console.error('Supabase error:',error);
   return fallback||'Algo salió mal. Intenta de nuevo.';
 }
@@ -641,40 +649,39 @@ MC.fetchOfertas=async function(){
   const {data,error}=await sb.from('ofertas').select('*, ofertas_bookings(booked_date)')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);
   if(error){console.error(error);return [];}
-  const ids=data.map(r=>r.id);
-  let countsById={};
-  if(ids.length){
-    const {data:counts,error:cErr}=await sb.rpc('get_ofertas_claim_counts',{p_oferta_ids:ids});
-    if(cErr)console.error(cErr);
-    (counts||[]).forEach(c=>{countsById[c.oferta_id]=Number(c.claimed);});
-  }
-  const uid=await MC.ready;
-  // Map, not Set, now that a claim also needs to bring back the real
-  // redemption code+expiry — so the WhatsApp CTA still shows it on a later
-  // visit, not just in the instant right after tapping "Reclamar".
-  let myClaims=new Map();
-  if(uid&&ids.length){
-    const {data:mine}=await sb.from('ofertas_redemptions').select('oferta_id,code,expires_at').eq('claimed_by',uid).in('oferta_id',ids);
-    (mine||[]).forEach(r=>myClaims.set(r.oferta_id,{code:r.code,expiresAt:r.expires_at}));
-  }
   return data.map(r=>{
     const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
     const postedDs=booking?booking.booked_date:dToDs(new Date(r.created_at));
-    // total count includes everyone; the mock UI adds "+1 if claimedByMe"
-    // on top of a base count that excludes the current user, so subtract
-    // the current user's own claim back out here to keep that math intact.
-    const totalClaimed=countsById[r.id]||0;
-    const mine=myClaims.get(r.id);
-    const iClaimed=!!mine;
     return {
       id:r.id,seller:r.business_name_snapshot,tier:r.is_premium?'premium':'free',name:r.title,
       priceWas:Number(r.price_was)||0,priceNow:Number(r.price_now)||0,img:r.image_url||'',
-      claimed:iClaimed?Math.max(0,totalClaimed-1):totalClaimed,total:r.quantity_total||1,
-      postedDs,iClaimedReal:iClaimed,
-      myCode:mine?mine.code:null,myCodeExpiresAt:mine?mine.expiresAt:null,
-      phone:r.seller_phone||''
+      sold:r.quantity_sold||0,total:r.quantity_total||1,
+      postedDs,phone:r.seller_phone||''
     };
   });
+};
+/* The account-page "Ofertas activas" pill's data source — every one of
+   this account's own ofertas that's live and not yet sold out. Scoped by
+   submitted_by, same as every other "my own posts" query in this app —
+   for a business's own oferta that's always the business owner's own uid,
+   so this is safe without needing a businesses join at all
+   (business_name_snapshot already lives on the row). */
+MC.fetchMyActiveOfertas=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const {data,error}=await sb.from('ofertas').select('*')
+    .eq('submitted_by',uid).eq('status','published');
+  if(error){console.error(error);return [];}
+  return (data||[])
+    .filter(r=>(r.quantity_sold||0)<r.quantity_total)
+    .map(r=>({id:r.id,name:r.title,businessName:r.business_name_snapshot,sold:r.quantity_sold||0,total:r.quantity_total}));
+};
+/* The business's own "+1 pago confirmado" action — thin wrapper around the
+   RPC, which does its own ownership check and bounds check server-side.
+   No client-side trust here at all; this can fail for real (already sold
+   out, not actually their business) and the caller needs to handle that. */
+MC.confirmOfertaSale=async function(ofertaId){
+  return sb.rpc('increment_oferta_sold',{p_oferta_id:ofertaId});
 };
 
 MC.fetchBookedDates=async function(){
@@ -972,15 +979,6 @@ MC.uploadImage=async function(blob,ext){
   if(error)throw error;
   const {data}=sb.storage.from('uploads').getPublicUrl(path);
   return data.publicUrl;
-};
-
-MC.claimOferta=async function(ofertaId){
-  const uid=await MC.ready;
-  return sb.from('ofertas_redemptions').insert({oferta_id:ofertaId,claimed_by:uid}).select('code,expires_at').single();
-};
-MC.unclaimOferta=async function(ofertaId){
-  const uid=await MC.ready;
-  return sb.from('ofertas_redemptions').delete().eq('oferta_id',ofertaId).eq('claimed_by',uid);
 };
 
 MC.confirmReporte=async function(reporteId){

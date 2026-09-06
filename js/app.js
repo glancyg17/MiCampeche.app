@@ -537,9 +537,9 @@ const SERVICIOS_UTILES=[
 ];
 
 /* Pulls every content type from Supabase in parallel, seeds the local
-   optimistic claim/confirm caches from what's actually true in the
-   database (see claimedByMe/confirmedByMe further down), then hands off
-   to the same render pipeline that used to run against mock arrays. */
+   optimistic confirm caches from what's actually true in the database
+   (see confirmedByMe/resolvedByMe further down), then hands off to the
+   same render pipeline that used to run against mock arrays. */
 async function loadAllData(){
   await MC.ready;
   const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked,featuredBookings]=await Promise.all([
@@ -549,10 +549,6 @@ async function loadAllData(){
   NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
   alertasExpanded=false; // a fresh data load (incl. pull-to-refresh) collapses Alertas back to the top 10
-  OFERTAS.forEach(o=>{
-    if(o.iClaimedReal)claimedByMe[o.id]=true;
-    if(o.myCode)claimedCodes[o.id]={code:o.myCode,expiresAt:o.myCodeExpiresAt};
-  });
   REPORTES.forEach(r=>{
     if(r.iConfirmedReal)confirmedByMe[r.id]=true;
     if(r.iVotedResolvedReal)resolvedByMe[r.id]=true;
@@ -787,13 +783,10 @@ function renderInicio(){
 
   let h='';
 
-  const availableOffers=OFERTAS.filter(o=>{
-    const claimed=o.claimed+(claimedByMe[o.id]?1:0);
-    return claimed<o.total&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS;
-  }).sort((a,b)=>(a.tier==='premium'?-1:0)-(b.tier==='premium'?-1:0));
+  const availableOffers=OFERTAS.filter(o=>o.sold<o.total&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
+    .sort((a,b)=>(a.tier==='premium'?-1:0)-(b.tier==='premium'?-1:0));
   if(availableOffers.length){
-    const o=availableOffers[0]; // Inicio shows only the single newest live deal, no carousel
-    const claimed=o.claimed+(claimedByMe[o.id]?1:0);
+    const o=availableOffers[0]; // Inicio shows only the single newest live deal, no carousel — the 3-per-day/carousel redesign is a separate, not-yet-scoped follow-up, deliberately not part of this change
     const pct=Math.round((1-o.priceNow/o.priceWas)*100);
     h+=dashSection('tienda','Oferta del día','tienda', `
       <div class="dash-card dc-of-hero" onclick="nav('tienda')">
@@ -1254,22 +1247,22 @@ function renderClasificados(){
 }
 
 /* ══════════════ RENDER: OFERTAS (daily deal drop) ══════════════ */
-const claimedByMe={}; // mock — real version ties this to the logged-in user's account
-const claimedCodes={}; // id -> {code, expiresAt} — the real redemption code from ofertas_redemptions, surfaced as a WhatsApp CTA once claimed
+/* No claim state at all anymore — "Contactar" just opens WhatsApp, same
+   as Tienda already does. The count is real: quantity_sold only ever
+   moves when the business themselves confirms a real payment (see
+   confirmOfertaSaleStep2 further down), so there's no more "claimed but
+   never showed up" gap. */
 function renderOfertas(){
   const el=document.getElementById('of-list');
-  // A deal stays visible while within its 7-day display window, even once
-  // sold out (so it shows the Agotado state) — it only disappears once its
-  // window has actually expired.
   const visible=OFERTAS.filter(o=>ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
   el.innerHTML=visible.map(o=>{
-    const claimed=o.claimed+(claimedByMe[o.id]?1:0);
-    const soldOut=claimed>=o.total;
-    const pct=Math.min(100,Math.round((claimed/o.total)*100));
+    const soldOut=o.sold>=o.total;
+    const pct=Math.min(100,Math.round((o.sold/o.total)*100));
     const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
-    const iClaimed=!!claimedByMe[o.id];
-    const code=claimedCodes[o.id];
+    const num=digitsOnly(o.phone);
+    const intl=num?(num.length===10?'52'+num:num):'';
+    const msg=encodeURIComponent(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
     return `
     <div class="of-card${soldOut?' sold-out':''}" ${admRm('ofertas',o.id,o.name)}>
       ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
@@ -1288,71 +1281,18 @@ function renderOfertas(){
       <div class="of-bottom">
         <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
         <div class="of-claim-row">
-          <span class="of-claimed-txt">${claimed} de ${o.total} reclamados</span>
+          <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
           ${soldOut
             ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
-            : iClaimed
-              ? `<button class="of-claim-btn claimed" onclick="toggleClaim('${o.id}')">✓ Reclamado</button>`
-              : `<button class="of-claim-btn" onclick="toggleClaim('${o.id}')">Reclamar</button>`
+            : intl
+              ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">Contactar</a>`
+              : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`
           }
         </div>
-        ${(iClaimed&&code)?ofertaRedeemCtaHtml(o,code):''}
       </div>
     </div>
   `;}).join('');
   wireAdminRemove(el);
-}
-/* The redemption "receipt" — no validation screen for the business at all;
-   the WhatsApp message itself, sent from the customer's own real number
-   with the code baked into the text, IS the proof shown at pickup. Matches
-   Tienda's existing "MiCampeche never touches the transaction" pattern —
-   this hands straight off to the business's own WhatsApp. */
-function ofertaRedeemCtaHtml(o,code){
-  const num=digitsOnly(o.phone);
-  const intl=num?(num.length===10?'52'+num:num):'';
-  const expiry=code.expiresAt?new Date(code.expiresAt).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-  const msg=encodeURIComponent(`Hola, reclamé tu oferta "${o.name}" en MiCampeche. Mi código es: ${code.code}${expiry?` (válido hasta ${expiry})`:''}`);
-  return `<div class="of-redeem">
-    <div class="of-redeem-code">Código: <b>${e(code.code)}</b>${expiry?` · válido hasta ${expiry}`:''}</div>
-    ${intl?`<a class="av-contact-btn" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">${svgIco('message')}Enviar por WhatsApp</a>`
-          :`<div class="field-note">Este negocio no dejó un WhatsApp registrado — muestra tu código directamente.</div>`}
-  </div>`;
-}
-async function toggleClaim(id){
-  const acct=await MC.currentAccount();
-  if(!runWriteGate(acct,null))return;
-  const o=OFERTAS.find(x=>x.id===id);if(!o)return;
-  const alreadyClaimed=o.claimed+(claimedByMe[id]?1:0)>=o.total;
-  if(!claimedByMe[id]&&alreadyClaimed){toast('Esta oferta ya se agotó');renderOfertas();return;}
-  // Optimistic: flip the UI immediately, then confirm against Supabase —
-  // roll back and explain if the real write fails (e.g. someone else
-  // claimed the last spot in the meantime).
-  const wasClaimed=!!claimedByMe[id];
-  claimedByMe[id]=!wasClaimed;
-  renderOfertas();
-  if(wasClaimed){
-    const {error}=await MC.unclaimOferta(id);
-    if(error){
-      claimedByMe[id]=true;
-      renderOfertas();
-      toast(pgErrorToast(error,'No se pudo actualizar tu reclamo.'));
-      return;
-    }
-    delete claimedCodes[id];
-    toast('Reclamo cancelado');
-    renderOfertas();
-    return;
-  }
-  const {data,error}=await MC.claimOferta(id);
-  if(error){
-    claimedByMe[id]=false;
-    renderOfertas();
-    toast(pgErrorToast(error,'No se pudo actualizar tu reclamo.'));
-    return;
-  }
-  claimedCodes[id]={code:data.code,expiresAt:data.expires_at};
-  toast('¡Reclamado! Muestra tu código por WhatsApp en el negocio');
-  renderOfertas();
 }
 
 function renderEmpleos(){
@@ -2136,13 +2076,15 @@ async function openAccount(){
   renderAccountSignedIn(acct);
   Promise.all([
     MC.fetchMyRejections(),
+    MC.fetchMyActiveOfertas(),
     acct.isAdmin?MC.fetchPendingCount():Promise.resolve(undefined),
     acct.isAdmin?MC.fetchCancellationReminderCount():Promise.resolve(undefined)
-  ]).then(([rej,pendingCount,cancellationCount])=>{
+  ]).then(([rej,activeOfertas,pendingCount,cancellationCount])=>{
     if(myTurn!==accountViewSeq)return;
     if(!document.getElementById('modal-bg').classList.contains('on'))return;
     if(document.getElementById('modal-title').textContent!=='Tu cuenta')return; // user navigated on
     acct.rejections=rej;
+    acct.myActiveOfertas=activeOfertas;
     acct.pendingCount=pendingCount;
     acct.cancellationCount=cancellationCount;
     renderAccountSignedIn(acct);
@@ -2208,6 +2150,17 @@ function renderAccountSignedIn(acct){
         ${rej?`<span class="menu-badge on">${rej>99?'99+':rej}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>`;})()}
+    ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`
+      <button class="menu-item" onclick="openMyActiveOfertas()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico">${svgIco('tienda')}</span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Ofertas activas</span>
+          <span class="menu-item-sub">Confirma cada venta cuando te paguen</span>
+        </span>
+        <span class="menu-badge on">${acct.myActiveOfertas.length}</span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:''}
     ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
@@ -2304,6 +2257,68 @@ async function cancelBusinessPremiumUpgrade(businessId){
   toast('Premium cancelado para este negocio');
   mcModalBack('myBusinesses');
   openMyBusinesses();
+}
+
+/* ══════════════ BUSINESS: "Ofertas activas" — confirm real sales ══════════════
+   The whole redemption model is now just this: the customer contacts the
+   business over WhatsApp (no claim, no code, no customer-side state), and
+   the business bumps quantity_sold by 1 here, from their own account, only
+   once they've actually been paid. The RPC does the ownership + sold-out
+   checks server-side; there's no undo by design, which is why Step2 has
+   its own confirm screen. */
+let myActiveOfertasList=[];
+async function openMyActiveOfertas(){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Ofertas activas';
+  document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
+  document.getElementById('modal-bg').classList.add('on');
+  myActiveOfertasList=await MC.fetchMyActiveOfertas();
+  renderMyActiveOfertas();
+}
+function renderMyActiveOfertas(){
+  if(!myActiveOfertasList.length){
+    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No tienes ofertas activas ahora mismo.</div></div>`;
+    return;
+  }
+  document.getElementById('modal-body').innerHTML=myActiveOfertasList.map(o=>`
+    <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(o.businessName)}</div>
+      <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(o.name)}</div>
+      <div style="color:var(--ink3);font-size:12px;margin-top:2px">${o.sold} de ${o.total} vendidos</div>
+      <button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="confirmOfertaSaleStep1('${o.id}')">+1 pago confirmado</button>
+    </div>
+  `).join('');
+}
+/* Second confirmation is deliberate, not decorative — this bumps a real
+   sale count with no undo, so a stray tap on the list itself shouldn't be
+   able to do it alone. Mirrors confirmCancelBusinessPremium's existing
+   two-step shape. */
+function confirmOfertaSaleStep1(id){
+  const o=myActiveOfertasList.find(x=>x.id===id);
+  if(!o)return;
+  mcModalPushView('myActiveOfertas');
+  document.getElementById('modal-title').textContent='Confirmar venta';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:6px">Vas a marcar 1 unidad de <b>${e(o.name)}</b> como vendida y pagada. Esto no se puede deshacer desde la app.</div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('myActiveOfertas')">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1" id="confirm-oferta-sale-btn" onclick="confirmOfertaSaleStep2('${id}')">Sí, ya me pagaron</button>
+    </div>
+  `;
+}
+async function confirmOfertaSaleStep2(id){
+  const btn=document.getElementById('confirm-oferta-sale-btn');
+  if(btn){btn.disabled=true;btn.textContent='Confirmando…';}
+  const {data,error}=await MC.confirmOfertaSale(id);
+  if(error){
+    toast(pgErrorToast(error,'No se pudo confirmar la venta.'));
+    if(btn){btn.disabled=false;btn.textContent='Sí, ya me pagaron';}
+    return;
+  }
+  mcModalBack('myActiveOfertas');
+  myActiveOfertasList=myActiveOfertasList.map(o=>o.id===id?{...o,sold:data}:o).filter(o=>o.sold<o.total);
+  renderMyActiveOfertas();
+  toast('Venta confirmada ✓');
 }
 /* Pay first, then create the upgrade row on return — same reasoning as
    every other paid add-on in this app (Ofertas, Eventos featuring, the
