@@ -601,20 +601,25 @@ const fakeClient = {
     currentSession = savedSess;
   }
 
-  // ── Onboarding: a pinned "how to use this section" card at the top of
-  //    each user-postable list, dismissible per device. ──
-  assert(text('evt-list').includes('onboard-card') && text('evt-list').includes('Publica tu propio evento'), 'Eventos list shows the pinned how-to card');
-  assert(text('pf-list').includes('¿Perdiste o encontraste algo?'), 'Perdidos shows its pinned how-to card');
-  assert(text('job-list').includes('¿Ofreces trabajo? Publícalo aquí'), 'Empleos shows its pinned how-to card');
-  assert(text('av-list').includes('Avísale a tu colonia'), 'Avisos shows its pinned how-to card');
-  assert(text('rep-list').includes('Reporta un problema de tu calle'), 'Reportes shows its pinned how-to card');
-  assert(text('alert-list').includes('Qué son las Alertas'), 'Alertas shows its pinned explainer card');
-  assert(text('evt-list').includes("openPost('eventos')"), 'the Eventos card leads into the real publish form');
-  window.dismissOnboard('eventos');
-  assert(!text('evt-list').includes('onboard-card'), 'dismissing the card removes it right away');
-  window.renderEventos();
-  assert(!text('evt-list').includes('onboard-card') && text('evt-list').includes('Evento de prueba'), 'and it stays dismissed on later renders, without hiding the real events');
-  try { window.localStorage.removeItem('mc_onboard_eventos'); } catch (_) {}
+  // ── Onboarding tip gates: a blocking overlay shown once per device the
+  //    first time each section becomes visible — replaces the old inline
+  //    pinned "how-to" card (which no longer exists in the list HTML). ──
+  assert(!text('evt-list').includes('onboard-card'), 'the how-to content is no longer pinned inline in the section list');
+  window.nav('anuncios'); // first-ever entry into Anuncios → the eventos tip gate fires
+  assert(doc.getElementById('tip-gate').classList.contains('on'), 'entering the Eventos section for the first time opens the blocking tip gate');
+  assert(text('tip-gate-card').includes('Publica tu propio evento'), 'the tip gate carries the section-specific how-to content');
+  assert(text('tip-gate-card').includes("openPost('eventos')"), 'the tip gate CTA leads into the real publish form');
+  window.dismissTipGate('eventos');
+  assert(!doc.getElementById('tip-gate').classList.contains('on'), 'dismissing closes the tip-gate overlay');
+  window.nav('inicio');
+  window.nav('anuncios'); // returning to Eventos in the same session must NOT reopen it
+  assert(!doc.getElementById('tip-gate').classList.contains('on'), 'the tip gate stays closed on a later visit in the same session (session-level guard)');
+  window.setAnunciosMode('empleos'); // a different, not-yet-seen sub-section DOES fire its own gate
+  assert(doc.getElementById('tip-gate').classList.contains('on') && text('tip-gate-card').includes('¿Ofreces trabajo?'), 'switching to a not-yet-seen sub-section fires that section\'s own tip gate');
+  window.dismissTipGate('empleos');
+  window.setAnunciosMode('eventos'); // restore default sub-mode
+  window.nav('inicio'); // restore the default screen for the hardware-back test below
+  try { window.localStorage.removeItem('mc_onboard_eventos'); window.localStorage.removeItem('mc_onboard_empleos'); } catch (_) {}
 
   // ── Hardware back button (Android / installed PWA): each press peels one
   //    UI layer — overlay, then screen — instead of quitting on press one. ──

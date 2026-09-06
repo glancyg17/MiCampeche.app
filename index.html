@@ -79,6 +79,10 @@
      Body is filled by showInstallGate() in app.js, per platform. -->
 <div id="install-gate"><div class="gate-card" id="install-gate-card"></div></div>
 
+<!-- ═══ TIP GATE (per-section onboarding, blocking, once per device) ═══
+     Body is filled by maybeShowTipGate(key) in app.js. -->
+<div id="tip-gate"><div class="onboard-card" id="tip-gate-card"></div></div>
+
 <!-- ═══ APP ═══ -->
 <div class="app" id="app">
 
@@ -475,6 +479,14 @@
         <span class="menu-item-txt">
           <span class="menu-item-lbl">Pagar servicios</span>
           <span class="menu-item-sub">CFE, agua y más</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="menu-item" onclick="openPreferences()">
+        <span class="menu-item-ico" style="background:var(--wall-dk)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Preferencias</span>
+          <span class="menu-item-sub">Consejos y ajustes de la app</span>
         </span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>

@@ -574,6 +574,8 @@ function nav(tab,fromBack){
   renderBottomNav();
   target.scrollTop=0;
   if(!fromBack&&tab!==curScreen){
+    if(tab==='anuncios')maybeShowTipGate(anunciosMode);
+    else if(tab==='reportar')maybeShowTipGate(reportarMode);
     if(tab==='inicio')mcScreenStack=[];
     // A peer bottom-nav tab is a lateral move, not "deeper" — back from any
     // of them returns to Inicio, and bouncing between tabs never piles up.
@@ -857,29 +859,110 @@ function showNoticia(id){
   nav('noticia-detail');
 }
 
-/* ══════════════ ONBOARDING CARDS ══════════════
-   A pinned "how to use this section" card at the top of each user-postable
-   list, while people are still learning the app. Master switch below; each
-   card is also dismissible per-device (localStorage). Flip ONBOARDING_ENABLED
-   to false (or delete these) once the app is familiar. */
-const ONBOARDING_ENABLED=true;
-function onboardCard(key,icoName,title,lead,steps,ctaLabel,ctaOnclick){
-  if(!ONBOARDING_ENABLED)return '';
-  try{if(localStorage.getItem('mc_onboard_'+key)==='1')return '';}catch(_){}
-  return `<div class="onboard-card">
-    <button class="onboard-card-x" aria-label="Ocultar" onclick="dismissOnboard('${key}')">${svgIco('close')}</button>
+/* ══════════════ TIP GATES (per-section onboarding, once per device) ══════════════
+   Replaces the old inline "onboard card" with a real blocking overlay,
+   shown once (per device) the first time a section becomes visible, then
+   never again unless reset from Preferencias. Reuses .onboard-card's
+   inner markup/CSS, just wrapped in a full-screen dismiss-to-continue
+   overlay instead of being pinned inline atop the list. */
+const SECTION_TIPS={
+  eventos:['eventos','Publica tu propio evento',
+    '¿Organizas algo en Campeche? Compártelo aquí, gratis.',
+    ['Toca el botón <b>+</b> abajo a la derecha.',
+     'Escribe nombre, fecha, hora y lugar.',
+     'Agrega una foto o cartel, precio y contacto (opcional).',
+     'Envíalo: lo revisamos y se publica para toda la ciudad.'],
+    'Publicar un evento',"openPost('eventos')"],
+  empleos:['empleos','¿Ofreces trabajo? Publícalo aquí',
+    'Llega a vecinos que buscan empleo en Campeche.',
+    ['Toca el botón <b>+</b> abajo a la derecha.',
+     'Escribe el puesto, el negocio y el pago.',
+     'Agrega el horario y los requisitos.',
+     'Envíalo: quien busca trabajo te contacta directo.'],
+    'Publicar una vacante',"openPost('empleos')"],
+  alertas:['alertas','Qué son las Alertas',
+    'Aquí verás <b>alertas oficiales</b> para toda la ciudad — cortes de agua, clima fuerte, cierres de calles, emergencias. Las publica MiCampeche; tú solo revisa aquí cuando algo esté pasando. ¿Un problema de tu calle (bache, fuga, alumbrado)? Eso va en <b>Reportes</b>.',
+    null,
+    'Ir a Reportes',"setReportarMode('reportes')"],
+  reportes:['reportar','Reporta un problema de tu calle',
+    'Bache, fuga de agua, alumbrado, árbol caído, basura acumulada…',
+    ['Toca el botón <b>+</b> abajo a la derecha.',
+     'Elige el tipo de problema y dónde está.',
+     'Agrega una foto para que se entienda mejor.',
+     'Envíalo: otros vecinos lo confirman para darle peso.'],
+    'Reportar un problema',"openPost('reportar')"],
+  avisos:['message','Avísale a tu colonia',
+    'Se busca a un familiar, junta vecinal, cuidado con un perro suelto…',
+    ['Toca el botón <b>+</b> abajo a la derecha.',
+     'Elige el tipo de aviso y escribe tu mensaje.',
+     'Deja un número de contacto.',
+     'Envíalo: un aviso por persona al día, revisado antes de publicarse.'],
+    'Publicar un aviso',"openPost('avisos')"],
+  perdidos:['perdidos','¿Perdiste o encontraste algo?',
+    'Una mascota, unas llaves, una cartera… tus vecinos te ayudan.',
+    ['Toca el botón <b>+</b> abajo a la derecha.',
+     'Elige <b>Perdido</b> o <b>Encontrado</b>.',
+     'Describe qué es y en qué zona, con una foto si puedes.',
+     'Envíalo: aparece aquí para que la ciudad esté atenta.'],
+    'Reportar perdido o encontrado',"openPost('perdidos')"]
+};
+let tipGateShownThisSession=new Set();
+function tipsEnabled(){
+  try{return localStorage.getItem('mc_tips_enabled')!=='0';}catch(_){return true;}
+}
+function maybeShowTipGate(key){
+  if(tipGateShownThisSession.has(key))return;
+  tipGateShownThisSession.add(key);
+  if(!tipsEnabled())return;
+  try{if(localStorage.getItem('mc_onboard_'+key)==='1')return;}catch(_){}
+  const t=SECTION_TIPS[key];
+  if(!t)return;
+  const [icoName,title,lead,steps,ctaLabel,ctaOnclick]=t;
+  document.getElementById('tip-gate-card').innerHTML=`
+    <button class="onboard-card-x" aria-label="Cerrar" onclick="dismissTipGate('${key}')">${svgIco('close')}</button>
     <div class="onboard-card-hd">
       <div class="onboard-card-ico">${svgIco(icoName)}</div>
       <div class="onboard-card-ttl">${title}</div>
     </div>
     ${lead?`<div class="onboard-card-lead">${lead}</div>`:''}
     ${(steps&&steps.length)?`<ol class="onboard-steps">${steps.map(s=>`<li><span>${s}</span></li>`).join('')}</ol>`:''}
-    ${ctaLabel?`<button class="onboard-card-cta" onclick="${ctaOnclick}">${ctaLabel}${svgIco('chevronR')}</button>`:''}
-  </div>`;
+    ${ctaLabel?`<button class="onboard-card-cta" onclick="dismissTipGate('${key}');${ctaOnclick}">${ctaLabel}${svgIco('chevronR')}</button>`:''}
+  `;
+  document.getElementById('tip-gate').classList.add('on');
 }
-function dismissOnboard(key){
+function dismissTipGate(key){
   try{localStorage.setItem('mc_onboard_'+key,'1');}catch(_){}
-  ({eventos:renderEventos,perdidos:renderPerdidos,empleos:renderEmpleos,avisos:renderAvisos,reportes:renderReportes,alertas:renderAlertas}[key]||function(){})();
+  document.getElementById('tip-gate').classList.remove('on');
+}
+function openPreferences(){
+  closeMenu();
+  document.getElementById('modal-title').textContent='Preferencias';
+  document.getElementById('modal-body').innerHTML=renderPreferencesBody();
+  document.getElementById('modal-bg').classList.add('on');
+}
+function renderPreferencesBody(){
+  const on=tipsEnabled();
+  return `
+    <div style="margin-bottom:14px">
+      <div class="fl" style="margin-bottom:8px">Consejos al entrar a una sección</div>
+      <div style="display:flex;gap:8px">
+        <button class="chip${on?' on':''}" onclick="setTipsEnabled(true)">Activados</button>
+        <button class="chip${on?'':' on'}" onclick="setTipsEnabled(false)">Desactivados</button>
+      </div>
+    </div>
+    <button class="menu-item" onclick="resetTipGates()" style="border:1.5px solid var(--line2);justify-content:center">
+      <span class="menu-item-lbl">Ver los consejos de nuevo</span>
+    </button>
+  `;
+}
+function setTipsEnabled(on){
+  try{localStorage.setItem('mc_tips_enabled',on?'1':'0');}catch(_){}
+  document.getElementById('modal-body').innerHTML=renderPreferencesBody();
+}
+function resetTipGates(){
+  Object.keys(SECTION_TIPS).forEach(k=>{try{localStorage.removeItem('mc_onboard_'+k);}catch(_){}});
+  tipGateShownThisSession=new Set();
+  toast('Los consejos volverán a aparecer al entrar a cada sección');
 }
 
 /* ══════════════ RENDER: EVENTOS (sub-view inside Anuncios) ══════════════ */
@@ -930,18 +1013,11 @@ function renderEventos(){
   renderEvtDateChips();
   const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&evtInDateRange(x));
   const el=document.getElementById('evt-list');
-  const pin=onboardCard('eventos','eventos','Publica tu propio evento',
-    '¿Organizas algo en Campeche? Compártelo aquí, gratis.',
-    ['Toca el botón <b>+</b> abajo a la derecha.',
-     'Escribe nombre, fecha, hora y lugar.',
-     'Agrega una foto o cartel, precio y contacto (opcional).',
-     'Envíalo: lo revisamos y se publica para toda la ciudad.'],
-    'Publicar un evento',"openPost('eventos')");
   if(!list.length){
     const sub=(evtFilter!=='all'||evtDateFilter!=='all')
       ? 'No hay eventos que coincidan con este filtro. Prueba con otro.'
       : 'Sé el primero en publicar un evento en Campeche.';
-    el.innerHTML=pin+emptyState('eventos','Nada por aquí todavía',sub);return;
+    el.innerHTML=emptyState('eventos','Nada por aquí todavía',sub);return;
   }
   const featuredIds=activeFeaturedEventIds(2);
   const featured=list.filter(x=>featuredIds.includes(String(x.id)));
@@ -987,7 +1063,7 @@ function renderEventos(){
     `;
   });
 
-  el.innerHTML=pin+featuredHtml+groupsHtml;
+  el.innerHTML=featuredHtml+groupsHtml;
   wireAdminRemove(el);
 }
 
@@ -1057,6 +1133,7 @@ function setAnunciosMode(mode){
   document.getElementById('anuncios-empleos').style.display=mode==='empleos'?'block':'none';
   document.getElementById('anuncios-alertas').style.display=mode==='alertas'?'block':'none';
   document.getElementById('anuncios-fab').style.display=mode==='alertas'?'none':'flex';
+  if(curScreen==='anuncios')maybeShowTipGate(mode);
 }
 
 let tiendaMode='mercado';
@@ -1233,14 +1310,7 @@ async function toggleClaim(id){
 
 function renderEmpleos(){
   const el=document.getElementById('job-list');
-  const pin=onboardCard('empleos','empleos','¿Ofreces trabajo? Publícalo aquí',
-    'Llega a vecinos que buscan empleo en Campeche.',
-    ['Toca el botón <b>+</b> abajo a la derecha.',
-     'Escribe el puesto, el negocio y el pago.',
-     'Agrega el horario y los requisitos.',
-     'Envíalo: quien busca trabajo te contacta directo.'],
-    'Publicar una vacante',"openPost('empleos')");
-  el.innerHTML=pin+EMPLEOS.map(x=>`
+  el.innerHTML=EMPLEOS.map(x=>`
     <div class="job-card" style="cursor:pointer" onclick="openEmpleo('${x.id}')" ${admRm('empleos',x.id,x.title)}>
       <div class="job-top"><div class="job-title">${e(x.title)}</div><div class="job-pay">${e(x.pay)}</div></div>
       ${x.co?`<div class="job-co">${e(x.co)}</div>`:''}
@@ -1281,15 +1351,8 @@ function setPfFilter(v){pfFilter=v;renderPfChips();renderPerdidos();}
 function renderPerdidos(){
   const list=PERDIDOS.filter(x=>pfFilter==='all'||x.tag===pfFilter);
   const el=document.getElementById('pf-list');
-  const pin=onboardCard('perdidos','perdidos','¿Perdiste o encontraste algo?',
-    'Una mascota, unas llaves, una cartera… tus vecinos te ayudan.',
-    ['Toca el botón <b>+</b> abajo a la derecha.',
-     'Elige <b>Perdido</b> o <b>Encontrado</b>.',
-     'Describe qué es y en qué zona, con una foto si puedes.',
-     'Envíalo: aparece aquí para que la ciudad esté atenta.'],
-    'Reportar perdido o encontrado',"openPost('perdidos')");
-  if(!list.length){el.innerHTML=pin+emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
-  el.innerHTML=pin+list.map(x=>`
+  if(!list.length){el.innerHTML=emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
+  el.innerHTML=list.map(x=>`
     <div class="pf-card" ${admRm('perdidos',x.id,x.name)}>
       <div class="pf-img" style="${x.img?`background-image:url('${x.img}')`:''}">${!x.img?svgIco('pin'):''}</div>
       <div class="pf-body">
@@ -1312,6 +1375,7 @@ function setReportarMode(mode){
   document.getElementById('reportar-reportes').style.display=mode==='reportes'?'block':'none';
   document.getElementById('reportar-avisos').style.display=mode==='avisos'?'block':'none';
   document.getElementById('reportar-perdidos').style.display=mode==='perdidos'?'block':'none';
+  if(curScreen==='reportar')maybeShowTipGate(mode);
 }
 let repFilter='all';
 const confirmedByMe={};
@@ -1326,15 +1390,8 @@ function setRepFilter(c){repFilter=c;renderRepChips();renderReportes();}
 function renderReportes(){
   const list=REPORTES.filter(x=>repFilter==='all'||x.cat===repFilter);
   const el=document.getElementById('rep-list');
-  const pin=onboardCard('reportes','reportar','Reporta un problema de tu calle',
-    'Bache, fuga de agua, alumbrado, árbol caído, basura acumulada…',
-    ['Toca el botón <b>+</b> abajo a la derecha.',
-     'Elige el tipo de problema y dónde está.',
-     'Agrega una foto para que se entienda mejor.',
-     'Envíalo: otros vecinos lo confirman para darle peso.'],
-    'Reportar un problema',"openPost('reportar')");
-  if(!list.length){el.innerHTML=pin+emptyState('reportar','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
-  el.innerHTML=pin+list.map(x=>{
+  if(!list.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
+  el.innerHTML=list.map(x=>{
     const isResolved=x.status==='resuelto';
     const iConfirmed=!!confirmedByMe[x.id];
     const iVotedResolved=!!resolvedByMe[x.id];
@@ -1406,15 +1463,8 @@ async function toggleResolveVote(id){
 }
 function renderAvisos(){
   const el=document.getElementById('av-list');
-  const pin=onboardCard('avisos','message','Avísale a tu colonia',
-    'Se busca a un familiar, junta vecinal, cuidado con un perro suelto…',
-    ['Toca el botón <b>+</b> abajo a la derecha.',
-     'Elige el tipo de aviso y escribe tu mensaje.',
-     'Deja un número de contacto.',
-     'Envíalo: un aviso por persona al día, revisado antes de publicarse.'],
-    'Publicar un aviso',"openPost('avisos')");
-  if(!AVISOS.length){el.innerHTML=pin+emptyState('reportar','Nada por aquí todavía','Sé el primero en publicar un aviso para tus vecinos.');return;}
-  el.innerHTML=pin+AVISOS.map(a=>`
+  if(!AVISOS.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía','Sé el primero en publicar un aviso para tus vecinos.');return;}
+  el.innerHTML=AVISOS.map(a=>`
     <div class="av-card" ${admRm('avisos',a.id,a.title)}>
       <div class="av-top"><span class="av-cat">${e(a.cat)}</span><span class="av-time">${a.time}</span></div>
       <div class="av-main">
@@ -1436,10 +1486,6 @@ const ALERTAS_PAGE_SIZE=10;
 let alertasExpanded=false;
 function renderAlertas(){
   const el=document.getElementById('alert-list');
-  const pin=onboardCard('alertas','alertas','Qué son las Alertas',
-    'Aquí verás <b>alertas oficiales</b> para toda la ciudad — cortes de agua, clima fuerte, cierres de calles, emergencias. Las publica MiCampeche; tú solo revisa aquí cuando algo esté pasando. ¿Un problema de tu calle (bache, fuga, alumbrado)? Eso va en <b>Reportes</b>.',
-    null,
-    'Ir a Reportes',"setReportarMode('reportes')");
   const visible=alertasExpanded?ALERTAS:ALERTAS.slice(0,ALERTAS_PAGE_SIZE);
   const cards=visible.map(x=>{
     // One-line teaser: first paragraph only, hard-capped so the row stays
@@ -1462,7 +1508,7 @@ function renderAlertas(){
   const more=(!alertasExpanded&&ALERTAS.length>ALERTAS_PAGE_SIZE)
     ?`<button class="menu-item" style="justify-content:center;margin-top:4px" onclick="showAllAlertas()">Ver más</button>`
     :'';
-  el.innerHTML=pin+cards+more;
+  el.innerHTML=cards+more;
 }
 function showAllAlertas(){alertasExpanded=true;renderAlertas();}
 /* Resident-facing detail modal — mirrors openProdView (a content card on a
