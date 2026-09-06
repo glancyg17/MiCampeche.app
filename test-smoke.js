@@ -1945,19 +1945,24 @@ const fakeClient = {
     // ══════════════ Multi-business profiles (Step C): "Cancelaciones
     //    pendientes" admin worklist ══════════════
     await new Promise(r => setTimeout(r, 20)); // the count loads after the view paints, then re-renders — same pattern as "N no aprobadas"
-    assert(text('modal-body').includes('Cancelaciones pendientes') && text('modal-body').includes('2 por cancelar'), 'an admin account sees "Cancelaciones pendientes" with the real unresolved count — cr3 is already resolved and excluded');
+    // Cancelaciones is no longer its own menu item — it folded into the
+    // merged admin "Pendiente" button's sub-label ("N por aprobar · M por
+    // cancelar", or just "M por cancelar" when there's nothing to approve).
+    assert(text('modal-body').includes('2 por cancelar'), 'the merged admin "Pendiente" button surfaces the real unresolved cancellation count in its sub-label — cr3 is already resolved and excluded');
 
-    // A non-admin never sees this button at all — mirrors the existing
-    // Pendiente admin-only behavior above.
+    // A non-admin never sees the Pendiente entry point at all — it stays
+    // admin-gated exactly as before the Cancelaciones merge.
     currentProfile.is_admin = false;
     await window.openAccount();
     await new Promise(r => setTimeout(r, 20));
-    assert(!text('modal-body').includes('Cancelaciones pendientes'), 'a non-admin account never sees the "Cancelaciones pendientes" button');
+    assert(!text('modal-body').includes('Pendiente'), 'a non-admin account never sees the admin "Pendiente" menu item');
     currentProfile.is_admin = true; // restore — later tests (Moderación/Pendiente access) need this fixture to stay admin
 
-    await window.openCancellationReminders();
+    await window.openPending();
+    window.setPendingTab('cancellations');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Cancelaciones pendientes (2)', 'openCancellationReminders() shows the real unresolved count in the title');
+    assert(text('modal-title') === 'Pendiente (25)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
+    assert(text('modal-body').includes('Cancelaciones (2)'), 'the Cancelaciones tab chip carries the real unresolved count');
     const crBody = text('modal-body');
     assert(crBody.includes('Negocio Cerrado') && crBody.includes('Negocio eliminado'), 'a business_removed reminder shows its business name and the Spanish reason label');
     assert(crBody.includes('Taco Loco 2') && crBody.includes('Premium cancelado'), 'a premium_downgraded reminder shows its business name and the Spanish reason label');
@@ -1968,7 +1973,7 @@ const fakeClient = {
     assert(lastUpdate.business_cancellation_reminders && lastUpdate.business_cancellation_reminders.resolved_at, 'resolveCancellationReminder(id) calls MC.resolveCancellationReminder, which sets resolved_at');
     assert(!text('modal-body').includes('Negocio Cerrado'), 'the resolved reminder is removed from the rendered list');
     assert(text('modal-body').includes('Taco Loco 2'), 'the still-unresolved reminder remains');
-    assert(text('modal-title') === 'Cancelaciones pendientes (1)', 'the title count updates to reflect the removal');
+    assert(text('modal-body').includes('Cancelaciones (1)'), 'the tab chip count updates to reflect the removal');
     assert(text('toast') === 'Marcado como resuelto ✓', 'a successful resolve shows the right confirmation toast');
 
     // closeModal() resets mcModalStack outright, then a fresh

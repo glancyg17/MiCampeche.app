@@ -2119,26 +2119,16 @@ function renderAccountSignedIn(acct){
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
         <span class="menu-item-lbl">Pendiente</span>
-        <span class="menu-item-sub"${acct.pendingCount===0?' style="color:var(--palm)"':''}>${
-          acct.pendingCount===undefined?'Revisar la cola de aprobaciones'
-          :acct.pendingCount===0?'Todo al día ✓'
-          :acct.pendingCount+(acct.pendingCount===1?' cosa por revisar':' cosas por revisar')
-        }</span>
+        <span class="menu-item-sub"${(acct.pendingCount===0&&acct.cancellationCount===0)?' style="color:var(--palm)"':''}>${(()=>{
+          if(acct.pendingCount===undefined||acct.cancellationCount===undefined)return 'Revisar aprobaciones y cancelaciones';
+          if(acct.pendingCount===0&&acct.cancellationCount===0)return 'Todo al día ✓';
+          const parts=[];
+          if(acct.pendingCount>0)parts.push(acct.pendingCount+' por aprobar');
+          if(acct.cancellationCount>0)parts.push(acct.cancellationCount+' por cancelar');
+          return parts.join(' · ');
+        })()}</span>
       </span>
-      ${acct.pendingCount>0?`<span class="menu-badge on">${acct.pendingCount>99?'99+':acct.pendingCount}</span>`:''}
-      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-    </button>
-    <button class="menu-item" onclick="openCancellationReminders()" style="border:1.5px solid var(--line2);margin-bottom:4px">
-      <span class="menu-item-ico">${svgIco('alertas')}</span>
-      <span class="menu-item-txt">
-        <span class="menu-item-lbl">Cancelaciones pendientes</span>
-        <span class="menu-item-sub"${acct.cancellationCount===0?' style="color:var(--palm)"':''}>${
-          acct.cancellationCount===undefined?'Suscripciones que aún debes cancelar en Stripe'
-          :acct.cancellationCount===0?'Todo al día ✓'
-          :acct.cancellationCount+(acct.cancellationCount===1?' por cancelar':' por cancelar')
-        }</span>
-      </span>
-      ${acct.cancellationCount>0?`<span class="menu-badge on">${acct.cancellationCount>99?'99+':acct.cancellationCount}</span>`:''}
+      ${((acct.pendingCount||0)+(acct.cancellationCount||0))>0?`<span class="menu-badge on">${((acct.pendingCount||0)+(acct.cancellationCount||0))>99?'99+':((acct.pendingCount||0)+(acct.cancellationCount||0))}</span>`:''}
       <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>`:''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
@@ -2673,66 +2663,62 @@ async function doSignOut(){
    boundary. */
 let moderationQueue=[];
 let cancellationReminders=[];
-/* "Cancelaciones pendientes" — deliberately a separate view from
-   Pendiente, not folded into moderationQueue: this isn't content
-   awaiting approval, it's a "go do this real-world task" checklist, and
-   forcing it into the same multi-kind renderer would bloat that
-   function for a shape that doesn't fit (no approve/reject, just one
-   resolve action). */
-async function openCancellationReminders(){
-  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
-  document.getElementById('modal-title').textContent='Cancelaciones pendientes';
-  document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
-  document.getElementById('modal-bg').classList.add('on');
-  cancellationReminders=await MC.fetchCancellationReminders();
-  renderCancellationReminders();
-}
-function renderCancellationReminders(){
-  document.getElementById('modal-title').textContent=`Cancelaciones pendientes (${cancellationReminders.length})`;
-  if(!cancellationReminders.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay cancelaciones pendientes.</div></div>`;
-    return;
-  }
-  const reasonLbl={business_removed:'Negocio eliminado',premium_downgraded:'Premium cancelado'};
-  document.getElementById('modal-body').innerHTML=cancellationReminders.map(r=>`
-    <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(reasonLbl[r.reason]||r.reason)}</div>
-      <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(r.business_name)}</div>
-      <div style="color:var(--ink3);font-size:12px;margin-top:2px">${relTimeEs(r.created_at)}</div>
-      <button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="resolveCancellationReminder('${r.id}')">Ya cancelé en Stripe</button>
-    </div>
-  `).join('');
-}
+let pendingTab='approvals';
+const PENDING_TABS=[['approvals','Aprobaciones'],['cancellations','Cancelaciones']];
 async function resolveCancellationReminder(id){
   const {error}=await MC.resolveCancellationReminder(id);
   if(error){toast(pgErrorToast(error,'No se pudo marcar como resuelto.'));return;}
   cancellationReminders=cancellationReminders.filter(r=>r.id!==id);
-  renderCancellationReminders();
+  renderPendingQueue();
   toast('Marcado como resuelto ✓');
 }
 async function openPending(){
   // Opened from the "Tu cuenta" view — remember it so ✕ / back returns
   // there, not all the way to the home screen.
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  pendingTab='approvals';
   document.getElementById('modal-title').textContent='Pendiente';
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
-  const [content,phone,password]=await Promise.all([
+  const [content,phone,password,cancellations]=await Promise.all([
     MC.fetchPendingQueue(),
     MC.fetchPendingPhoneVerifications(),
-    MC.fetchPasswordResetRequests()
+    MC.fetchPasswordResetRequests(),
+    MC.fetchCancellationReminders()
   ]);
   moderationQueue=[
     ...content.map(c=>({kind:'content',...c})),
     ...phone.map(p=>({kind:'phone',id:p.id,label:'Verificación de teléfono',title:p.display_name||'Vecino',submittedBy:p.phone||'—',createdAt:p.created_at,raw:p})),
     ...password.map(r=>({kind:'password',id:r.id,label:'Restablecer contraseña',title:r.claimedEmail,submittedBy:r.matchedName?('Cuenta: '+r.matchedName):'⚠️ Sin cuenta encontrada',createdAt:r.requestedAt,raw:r}))
   ].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  cancellationReminders=cancellations;
   renderPendingQueue();
 }
+function setPendingTab(tab){pendingTab=tab;renderPendingQueue();}
 function renderPendingQueue(){
   document.getElementById('modal-title').textContent=`Pendiente (${moderationQueue.length})`;
+  const tabsHtml=`<div style="display:flex;gap:8px;margin-bottom:14px">${PENDING_TABS.map(([v,l])=>{
+    const count=v==='approvals'?moderationQueue.length:cancellationReminders.length;
+    return `<button class="chip${v===pendingTab?' on':''}" onclick="setPendingTab('${v}')">${l} (${count})</button>`;
+  }).join('')}</div>`;
+  if(pendingTab==='cancellations'){
+    if(!cancellationReminders.length){
+      document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay cancelaciones pendientes.</div></div>`;
+      return;
+    }
+    const reasonLbl={business_removed:'Negocio eliminado',premium_downgraded:'Premium cancelado'};
+    document.getElementById('modal-body').innerHTML=tabsHtml+cancellationReminders.map(r=>`
+      <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(reasonLbl[r.reason]||r.reason)}</div>
+        <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(r.business_name)}</div>
+        <div style="color:var(--ink3);font-size:12px;margin-top:2px">${relTimeEs(r.created_at)}</div>
+        <button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="resolveCancellationReminder('${r.id}')">Ya cancelé en Stripe</button>
+      </div>
+    `).join('');
+    return;
+  }
   if(!moderationQueue.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay nada pendiente.</div></div>`;
+    document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay nada pendiente.</div></div>`;
     return;
   }
   let h='';
@@ -2766,7 +2752,7 @@ function renderPendingQueue(){
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
     </div>`;
   });
-  document.getElementById('modal-body').innerHTML=h;
+  document.getElementById('modal-body').innerHTML=tabsHtml+h;
 }
 
 /* After handling one Pendiente item (approve/reject, any of its three
