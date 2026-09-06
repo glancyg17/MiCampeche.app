@@ -669,6 +669,56 @@ MC.fetchMandaditos=async function(){
   }));
 };
 
+/* Fire-and-forget from the app's side — a tap on "Contactar" logs one row,
+   nothing else. No task state, no status. If the caller isn't signed in,
+   RLS rejects the insert; app.js swallows that rather than blocking the
+   WhatsApp link over it. */
+MC.logMandaditoContact=async function(mandaditoId){
+  const uid=await MC.ready;
+  if(!uid)throw new Error('not signed in');
+  return sb.from('mandadito_contacts').insert({mandadito_id:mandaditoId,contacted_by:uid});
+};
+
+/* Drives the 24h/48h nudge — eligible once 24h have passed since contact
+   and not yet resolved; naturally stops returning anything once 48h have
+   passed (no explicit "expired" state needed, silence just means "fine").
+   Joins the mandadito's own name for the prompt text — safe because
+   mandaditos has a public-read-when-published policy already. */
+MC.fetchPendingMandaditoReview=async function(){
+  const uid=await MC.ready;
+  if(!uid)return null;
+  const since=new Date(Date.now()-48*3600*1000).toISOString();
+  const until=new Date(Date.now()-24*3600*1000).toISOString();
+  const {data,error}=await sb.from('mandadito_contacts')
+    .select('*, mandaditos(display_name)')
+    .eq('contacted_by',uid).eq('resolved',false)
+    .gte('created_at',since).lte('created_at',until)
+    .order('created_at',{ascending:true}).limit(1);
+  if(error){console.error(error);return null;}
+  return (data&&data[0])||null;
+};
+MC.resolveMandaditoContact=async function(contactId){
+  return sb.from('mandadito_contacts').update({resolved:true}).eq('id',contactId);
+};
+
+/* Both the nudge's "Tuve un problema" and the standalone Reportar button
+   write here. `source` distinguishes them for the admin's own context,
+   nothing else differs. */
+MC.reportMandadito=async function(mandaditoId,note,source){
+  const uid=await MC.ready;
+  return sb.from('mandadito_reports').insert({mandadito_id:mandaditoId,submitted_by:uid,note:note||null,source:source||'manual'});
+};
+
+/* Admin-only inbox — unreviewed reports, oldest first. */
+MC.fetchMandaditoReports=async function(){
+  const {data,error}=await sb.from('mandadito_reports').select('*, mandaditos(display_name)').is('reviewed_at',null).order('created_at',{ascending:true});
+  if(error){console.error(error);return [];}
+  return data;
+};
+MC.markMandaditoReportReviewed=async function(id){
+  return sb.from('mandadito_reports').update({reviewed_at:new Date().toISOString()}).eq('id',id);
+};
+
 MC.fetchOfertas=async function(){
   const {data,error}=await sb.from('ofertas').select('*, ofertas_bookings(booked_date)')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);

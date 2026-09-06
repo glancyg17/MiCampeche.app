@@ -29,6 +29,8 @@ function makeChain(getResult, onEq) {
   const eqs = [];   // captured .eq(field, value) constraints
   const notNulls = []; // fields required non-null via .not(field, 'is', null)
   const nullFields = []; // fields required to BE null via .is(field, null) — e.g. MC.fetchCancellationReminders' "unresolved" filter
+  const gtes = []; // .gte(field, value) — MC.fetchPendingMandaditoReview's 24h–48h window is the only real consumer
+  const ltes = []; // .lte(field, value) — ditto
   const proxy = new Proxy({}, {
     get(target, prop) {
       if (prop === 'then') {
@@ -65,9 +67,17 @@ function makeChain(getResult, onEq) {
               if (f === 'status' && hasOwnerFilter) rows = rows.filter(r => r && r[f] === v);
               if (f === 'id') rows = rows.filter(r => r && String(r.id) === String(v));
               if (f === 'is_primary') rows = rows.filter(r => r && !!r.is_primary === v);
+              // Mandaditos Step 2: mandadito_contacts is scoped by contacted_by
+              // and the nudge filters out already-resolved rows.
+              if (f === 'contacted_by') rows = rows.filter(r => r && r[f] === v);
+              if (f === 'resolved') rows = rows.filter(r => r && !!r.resolved === !!v);
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
             nullFields.forEach(f => { rows = rows.filter(r => r && r[f] == null); });
+            // ISO-8601 timestamp strings compare correctly lexicographically,
+            // which is all MC.fetchPendingMandaditoReview's created_at window needs.
+            gtes.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] != null && r[f] >= v); });
+            ltes.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] != null && r[f] <= v); });
             if (rows !== out.data) out = { ...out, data: rows };
           }
           if (single) out = { ...out, data: Array.isArray(out.data) ? (out.data[0] || null) : out.data };
@@ -79,7 +89,9 @@ function makeChain(getResult, onEq) {
       if (prop === 'eq') return (f, v) => { eqs.push([f, v]); if (onEq) onEq(f, v); return proxy; };
       if (prop === 'not') return (f, op, v) => { if (op === 'is' && v === null) notNulls.push(f); return proxy; };
       if (prop === 'is') return (f, v) => { if (v === null) nullFields.push(f); return proxy; };
-      return (..._args) => proxy; // select/order/limit/gte/in/etc all just chain
+      if (prop === 'gte') return (f, v) => { gtes.push([f, v]); return proxy; };
+      if (prop === 'lte') return (f, v) => { ltes.push([f, v]); return proxy; };
+      return (..._args) => proxy; // select/order/limit/in/etc all just chain
     }
   });
   return proxy;
@@ -141,6 +153,10 @@ const SAMPLE = {
   mandaditos: [
     { id: 'md1', display_name: 'Mandadito Test', phone: '981 400 5000', vehicle_type: 'Motocicleta', zona: 'Centro', status: 'published', submitted_by: 'uid-2', created_at: NOW.toISOString() },
   ],
+  // Mandaditos Step 2 — contact logging + the 24h/48h private review nudge.
+  // Populated per-test; both start empty.
+  mandadito_contacts: [],
+  mandadito_reports: [],
   perdidos: [
     { id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' },
     // owned by the test user (uid-1) — a still-pending one and another user's, for MC.fetchMyPosts
@@ -299,6 +315,43 @@ const fakeClient = {
           })),
           error: null,
         })),
+      };
+    }
+    if (table === 'mandadito_contacts') {
+      // Stateful — a logged contact persists, MC.resolveMandaditoContact
+      // flips its `resolved` flag, and the 24h–48h window query
+      // (MC.fetchPendingMandaditoReview) reads it back with the mandadito
+      // name embedded. makeChain now honors .eq('contacted_by')/.eq('resolved')
+      // and .gte/.lte so the window filtering is real.
+      const embedName = (mid) => { const m = (SAMPLE.mandaditos || []).find(x => x.id === mid); return { display_name: m ? m.display_name : null }; };
+      return {
+        select: (..._a) => makeChain(() => ({ data: (SAMPLE.mandadito_contacts || []).map(r => ({ ...r, mandaditos: r.mandadito_id ? embedName(r.mandadito_id) : null })), error: null })),
+        insert: (row) => { lastInsert.mandadito_contacts = row; return makeChain(() => {
+          if (forcedErrors.insert.mandadito_contacts) return { data: null, error: forcedErrors.insert.mandadito_contacts };
+          const fake = { id: 'mc-' + ((SAMPLE.mandadito_contacts || []).length + 1), resolved: false, created_at: NOW.toISOString(), ...row };
+          SAMPLE.mandadito_contacts.push(fake);
+          return { data: [fake], error: null };
+        }); },
+        update: (row) => { lastUpdate.mandadito_contacts = row; return makeChain(
+          () => ({ data: [row], error: null }),
+          (f, v) => { if (f === 'id') { const t = (SAMPLE.mandadito_contacts || []).find(r => r.id === v); if (t) Object.assign(t, row); } }
+        ); },
+      };
+    }
+    if (table === 'mandadito_reports') {
+      const embedName = (mid) => { const m = (SAMPLE.mandaditos || []).find(x => x.id === mid); return { display_name: m ? m.display_name : null }; };
+      return {
+        select: (..._a) => makeChain(() => ({ data: (SAMPLE.mandadito_reports || []).map(r => ({ ...r, mandaditos: r.mandadito_id ? embedName(r.mandadito_id) : null })), error: null })),
+        insert: (row) => { lastInsert.mandadito_reports = row; return makeChain(() => {
+          if (forcedErrors.insert.mandadito_reports) return { data: null, error: forcedErrors.insert.mandadito_reports };
+          const fake = { id: 'mr-' + ((SAMPLE.mandadito_reports || []).length + 1), created_at: NOW.toISOString(), reviewed_at: null, ...row };
+          SAMPLE.mandadito_reports.push(fake);
+          return { data: [fake], error: null };
+        }); },
+        update: (row) => { lastUpdate.mandadito_reports = row; return makeChain(
+          () => ({ data: [row], error: null }),
+          (f, v) => { if (f === 'id') { const t = (SAMPLE.mandadito_reports || []).find(r => r.id === v); if (t) Object.assign(t, row); } }
+        ); },
       };
     }
     if (table === 'reportes_resolution_votes') {
@@ -1683,6 +1736,103 @@ const fakeClient = {
       window.runWhatsAppStepContinue();
       await new Promise(r => setTimeout(r, 20));
       assert(text('toast') === '¡Registro enviado! Confirma por WhatsApp para que lo revisemos.', 'completing the WhatsApp step shows the real confirmation and closes the modal');
+    }
+
+    // ── Mandaditos (Step 2/3): contact logging + the 24h/48h private
+    //    review nudge + the standalone Reportar button. Everything private —
+    //    nothing here is ever shown publicly or to the mandadito. ──
+    {
+      const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+      window.closeModal();
+
+      // Tapping "Contactar por WhatsApp" logs one mandadito_contacts row.
+      SAMPLE.mandadito_contacts = [];
+      delete lastInsert.mandadito_contacts;
+      await window.logMandaditoContact('md1');
+      await new Promise(r => setTimeout(r, 10));
+      assert(lastInsert.mandadito_contacts && lastInsert.mandadito_contacts.mandadito_id === 'md1' && lastInsert.mandadito_contacts.contacted_by === 'uid-1', 'tapping Contactar logs a mandadito_contacts row for the signed-in visitor — no task/status, just the fact of contact');
+
+      // The nudge only fires for a contact 24h–48h old and unresolved.
+      const nudgeOpen = () => doc.getElementById('modal-bg').classList.contains('on');
+      SAMPLE.mandadito_contacts = [{ id: 'mc-a', mandadito_id: 'md1', contacted_by: 'uid-1', resolved: false, created_at: hoursAgo(23) }];
+      window.closeModal();
+      await window.maybeShowMandaditoReviewNudge();
+      await new Promise(r => setTimeout(r, 10));
+      assert(!nudgeOpen(), 'a contact only 23h old does NOT trigger the review nudge yet');
+
+      SAMPLE.mandadito_contacts[0].created_at = hoursAgo(50);
+      window.closeModal();
+      await window.maybeShowMandaditoReviewNudge();
+      await new Promise(r => setTimeout(r, 10));
+      assert(!nudgeOpen(), 'a contact 50h old no longer triggers the nudge — the window has passed, silence means "fine"');
+
+      SAMPLE.mandadito_contacts[0].created_at = hoursAgo(30);
+      window.closeModal();
+      await window.maybeShowMandaditoReviewNudge();
+      await new Promise(r => setTimeout(r, 10));
+      assert(nudgeOpen() && text('modal-title') === 'Un momento' && text('modal-body').includes('¿Cómo te fue con Mandadito Test?'), 'a contact 30h old (inside the 24h–48h window, unresolved) DOES trigger the private review nudge, named');
+
+      // "Todo bien" resolves the contact; the nudge doesn't come back.
+      await window.resolveMandaditoNudge('mc-a', true);
+      await new Promise(r => setTimeout(r, 10));
+      assert(SAMPLE.mandadito_contacts[0].resolved === true, '"Todo bien" marks the contact resolved');
+      assert(text('toast') === 'Gracias por avisarnos ✓', 'and shows a thank-you toast');
+      window.closeModal();
+      await window.maybeShowMandaditoReviewNudge();
+      await new Promise(r => setTimeout(r, 10));
+      assert(!nudgeOpen(), 'a resolved contact never re-triggers the nudge');
+
+      // "Tuve un problema" → a mandadito_reports row (source: nudge) AND
+      // the contact gets resolved.
+      SAMPLE.mandadito_contacts = [{ id: 'mc-b', mandadito_id: 'md1', contacted_by: 'uid-1', resolved: false, created_at: hoursAgo(30) }];
+      SAMPLE.mandadito_reports = [];
+      delete lastInsert.mandadito_reports;
+      window.closeModal();
+      await window.maybeShowMandaditoReviewNudge();
+      await new Promise(r => setTimeout(r, 10));
+      window.openMandaditoProblemNote('mc-b', 'md1');
+      assert(text('modal-title') === 'Cuéntanos qué pasó', 'the "Tuve un problema" path opens a private note screen');
+      doc.getElementById('mandadito-problem-note').value = 'Llegó tardísimo y subió el precio.';
+      await window.submitMandaditoProblem('mc-b', 'md1');
+      await new Promise(r => setTimeout(r, 10));
+      assert(lastInsert.mandadito_reports && lastInsert.mandadito_reports.source === 'nudge' && lastInsert.mandadito_reports.mandadito_id === 'md1' && lastInsert.mandadito_reports.note === 'Llegó tardísimo y subió el precio.', 'a problem note writes a mandadito_reports row tagged source: nudge');
+      assert(SAMPLE.mandadito_contacts[0].resolved === true, 'and the underlying contact is resolved too, so the nudge stops');
+      assert(text('toast') === 'Gracias — lo revisaremos', 'and confirms privately');
+
+      // The standalone "Reportar" button on a profile writes source: manual
+      // and never touches mandadito_contacts.
+      SAMPLE.mandadito_contacts = [];
+      SAMPLE.mandadito_reports = [];
+      delete lastInsert.mandadito_reports;
+      delete lastInsert.mandadito_contacts;
+      window.closeModal();
+      window.openMandaditoReportForm('md1');
+      assert(text('modal-title') === 'Reportar a Mandadito Test', 'the standalone Reportar button opens a private report form for that profile');
+      doc.getElementById('mandadito-report-note').value = 'Nunca respondió al WhatsApp.';
+      await window.submitMandaditoReport('md1');
+      await new Promise(r => setTimeout(r, 10));
+      assert(lastInsert.mandadito_reports && lastInsert.mandadito_reports.source === 'manual' && lastInsert.mandadito_reports.note === 'Nunca respondió al WhatsApp.', 'the standalone report is written with source: manual');
+      assert(!lastInsert.mandadito_contacts && SAMPLE.mandadito_contacts.length === 0, 'a standalone report never creates or touches a mandadito_contacts row');
+      assert(text('toast') === 'Gracias — lo revisaremos', 'the standalone report confirms privately too');
+
+      // Admin: the new "Reportes" tab inside Pendiente.
+      currentProfile.is_admin = true;
+      SAMPLE.mandadito_reports = [{ id: 'mr-x', mandadito_id: 'md1', submitted_by: 'uid-1', note: 'problema de prueba', source: 'manual', reviewed_at: null, created_at: NOW.toISOString() }];
+      window.closeModal();
+      await window.openPending();
+      await new Promise(r => setTimeout(r, 20));
+      window.setPendingTab('mandaditoReports');
+      assert(text('modal-body').includes('Reportes (1)') && text('modal-body').includes('problema de prueba') && text('modal-body').includes('Mandadito Test'), 'the admin Pendiente "Reportes" tab lists an unreviewed mandadito report with its note');
+      await window.resolveMandaditoReportAdmin('mr-x');
+      await new Promise(r => setTimeout(r, 10));
+      assert(text('toast') === 'Marcado como revisado ✓', '"Marcar revisado" confirms');
+      assert(text('modal-body').includes('Reportes (0)') && text('modal-body').includes('No hay reportes pendientes'), 'and the report drops out of the tab / its count');
+      assert(SAMPLE.mandadito_reports[0].reviewed_at, 'markMandaditoReportReviewed set reviewed_at on the real row');
+
+      // Clean up so later Pendiente-count assertions are unaffected.
+      SAMPLE.mandadito_contacts = [];
+      SAMPLE.mandadito_reports = [];
+      window.closeModal();
     }
 
     // Business profile carries the payment/delivery settings on submit.

@@ -1316,13 +1316,49 @@ function renderMandaditos(){
           ${m.vehicle?`<div class="prod-seller">${e(m.vehicle)}</div>`:''}
           ${m.zona?`<div class="prod-seller">${e(m.zona)}</div>`:''}
           ${m.desc?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${e(m.desc)}</div>`:''}
-          ${intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">Contactar por WhatsApp</a>`
+          ${intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`
                 :`<div class="field-note">Sin WhatsApp registrado.</div>`}
+          <button class="menu-item" style="margin-top:6px;justify-content:center;font-size:12px;padding:7px;border:1px solid var(--line2)" onclick="openMandaditoReportForm('${m.id}')">Reportar</button>
         </div>
       </div>
     </div>
   `;}).join('')+`<div class="su-note">MiCampeche solo conecta — el trato, el precio y el pago quedan entre ustedes.</div>`;
   wireAdminRemove(el);
+}
+
+/* Best-effort — never blocks the WhatsApp link. If the visitor isn't
+   signed in the insert is rejected by RLS; that's fine, there's nothing
+   meaningful to log for an unidentified visitor anyway. */
+async function logMandaditoContact(mandaditoId){
+  try{await MC.logMandaditoContact(mandaditoId);}catch(_){}
+}
+
+/* Standalone report — always available on a profile, not tied to any
+   particular contact. Looked up by id rather than passed through the
+   onclick chain, same reasoning as confirmDiscardMyPost (free-text names
+   can contain a quote that breaks e()'s escaping in a JS-string arg). */
+function openMandaditoReportForm(mandaditoId){
+  const m=MANDADITOS.find(x=>x.id===mandaditoId);
+  if(!m)return;
+  document.getElementById('modal-title').textContent='Reportar a '+m.name;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Esto queda privado entre tú y MiCampeche — nunca se lo mostramos al mandadito.</div>
+    <textarea class="ft" id="mandadito-report-note" placeholder="¿Qué pasó?"></textarea>
+    <button class="submit-btn" id="mandadito-report-submit-btn" onclick="submitMandaditoReport('${mandaditoId}')">Enviar reporte</button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function submitMandaditoReport(mandaditoId){
+  const acct=await MC.currentAccount();
+  if(!runWriteGate(acct,null))return;
+  const note=document.getElementById('mandadito-report-note').value.trim();
+  if(!note){toast('Escribe qué pasó');return;}
+  const btn=document.getElementById('mandadito-report-submit-btn');
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {error}=await MC.reportMandadito(mandaditoId,note,'manual');
+  if(error){toast(pgErrorToast(error,'No se pudo enviar.'));if(btn){btn.disabled=false;btn.textContent='Enviar reporte';}return;}
+  closeModal();
+  toast('Gracias — lo revisaremos');
 }
 
 /* ══════════════ RENDER: OFERTAS (daily deal drop) ══════════════ */
@@ -2872,14 +2908,22 @@ async function doSignOut(){
    boundary. */
 let moderationQueue=[];
 let cancellationReminders=[];
+let mandaditoReports=[];
 let pendingTab='approvals';
-const PENDING_TABS=[['approvals','Aprobaciones'],['cancellations','Cancelaciones']];
+const PENDING_TABS=[['approvals','Aprobaciones'],['cancellations','Cancelaciones'],['mandaditoReports','Reportes']];
 async function resolveCancellationReminder(id){
   const {error}=await MC.resolveCancellationReminder(id);
   if(error){toast(pgErrorToast(error,'No se pudo marcar como resuelto.'));return;}
   cancellationReminders=cancellationReminders.filter(r=>r.id!==id);
   renderPendingQueue();
   toast('Marcado como resuelto ✓');
+}
+async function resolveMandaditoReportAdmin(id){
+  const {error}=await MC.markMandaditoReportReviewed(id);
+  if(error){toast(pgErrorToast(error,'No se pudo marcar como revisado.'));return;}
+  mandaditoReports=mandaditoReports.filter(r=>r.id!==id);
+  renderPendingQueue();
+  toast('Marcado como revisado ✓');
 }
 async function openPending(){
   // Opened from the "Tu cuenta" view — remember it so ✕ / back returns
@@ -2889,11 +2933,12 @@ async function openPending(){
   document.getElementById('modal-title').textContent='Pendiente';
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
-  const [content,phone,password,cancellations]=await Promise.all([
+  const [content,phone,password,cancellations,reports]=await Promise.all([
     MC.fetchPendingQueue(),
     MC.fetchPendingPhoneVerifications(),
     MC.fetchPasswordResetRequests(),
-    MC.fetchCancellationReminders()
+    MC.fetchCancellationReminders(),
+    MC.fetchMandaditoReports()
   ]);
   moderationQueue=[
     ...content.map(c=>({kind:'content',...c})),
@@ -2901,15 +2946,33 @@ async function openPending(){
     ...password.map(r=>({kind:'password',id:r.id,label:'Restablecer contraseña',title:r.claimedEmail,submittedBy:r.matchedName?('Cuenta: '+r.matchedName):'⚠️ Sin cuenta encontrada',createdAt:r.requestedAt,raw:r}))
   ].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
   cancellationReminders=cancellations;
+  mandaditoReports=reports;
   renderPendingQueue();
 }
 function setPendingTab(tab){pendingTab=tab;renderPendingQueue();}
 function renderPendingQueue(){
   document.getElementById('modal-title').textContent=`Pendiente (${moderationQueue.length})`;
   const tabsHtml=`<div style="display:flex;gap:8px;margin-bottom:14px">${PENDING_TABS.map(([v,l])=>{
-    const count=v==='approvals'?moderationQueue.length:cancellationReminders.length;
+    const count=v==='approvals'?moderationQueue.length:v==='cancellations'?cancellationReminders.length:mandaditoReports.length;
     return `<button class="chip${v===pendingTab?' on':''}" onclick="setPendingTab('${v}')">${l} (${count})</button>`;
   }).join('')}</div>`;
+  if(pendingTab==='mandaditoReports'){
+    if(!mandaditoReports.length){
+      document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay reportes pendientes.</div></div>`;
+      return;
+    }
+    const sourceLbl={nudge:'Reporte automático',manual:'Reporte manual'};
+    document.getElementById('modal-body').innerHTML=tabsHtml+mandaditoReports.map(r=>`
+      <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(sourceLbl[r.source]||r.source)}</div>
+        <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e((r.mandaditos&&r.mandaditos.display_name)||'Mandadito')}</div>
+        <div style="color:var(--ink2);font-size:13px;margin-top:6px;white-space:pre-wrap">${e(r.note||'(sin nota)')}</div>
+        <div style="color:var(--ink3);font-size:12px;margin-top:6px">${relTimeEs(r.created_at)}</div>
+        <button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="resolveMandaditoReportAdmin('${r.id}')">Marcar revisado</button>
+      </div>
+    `).join('');
+    return;
+  }
   if(pendingTab==='cancellations'){
     if(!cancellationReminders.length){
       document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No hay cancelaciones pendientes.</div></div>`;
@@ -3902,6 +3965,54 @@ async function refreshPendingBadge(){
   set(count>0?(count>99?'99+':String(count)):'');
 }
 
+/* The private follow-up — fires once per app-open at most, only if
+   there's an eligible contact (24h–48h old, unresolved), and only if
+   nothing else is already blocking the screen. Silence (no tap either
+   way) is treated as "fine" — see MC.fetchPendingMandaditoReview, the
+   query itself just stops returning it after 48h, no separate "expired"
+   write needed. */
+async function maybeShowMandaditoReviewNudge(){
+  if(document.getElementById('modal-bg').classList.contains('on'))return;
+  if(document.getElementById('install-gate').classList.contains('on'))return;
+  const pending=await MC.fetchPendingMandaditoReview();
+  if(!pending)return;
+  const name=(pending.mandaditos&&pending.mandaditos.display_name)||'ese mandadito';
+  document.getElementById('modal-title').textContent='Un momento';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:10px 4px">
+      <div style="font-weight:700;font-size:15.5px;margin-bottom:14px">¿Cómo te fue con ${e(name)}?</div>
+      <div style="display:flex;gap:8px">
+        <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="resolveMandaditoNudge('${pending.id}',true)">Todo bien</button>
+        <button class="submit-btn" style="margin-top:0;flex:1;background:var(--signal);color:#fff" onclick="openMandaditoProblemNote('${pending.id}','${pending.mandadito_id}')">Tuve un problema</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function resolveMandaditoNudge(contactId,ok){
+  await MC.resolveMandaditoContact(contactId);
+  closeModal();
+  if(ok)toast('Gracias por avisarnos ✓');
+}
+function openMandaditoProblemNote(contactId,mandaditoId){
+  document.getElementById('modal-title').textContent='Cuéntanos qué pasó';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Esto queda solo entre tú y MiCampeche — nunca se lo mostramos al mandadito.</div>
+    <textarea class="ft" id="mandadito-problem-note" placeholder="¿Qué pasó?"></textarea>
+    <button class="submit-btn" id="mandadito-problem-submit-btn" onclick="submitMandaditoProblem('${contactId}','${mandaditoId}')">Enviar</button>
+  `;
+}
+async function submitMandaditoProblem(contactId,mandaditoId){
+  const btn=document.getElementById('mandadito-problem-submit-btn');
+  const note=document.getElementById('mandadito-problem-note').value.trim();
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {error}=await MC.reportMandadito(mandaditoId,note,'nudge');
+  if(error){toast(pgErrorToast(error,'No se pudo enviar.'));if(btn){btn.disabled=false;btn.textContent='Enviar';}return;}
+  await MC.resolveMandaditoContact(contactId);
+  closeModal();
+  toast('Gracias — lo revisaremos');
+}
+
 /* Phone verifications are the time-sensitive queue item now — until the
    founder clears one, that person can't post or interact at all. A quiet
    toast on app-open (admin only) so it isn't sitting unseen behind the
@@ -3933,6 +4044,7 @@ async function init(){
   await refreshContent();
   await checkPaymentReturn();
   nudgeAdminVerifications();
+  maybeShowMandaditoReviewNudge();
   setTiendaMode('mercado');
   setAnunciosMode('eventos');
   setReportarMode('avisos');
