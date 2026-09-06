@@ -2073,7 +2073,7 @@ function renderAccountSignedIn(acct){
     <button class="menu-item" onclick="openEditAccount()" style="border:1.5px solid var(--line2);margin-bottom:4px;justify-content:center">
       <span class="menu-item-lbl">Editar mi cuenta</span>
     </button>
-    ${bizList.length>1?`
+    ${(bizList.length>1||(biz&&biz.is_primary&&biz.is_premium))?`
       <button class="menu-item" onclick="openMyBusinesses()" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
         <span class="menu-item-txt">
