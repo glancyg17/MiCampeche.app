@@ -549,7 +549,10 @@ async function loadAllData(){
   NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
   alertasExpanded=false; // a fresh data load (incl. pull-to-refresh) collapses Alertas back to the top 10
-  OFERTAS.forEach(o=>{if(o.iClaimedReal)claimedByMe[o.id]=true;});
+  OFERTAS.forEach(o=>{
+    if(o.iClaimedReal)claimedByMe[o.id]=true;
+    if(o.myCode)claimedCodes[o.id]={code:o.myCode,expiresAt:o.myCodeExpiresAt};
+  });
   REPORTES.forEach(r=>{
     if(r.iConfirmedReal)confirmedByMe[r.id]=true;
     if(r.iVotedResolvedReal)resolvedByMe[r.id]=true;
@@ -1252,6 +1255,7 @@ function renderClasificados(){
 
 /* ══════════════ RENDER: OFERTAS (daily deal drop) ══════════════ */
 const claimedByMe={}; // mock — real version ties this to the logged-in user's account
+const claimedCodes={}; // id -> {code, expiresAt} — the real redemption code from ofertas_redemptions, surfaced as a WhatsApp CTA once claimed
 function renderOfertas(){
   const el=document.getElementById('of-list');
   // A deal stays visible while within its 7-day display window, even once
@@ -1265,6 +1269,7 @@ function renderOfertas(){
     const pct=Math.min(100,Math.round((claimed/o.total)*100));
     const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
     const iClaimed=!!claimedByMe[o.id];
+    const code=claimedCodes[o.id];
     return `
     <div class="of-card${soldOut?' sold-out':''}" ${admRm('ofertas',o.id,o.name)}>
       ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
@@ -1291,10 +1296,27 @@ function renderOfertas(){
               : `<button class="of-claim-btn" onclick="toggleClaim('${o.id}')">Reclamar</button>`
           }
         </div>
+        ${(iClaimed&&code)?ofertaRedeemCtaHtml(o,code):''}
       </div>
     </div>
   `;}).join('');
   wireAdminRemove(el);
+}
+/* The redemption "receipt" — no validation screen for the business at all;
+   the WhatsApp message itself, sent from the customer's own real number
+   with the code baked into the text, IS the proof shown at pickup. Matches
+   Tienda's existing "MiCampeche never touches the transaction" pattern —
+   this hands straight off to the business's own WhatsApp. */
+function ofertaRedeemCtaHtml(o,code){
+  const num=digitsOnly(o.phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const expiry=code.expiresAt?new Date(code.expiresAt).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  const msg=encodeURIComponent(`Hola, reclamé tu oferta "${o.name}" en MiCampeche. Mi código es: ${code.code}${expiry?` (válido hasta ${expiry})`:''}`);
+  return `<div class="of-redeem">
+    <div class="of-redeem-code">Código: <b>${e(code.code)}</b>${expiry?` · válido hasta ${expiry}`:''}</div>
+    ${intl?`<a class="av-contact-btn" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">${svgIco('message')}Enviar por WhatsApp</a>`
+          :`<div class="field-note">Este negocio no dejó un WhatsApp registrado — muestra tu código directamente.</div>`}
+  </div>`;
 }
 async function toggleClaim(id){
   const acct=await MC.currentAccount();
@@ -1308,14 +1330,29 @@ async function toggleClaim(id){
   const wasClaimed=!!claimedByMe[id];
   claimedByMe[id]=!wasClaimed;
   renderOfertas();
-  const {error}=wasClaimed?await MC.unclaimOferta(id):await MC.claimOferta(id);
+  if(wasClaimed){
+    const {error}=await MC.unclaimOferta(id);
+    if(error){
+      claimedByMe[id]=true;
+      renderOfertas();
+      toast(pgErrorToast(error,'No se pudo actualizar tu reclamo.'));
+      return;
+    }
+    delete claimedCodes[id];
+    toast('Reclamo cancelado');
+    renderOfertas();
+    return;
+  }
+  const {data,error}=await MC.claimOferta(id);
   if(error){
-    claimedByMe[id]=wasClaimed;
+    claimedByMe[id]=false;
     renderOfertas();
     toast(pgErrorToast(error,'No se pudo actualizar tu reclamo.'));
     return;
   }
-  toast(claimedByMe[id]?'¡Reclamado! Muestra esto en el negocio':'Reclamo cancelado');
+  claimedCodes[id]={code:data.code,expiresAt:data.expires_at};
+  toast('¡Reclamado! Muestra tu código por WhatsApp en el negocio');
+  renderOfertas();
 }
 
 function renderEmpleos(){

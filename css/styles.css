@@ -235,6 +235,9 @@ svg{display:block}
 .of-claimed-txt{font-size:11.5px;color:var(--ink3);font-weight:600}
 .of-claim-btn{background:var(--night);color:#fff;border:none;border-radius:99px;padding:9px 18px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
 .of-claim-btn.claimed{background:var(--palm-bg);color:var(--palm)}
+.of-redeem{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2)}
+.of-redeem-code{font-size:12px;color:var(--ink3);margin-bottom:8px}
+.of-redeem-code b{color:var(--ink);font-family:monospace;letter-spacing:.03em}
 .of-soldout-ribbon{position:absolute;top:14px;right:-30px;transform:rotate(38deg);background:var(--ink);color:#fff;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:4px 34px;z-index:2}
 
 /* ═══ INICIO (DASHBOARD) ═══ */

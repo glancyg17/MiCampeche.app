@@ -127,7 +127,7 @@ const SAMPLE = {
   ],
   productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
-  ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
+  ofertas: [{ id: 'o1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, is_premium: false, image_url: '', status: 'published', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] }],
   ofertas_redemptions: [],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
   perdidos: [
@@ -311,6 +311,23 @@ const fakeClient = {
         }); },
         delete: () => makeChain(() => forcedErrors.delete.reportes_resolution_votes
           ? { data: null, error: forcedErrors.delete.reportes_resolution_votes }
+          : { data: [], error: null }),
+      };
+    }
+    if (table === 'ofertas_redemptions') {
+      // The real table auto-fills `code` + `expires_at` via column defaults,
+      // so they never appear in the insert payload the generic fallback
+      // just echoes back. Fabricate them the way the DB would, while still
+      // honoring the forcedErrors hooks the claim/unclaim rollback tests use.
+      return {
+        select: (..._a) => makeChain(() => ({ data: SAMPLE.ofertas_redemptions || [], error: null })),
+        insert: (row) => { lastInsert.ofertas_redemptions = row; return makeChain(() => {
+          if (forcedErrors.insert.ofertas_redemptions) return { data: null, error: forcedErrors.insert.ofertas_redemptions };
+          const fake = { ...row, id: 'redemption-1', code: 'ABCD1234', claimed_at: NOW.toISOString(), expires_at: new Date(NOW.getTime() + 48*3600*1000).toISOString(), used: false, used_at: null };
+          return { data: [fake], error: null };
+        }); },
+        delete: () => makeChain(() => forcedErrors.delete.ofertas_redemptions
+          ? { data: null, error: forcedErrors.delete.ofertas_redemptions }
           : { data: [], error: null }),
       };
     }
@@ -1202,6 +1219,16 @@ const fakeClient = {
     await window.toggleClaim('o1');
     await new Promise(r => setTimeout(r, 50));
     assert(text('of-list') !== beforeHtml, 'toggleClaim() actually changed rendered state (optimistic update path ran)');
+
+    // A successful claim now surfaces the real redemption code (ABCD1234
+    // from the fake DB default) as a WhatsApp CTA prefilled to the
+    // business's snapshotted number (981 200 3000 -> wa.me/529812003000).
+    assert(text('of-list').includes('ABCD1234') && text('of-list').includes('wa.me/529812003000'), 'a claimed oferta shows the redemption code and a WhatsApp CTA to the business phone');
+    await window.toggleClaim('o1'); // unclaim
+    await new Promise(r => setTimeout(r, 50));
+    assert(!text('of-list').includes('ABCD1234') && !text('of-list').includes('wa.me/'), 'unclaiming removes the code and the WhatsApp CTA from the rendered oferta');
+    await window.toggleClaim('o1'); // re-claim, restoring the state the rollback test below expects
+    await new Promise(r => setTimeout(r, 50));
 
     // ── Error paths: the newest, most bespoke logic (friendly toasts +
     // optimistic-UI rollback), so worth testing deliberately. ──

@@ -649,10 +649,13 @@ MC.fetchOfertas=async function(){
     (counts||[]).forEach(c=>{countsById[c.oferta_id]=Number(c.claimed);});
   }
   const uid=await MC.ready;
-  let myClaims=new Set();
+  // Map, not Set, now that a claim also needs to bring back the real
+  // redemption code+expiry — so the WhatsApp CTA still shows it on a later
+  // visit, not just in the instant right after tapping "Reclamar".
+  let myClaims=new Map();
   if(uid&&ids.length){
-    const {data:mine}=await sb.from('ofertas_redemptions').select('oferta_id').eq('claimed_by',uid).in('oferta_id',ids);
-    (mine||[]).forEach(r=>myClaims.add(r.oferta_id));
+    const {data:mine}=await sb.from('ofertas_redemptions').select('oferta_id,code,expires_at').eq('claimed_by',uid).in('oferta_id',ids);
+    (mine||[]).forEach(r=>myClaims.set(r.oferta_id,{code:r.code,expiresAt:r.expires_at}));
   }
   return data.map(r=>{
     const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
@@ -661,12 +664,15 @@ MC.fetchOfertas=async function(){
     // on top of a base count that excludes the current user, so subtract
     // the current user's own claim back out here to keep that math intact.
     const totalClaimed=countsById[r.id]||0;
-    const iClaimed=myClaims.has(r.id);
+    const mine=myClaims.get(r.id);
+    const iClaimed=!!mine;
     return {
       id:r.id,seller:r.business_name_snapshot,tier:r.is_premium?'premium':'free',name:r.title,
       priceWas:Number(r.price_was)||0,priceNow:Number(r.price_now)||0,img:r.image_url||'',
       claimed:iClaimed?Math.max(0,totalClaimed-1):totalClaimed,total:r.quantity_total||1,
-      postedDs,iClaimedReal:iClaimed
+      postedDs,iClaimedReal:iClaimed,
+      myCode:mine?mine.code:null,myCodeExpiresAt:mine?mine.expiresAt:null,
+      phone:r.seller_phone||''
     };
   });
 };
@@ -943,7 +949,7 @@ MC.submitOferta=async function(d,slotDs,isFull,businessId){
   const priceWas=parseMoney(d.priceWas),priceNow=parseMoney(d.priceNow);
   const discountPct=(priceWas&&priceNow&&priceWas>0)?Math.max(1,Math.min(75,Math.round((1-priceNow/priceWas)*100))):null;
   const {data:oferta,error:ofErr}=await sb.from('ofertas').insert({
-    business_id:biz.id,business_name_snapshot:biz.business_name,is_premium:biz.is_premium,
+    business_id:biz.id,business_name_snapshot:biz.business_name,seller_phone:biz.phone||null,is_premium:biz.is_premium,
     title:d.item||'Oferta',description:d.desc||null,terms:d.terms||null,image_url:d.photo||null,
     price_was:priceWas,price_now:priceNow,
     quantity_total:parseInt(d.qty,10)||1,discount_pct:discountPct,submitted_by:uid
@@ -970,7 +976,7 @@ MC.uploadImage=async function(blob,ext){
 
 MC.claimOferta=async function(ofertaId){
   const uid=await MC.ready;
-  return sb.from('ofertas_redemptions').insert({oferta_id:ofertaId,claimed_by:uid});
+  return sb.from('ofertas_redemptions').insert({oferta_id:ofertaId,claimed_by:uid}).select('code,expires_at').single();
 };
 MC.unclaimOferta=async function(ofertaId){
   const uid=await MC.ready;
