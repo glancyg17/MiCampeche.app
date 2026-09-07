@@ -550,6 +550,10 @@ svg{display:block}
 /* ═══ PHOTO UPLOAD (real file picker + preview) ═══ */
 .photo-upload-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--paper2);border:1.5px dashed var(--line2);border-radius:var(--rs);padding:13px;font-size:13.5px;font-weight:700;color:var(--gulf);cursor:pointer;font-family:inherit}
 .photo-upload-btn .ico{width:16px;height:16px}
+.photo-upload-btn-sm{display:flex;align-items:center;justify-content:center;width:72px;height:72px;flex-shrink:0;background:var(--paper2);border:1.5px dashed var(--line2);border-radius:var(--rs);cursor:pointer;color:var(--gulf)}
+.photo-upload-btn-sm .ico{width:20px;height:20px}
+.pv-gallery{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:var(--rs);-webkit-overflow-scrolling:touch}
+.pv-gallery-img{flex:0 0 100%;height:200px;background-size:cover;background-position:center;background-color:var(--paper2);scroll-snap-align:start}
 
 /* ═══ POST / SUBMISSION MODAL ═══ */
 .modal-bg{position:fixed;inset:0;background:rgba(18,32,29,.55);z-index:200;display:none;align-items:flex-end;backdrop-filter:blur(2px)}

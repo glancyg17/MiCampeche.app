@@ -141,8 +141,8 @@ const SAMPLE = {
     // still expect present/untouched.
     { id: 'e11', title: 'Evento sincronizado del calendario', category: 'Cultura', event_date: ds(2), event_time: '5:00 PM', location: 'Centro', source: 'sync', status: 'pending' },
   ],
-  productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_url: '', featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
-  clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_url: '', status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
+  productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_urls: ['https://example.com/p1-a.jpg', 'https://example.com/p1-b.jpg'], featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
+  clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_urls: ['https://example.com/c1.jpg'], status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
   ofertas: [
     { id: 'o1', business_id: 'biz-1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, quantity_sold: 2, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] },
     // Owned by someone else — fetchMyActiveOfertas (scoped by submitted_by)
@@ -543,6 +543,18 @@ const fakeClient = {
     cx.fillStyle = 'blue'; cx.fillRect(0, 0, 800, 600);
     const f = new window.File([c.toBuffer('image/jpeg')], 'oferta.jpg', { type: 'image/jpeg' });
     await window.handlePhotoSelect({ files: [f] }, 'photo');
+    await new Promise(r => setTimeout(r, 120)); // real async decode + resize + fake upload
+  };
+
+  // Producto/Clasificado now use the multi-image field (imgupload-multi) and
+  // require at least one photo. Attach one via the REAL multi-upload pipeline
+  // before any submitPost('producto'|'clasificado') that expects to succeed
+  // (or to reach a LATER validation error).
+  const attachListingPhoto = async (fieldKey = 'photo') => {
+    const c = createCanvas(800, 600); const cx = c.getContext('2d');
+    cx.fillStyle = 'orange'; cx.fillRect(0, 0, 800, 600);
+    const f = new window.File([c.toBuffer('image/jpeg')], 'listing.jpg', { type: 'image/jpeg' });
+    await window.handlePhotoSelectMulti({ files: [f] }, fieldKey);
     await new Promise(r => setTimeout(r, 120)); // real async decode + resize + fake upload
   };
 
@@ -1460,12 +1472,11 @@ const fakeClient = {
     await window.openPost('producto');
     assert(text('modal-title') === 'Publicar un producto', 'once an admin approves the business, Producto opens the real form');
 
-    // ── Real image upload: replaces the old fake Google Form placeholder,
-    // which never once actually populated image_url. Uses a real
-    // 2000x1000 JPEG (via node-canvas) run through the REAL resize
-    // pipeline (FileReader → Image decode → canvas draw → toBlob) — not
-    // a bypass of it — then the real MC.uploadImage() against the fake
-    // Storage client. ──
+    // ── Real multi-image upload (Producto/Clasificado use imgupload-multi,
+    // up to 3, at least one required). Uses a real 2000x1000 JPEG (via
+    // node-canvas) run through the REAL resize pipeline (FileReader → Image
+    // decode → canvas draw → toBlob) — not a bypass — then the real
+    // MC.uploadImage() against the fake Storage client. ──
     {
       const srcCanvas = createCanvas(2000, 1000);
       const cctx = srcCanvas.getContext('2d');
@@ -1473,7 +1484,7 @@ const fakeClient = {
       const jpegBuffer = srcCanvas.toBuffer('image/jpeg');
       const testFile = new window.File([jpegBuffer], 'test.jpg', { type: 'image/jpeg' });
 
-      await window.handlePhotoSelect({ files: [testFile] }, 'photo');
+      await window.handlePhotoSelectMulti({ files: [testFile] }, 'photo');
       await new Promise(r => setTimeout(r, 100)); // real async decode + resize + fake upload
 
       assert(!!lastInsert.storageUpload, 'a real upload actually reached the (fake) Storage client, through the real resize pipeline');
@@ -1482,24 +1493,44 @@ const fakeClient = {
       assert(lastInsert.storageUpload.size < jpegBuffer.length, 'the resized/compressed blob is genuinely smaller than the original 2000x1000 source — the resize step actually did something, not a no-op');
       assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('<img'), 'a real preview thumbnail renders after upload completes');
 
+      // A second photo appends; the add-tile stays available under the cap of 3.
+      const c2 = createCanvas(400, 400); c2.getContext('2d').fillRect(0, 0, 400, 400);
+      await window.handlePhotoSelectMulti({ files: [new window.File([c2.toBuffer('image/jpeg')], 't2.jpg', { type: 'image/jpeg' })] }, 'photo');
+      await new Promise(r => setTimeout(r, 100));
+      assert((doc.getElementById('pf-photo-wrap').innerHTML.match(/<img/g) || []).length === 2, 'a second photo appends rather than replacing the first');
+      assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('photo-upload-btn-sm'), 'the add-tile is still shown while under the 3-photo cap');
+
       doc.getElementById('pf-name').value = 'Producto con foto';
       await window.submitPost('producto');
       await new Promise(r => setTimeout(r, 20));
-      assert(lastInsert.productos && lastInsert.productos.image_url && lastInsert.productos.image_url.startsWith('https://fake-storage.test/uploads/'), 'the real uploaded URL (not a placeholder string) ends up as image_url on the actual submission');
+      assert(lastInsert.productos && Array.isArray(lastInsert.productos.image_urls) && lastInsert.productos.image_urls.length === 2
+        && lastInsert.productos.image_urls.every(u => u.startsWith('https://fake-storage.test/uploads/')),
+        'both real uploaded URLs end up in image_urls (not the legacy image_url) on the actual submission');
     }
 
-    // Error path: a failed upload must revert to the upload button, not
-    // leave it stuck showing "Subiendo…" forever.
+    // Required-photo guard: a producto with zero photos is blocked client-side.
+    {
+      await window.openPost('producto');
+      doc.getElementById('pf-name').value = 'Sin foto';
+      delete lastInsert.productos;
+      await window.submitPost('producto');
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('toast') === 'Agrega al menos una foto', 'a producto with no photo is blocked before reaching Supabase');
+      assert(!lastInsert.productos, 'the photo-less producto never reached Supabase');
+    }
+
+    // Error path: a failed upload shows a toast and leaves no thumbnail, so
+    // the field still reads as empty (and the required-photo guard still bites).
     {
       await window.openPost('producto');
       forcedErrors.storageUpload = { message: 'simulated storage failure' };
       const srcCanvas2 = createCanvas(400, 400);
       srcCanvas2.getContext('2d').fillRect(0, 0, 400, 400);
       const testFile2 = new window.File([srcCanvas2.toBuffer('image/jpeg')], 'test2.jpg', { type: 'image/jpeg' });
-      await window.handlePhotoSelect({ files: [testFile2] }, 'photo');
+      await window.handlePhotoSelectMulti({ files: [testFile2] }, 'photo');
       await new Promise(r => setTimeout(r, 100));
       assert(text('toast') === 'No se pudo subir la foto — intenta de nuevo', 'a failed upload shows a clear error toast');
-      assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('photo-upload-btn') && !doc.getElementById('pf-photo-wrap').innerHTML.includes('<img'), 'a failed upload reverts to the real upload button, not stuck on "Subiendo…" or showing a broken preview');
+      assert(!doc.getElementById('pf-photo-wrap').innerHTML.includes('<img'), 'a failed upload leaves no thumbnail — the field still reads as empty');
       forcedErrors.storageUpload = null;
     }
 
@@ -1508,7 +1539,7 @@ const fakeClient = {
       await window.openPost('producto');
       const notImage = new window.File(['plain text'], 'note.txt', { type: 'text/plain' });
       delete lastInsert.storageUpload;
-      await window.handlePhotoSelect({ files: [notImage] }, 'photo');
+      await window.handlePhotoSelectMulti({ files: [notImage] }, 'photo');
       await new Promise(r => setTimeout(r, 20));
       assert(text('toast') === 'Selecciona un archivo de imagen', 'a non-image file is rejected client-side with a clear message');
       assert(!lastInsert.storageUpload, 'a rejected non-image file never reaches the Storage upload call at all');
@@ -1668,6 +1699,7 @@ const fakeClient = {
     forcedErrors.insert.productos = { code: 'P0001', message: 'product_cap_reached' };
     await window.openPost('producto');
     doc.getElementById('pf-name').value = 'Producto de prueba';
+    await attachListingPhoto();
     await window.submitPost('producto');
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Actualiza a Premium', 'product cap error opens the real Premium upgrade prompt instead of a dead-end toast');
@@ -1690,6 +1722,7 @@ const fakeClient = {
         'the producto form now carries estado / disponibilidad / entrega controls');
       assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 3,
         'all three contact methods are pre-selected by default');
+      await attachListingPhoto();
 
       doc.getElementById('pf-name').value = 'Pan artesanal';
       // The price field is now a "money" type: the "$" is a CSS prefix, so
@@ -1715,8 +1748,10 @@ const fakeClient = {
       assert(p.seller_phone === currentBusiness.phone,
         'the business phone is snapshotted onto the product row so the public card can build the wa.me link without reading the private businesses table');
 
-      // A listing nobody can respond to is blocked.
+      // A listing nobody can respond to is blocked (photo present, so the
+      // required-photo guard passes and the contact-method guard is reached).
       await window.openPost('producto');
+      await attachListingPhoto();
       doc.getElementById('pf-name').value = 'Sin contacto';
       doc.querySelectorAll('#pf-contact_methods .mchip.on').forEach(c => window.multiPick(c));
       delete lastInsert.productos;
@@ -1730,6 +1765,7 @@ const fakeClient = {
       await window.openPost('clasificado');
       assert(doc.getElementById('pf-contact_phone').value === currentProfile.phone,
         'the clasificado contact number pre-fills from the signed-in account');
+      await attachListingPhoto();
       doc.getElementById('pf-name').value = 'Bici de montaña';
       doc.getElementById('pf-contact_phone').value = '';
       delete lastInsert.clasificados;
@@ -2038,6 +2074,9 @@ const fakeClient = {
     {
       window.openProdView('negocio', 'p1');
       assert(text('modal-title') === 'Producto test', 'tapping a product opens its detail view, not a "próximamente" toast');
+      assert(text('modal-body').includes('pv-gallery') && (text('modal-body').match(/pv-gallery-img/g) || []).length === 2
+        && text('modal-body').includes("url('https://example.com/p1-a.jpg')") && text('modal-body').includes("url('https://example.com/p1-b.jpg')"),
+        'a product with 2 image_urls shows the swipeable multi-image gallery, in order');
       const links = [...doc.querySelectorAll('#modal-body a')];
       const waLink = links.find(a => a.href.includes('wa.me'));
       assert(!!waLink && waLink.href.includes('529811002000') && waLink.href.includes(encodeURIComponent('Producto test')),
@@ -2046,6 +2085,8 @@ const fakeClient = {
       assert(!links.some(a => a.href.startsWith('sms:')), 'no SMS link, because the seller did not select "mensaje de texto"');
 
       window.openProdView('personal', 'c1');
+      assert(text('modal-body').includes('pv-hero') && !text('modal-body').includes('pv-gallery'),
+        'a clasificado with a single image_urls entry shows the plain hero, not the gallery');
       const links2 = [...doc.querySelectorAll('#modal-body a')];
       assert(links2.length === 1 && links2[0].href.includes('wa.me') && links2[0].href.includes('529813004000'),
         'a clasificado that only chose WhatsApp shows exactly one contact button, to its own per-post number');
@@ -2348,6 +2389,7 @@ const fakeClient = {
 
     await window.openPost('producto');
     assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the picker\'s default follows real is_primary data — now biz-2');
+    await attachListingPhoto();
     doc.getElementById('pf-name').value = 'Producto de biz-2';
     doc.getElementById('pf-price').value = '99'; // money field — "$" is auto-prefixed on submit
     delete lastInsert.productos;

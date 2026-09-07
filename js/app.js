@@ -471,6 +471,8 @@ function closeWeatherLightbox(){document.getElementById('wx-lb-bg').classList.re
    is keyed by form field key so multiple photo fields could coexist,
    though every current form only has one. */
 let uploadedImageUrls={};
+let uploadedImageUrlsMulti={}; // {fieldKey: [url, ...]} — Producto/Clasificado only
+let uploadedImageUrlsMultiMax={}; // {fieldKey: max}, set once per field when its form opens
 
 function resizeImageToBlob(file,maxDim=1200,quality=0.8){
   return new Promise((resolve,reject)=>{
@@ -527,6 +529,48 @@ function renderPhotoUploadButton(fieldKey){
   if(!wrap)return;
   wrap.innerHTML=`<button type="button" class="photo-upload-btn" onclick="document.getElementById('pf-${fieldKey}-input').click()">${svgIco('camera')}<span class="photo-upload-lbl">Subir foto</span></button>
     <input type="file" accept="image/*" id="pf-${fieldKey}-input" style="display:none" onchange="handlePhotoSelect(this,'${fieldKey}')">`;
+}
+function renderPhotoUploadButtonMulti(fieldKey){
+  const wrap=document.getElementById('pf-'+fieldKey+'-wrap');
+  if(!wrap)return;
+  const urls=uploadedImageUrlsMulti[fieldKey]||[];
+  const max=uploadedImageUrlsMultiMax[fieldKey]||3;
+  const thumbs=urls.map((url,i)=>`
+    <div style="position:relative;display:inline-block">
+      <img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:var(--rs);display:block">
+      <button type="button" onclick="removePhotoSelectionMulti('${fieldKey}',${i})" aria-label="Quitar foto"
+        style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
+    </div>`).join('');
+  const addBtn=urls.length<max?`
+    <button type="button" class="photo-upload-btn-sm" onclick="document.getElementById('pf-${fieldKey}-input').click()">${svgIco('camera')}</button>
+    <input type="file" accept="image/*" id="pf-${fieldKey}-input" style="display:none" onchange="handlePhotoSelectMulti(this,'${fieldKey}')">
+  `:'';
+  wrap.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap">${thumbs}${addBtn}</div>`;
+}
+async function handlePhotoSelectMulti(input,fieldKey){
+  const file=input.files&&input.files[0];
+  input.value=''; // lets the same file be re-picked later if removed and re-added
+  if(!file)return;
+  if(!file.type.startsWith('image/')){toast('Selecciona un archivo de imagen');return;}
+  const max=uploadedImageUrlsMultiMax[fieldKey]||3;
+  const urls=uploadedImageUrlsMulti[fieldKey]||(uploadedImageUrlsMulti[fieldKey]=[]);
+  if(urls.length>=max)return; // the add-tile is already hidden at cap; this is just a guard
+  const wrap=document.getElementById('pf-'+fieldKey+'-wrap');
+  if(wrap)wrap.insertAdjacentHTML('beforeend',`<div style="width:72px;height:72px;border-radius:var(--rs);background:var(--paper2);display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.6">${svgIco('camera')}</div>`);
+  try{
+    const blob=await resizeImageToBlob(file);
+    const url=await MC.uploadImage(blob,'jpg');
+    urls.push(url);
+  }catch(err){
+    console.error('Photo upload failed:',err);
+    toast('No se pudo subir la foto — intenta de nuevo');
+  }
+  renderPhotoUploadButtonMulti(fieldKey);
+}
+function removePhotoSelectionMulti(fieldKey,index){
+  const urls=uploadedImageUrlsMulti[fieldKey]||[];
+  urls.splice(index,1);
+  renderPhotoUploadButtonMulti(fieldKey);
 }
 
 /* ══════════════ REAL DATA LAYER (Supabase) ══════════════
@@ -1259,9 +1303,13 @@ function openProdView(sellerType,id){
   }else{
     cta=`<div class="field-note">Este vendedor no dejó datos de contacto.</div>`;
   }
+  const galleryImgs=(x.imgs&&x.imgs.length)?x.imgs:(x.img?[x.img]:[]);
+  const galleryHtml=galleryImgs.length>1
+    ?`<div class="pv-gallery">${galleryImgs.map(u=>`<div class="pv-gallery-img" style="background-image:url('${e(u)}')"></div>`).join('')}</div>`
+    :(galleryImgs.length?`<div class="pv-hero" style="background-image:url('${e(galleryImgs[0])}')"></div>`:'');
   document.getElementById('modal-title').textContent=x.name;
   document.getElementById('modal-body').innerHTML=`
-    ${x.img?`<div class="pv-hero" style="background-image:url('${e(x.img)}')"></div>`:''}
+    ${galleryHtml}
     <div style="font-size:20px;font-weight:800;color:var(--palm)">${e(x.price||'')}</div>
     ${x.sellerType==='negocio'?`<div style="font-size:13px;color:var(--ink3)">${e(x.seller)}</div>`:''}
     ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${e(x.desc)}</div>`:''}
@@ -1718,7 +1766,7 @@ const POST_FORMS={
     {k:'lead_time',lbl:'¿Con cuánta anticipación?',type:'text',ph:'Ej. 2 días',showIf:{field:'availability',val:'pedido'}},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega a domicilio'],['ambos','Ambos']]},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
-    {k:'photo',lbl:'Foto del producto',type:'imgupload'},
+    {k:'photo',lbl:'Fotos del producto',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista — usa buena luz y muestra bien lo que vendes.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, tamaño, disponibilidad...'}
   ]},
   clasificado:{title:'Publicar en Clasificados',note:'Un artículo por persona. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
@@ -1730,7 +1778,7 @@ const POST_FORMS={
     {k:'zone',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',note:'Los interesados te contactarán a este número por los medios que elijas.'},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
-    {k:'photo',lbl:'Foto del artículo',type:'imgupload'},
+    {k:'photo',lbl:'Fotos del artículo',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
   ]},
   mandadito:{title:'Registrarme como mandadito',note:'Revisamos cada registro — incluida una confirmación rápida por WhatsApp — antes de aparecer en el directorio.',fields:[
@@ -1862,6 +1910,7 @@ async function openPost(kind){
       h+=`<div id="pf-${f.k}-cal">${monthCalHtml(f.k)}</div>`;
     }
     else if(f.type==='money')h+=`<div class="fi-money-wrap"><span class="fi-money-prefix">$</span><input class="fi fi-money" id="pf-${f.k}" type="text" inputmode="decimal" placeholder="${f.ph||''}"></div>`;
+    else if(f.type==='imgupload-multi')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else if(f.type==='imgupload')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else h+=`<input class="fi" id="pf-${f.k}" type="${f.type}" placeholder="${f.ph||''}">`;
     if(f.note)h+=`<div class="field-note">${f.note}</div>`;
@@ -1874,7 +1923,12 @@ async function openPost(kind){
   selectedSlotDate=null;
   selectedFeatureStart=null;
   uploadedImageUrls={};
-  form.fields.forEach(f=>{if(f.type==='imgupload')renderPhotoUploadButton(f.k);});
+  uploadedImageUrlsMulti={};
+  uploadedImageUrlsMultiMax={};
+  form.fields.forEach(f=>{
+    if(f.type==='imgupload')renderPhotoUploadButton(f.k);
+    else if(f.type==='imgupload-multi'){uploadedImageUrlsMultiMax[f.k]=f.max||3;uploadedImageUrlsMulti[f.k]=[];renderPhotoUploadButtonMulti(f.k);}
+  });
   applyConditionalRows(form);
   if(kind==='producto'){
     applyProductoBusinessHints(postBusinessOptions.find(b=>String(b.id)===String(selectedPostBusinessId)));
@@ -3407,13 +3461,13 @@ const MY_POST_EDIT={
     input:{name:r.title,cat:r.category,price:r.price_text||'',lead_time:r.lead_time,desc:r.description},
     seg:{item_condition:r.item_condition||'nuevo',availability:r.availability||'ahora',fulfillment:r.fulfillment||'recoger'},
     multi:{contact_methods:r.contact_methods},
-    img:{photo:r.image_url}
+    imgMulti:{photo:r.image_urls||[]}
   })},
   clasificados:{form:'clasificado',fill:r=>({
     input:{name:r.title,cat:r.category,price:r.price_text||'',zone:r.zone,desc:r.description,contact_phone:r.contact_phone},
     seg:{item_condition:r.item_condition||'nuevo',fulfillment:r.fulfillment||'recoger'},
     multi:{contact_methods:r.contact_methods},
-    img:{photo:r.image_url}
+    imgMulti:{photo:r.image_urls||[]}
   })}
 };
 function applyPostEditFill(fill){
@@ -3439,6 +3493,10 @@ function applyPostEditFill(fill){
       <button type="button" onclick="removePhotoSelection('${k}')" aria-label="Quitar foto"
         style="position:absolute;top:-7px;right:-7px;background:#fff;border-radius:50%;width:22px;height:22px;border:1.5px solid var(--line2);font-size:13px;line-height:1;cursor:pointer">✕</button>
     </div>`;
+  });
+  Object.entries(fill.imgMulti||{}).forEach(([k,urls])=>{
+    uploadedImageUrlsMulti[k]=Array.isArray(urls)?[...urls]:[];
+    renderPhotoUploadButtonMulti(k);
   });
   Object.entries(fill.monthcal||{}).forEach(([k,ds])=>{
     if(!ds)return;
@@ -3481,6 +3539,8 @@ function renderModerationDetailFields(table,raw){
     if(val===null||val===undefined||val==='')return;
     if(key==='image_url'||key==='thumbnail_url'||key==='business_image_url'){
       h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><img src="${e(val)}" style="max-width:100%;border-radius:var(--rs);margin-top:4px;display:block"></div>`;
+    } else if(key==='image_urls'&&Array.isArray(val)){
+      h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">${val.map(u=>`<img src="${e(u)}" style="width:96px;height:96px;object-fit:cover;border-radius:var(--rs)">`).join('')}</div></div>`;
     } else if(typeof val==='boolean'){
       h+=`<div style="margin-bottom:12px"><div class="fl">${e(label)}</div><div style="font-size:14px;margin-top:2px">${val?'Sí':'No'}</div></div>`;
     } else if(Array.isArray(val)){
@@ -3869,6 +3929,7 @@ async function submitPost(kind){
     else if(f.type==='calendar'){data[f.k]=selectedSlotDate;}
     else if(f.type==='monthcal'){data[f.k]=monthCalSelected[f.k]||'';}
     else if(f.type==='money'){const el=document.getElementById('pf-'+f.k);const raw=el?el.value.trim():'';data[f.k]=raw?('$'+raw):'';}
+    else if(f.type==='imgupload-multi'){data[f.k]=uploadedImageUrlsMulti[f.k]||[];}
     else if(f.type==='imgupload'){data[f.k]=uploadedImageUrls[f.k]||null;}
     else{const el=document.getElementById('pf-'+f.k);data[f.k]=el?el.value:'';}
   });
@@ -3881,6 +3942,7 @@ async function submitPost(kind){
 
   if(kind==='producto'||kind==='clasificado'){
     if(!(data.name||'').trim()){stop();toast('Escribe qué vendes');return;}
+    if(!Array.isArray(data.photo)||!data.photo.length){stop();toast('Agrega al menos una foto');return;}
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
   if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
