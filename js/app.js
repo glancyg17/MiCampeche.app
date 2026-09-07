@@ -121,6 +121,8 @@ const STRIPE_LINK_BUSINESS_SETUP='https://buy.stripe.com/28E3cw2E98yB47UdeT4F203
 const BUSINESS_SETUP_FEE_MXN=99;
 const STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE='https://buy.stripe.com/9B6fZiceJ1698oaeiX4F204?locale=es-419';
 const BUSINESS_PREMIUM_UPGRADE_FEE_MXN=499;
+const STRIPE_LINK_MANDADITO_BOOST='https://buy.stripe.com/6oU14o1A59CFgUGeiX4F205?locale=es-419';
+const MANDADITO_BOOST_FEE_MXN=99;
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
 function goToServicios(){closeMenu();nav('servicios');}
@@ -1981,6 +1983,104 @@ function pickFeatureDay(el,isFull){
   const label=`${start.getDate()} al ${end.getDate()} de ${monthNamesLong[end.getMonth()]}`;
   document.getElementById('feature-cal-selected').innerHTML=`<div class="slot-cal-ok-msg">${svgIco('checkBadge')}Destacarás tu evento del ${label} por $${EVENTO_FEATURE_FEE_MXN} MXN.</div>`;
 }
+
+/* ══════════════ MANDADITOS BOOST (7-day / cap-2 / $99, with waitlist) ══════════════
+   Mirrors featureCalendarHtml exactly — just a 7-day window, cap 2, and
+   the Ofertas-style waitlist behavior (join a list when full) rather than
+   Evento Destacado's "pick a different window, no waitlist". */
+let mandaditoBoostCounts={};
+let selectedMandaditoBoostStart=null;
+function computeMandaditoBoostDayCounts(bookings){
+  const counts={};
+  bookings.forEach(b=>{
+    const end=new Date(b.end_date+'T12:00:00');
+    for(let d=new Date(b.start_date+'T12:00:00');d<=end;d.setDate(d.getDate()+1)){
+      const ds=dToDs(d);
+      counts[ds]=(counts[ds]||0)+1;
+    }
+  });
+  return counts;
+}
+function mandaditoBoostWindowWouldBeFull(startDs){
+  const start=new Date(startDs+'T12:00:00');
+  for(let i=0;i<7;i++){
+    const d=new Date(start);d.setDate(d.getDate()+i);
+    if((mandaditoBoostCounts[dToDs(d)]||0)>=2)return true;
+  }
+  return false;
+}
+function mandaditoBoostCalendarHtml(){
+  const today=new Date();
+  const days=[];
+  for(let i=0;i<SLOT_WINDOW_DAYS;i++){
+    const d=new Date(today);d.setDate(d.getDate()+i);
+    days.push(d);
+  }
+  const dayNames=['dom','lun','mar','mié','jue','vie','sáb'];
+  const monthNames=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  let h=`<div class="slot-cal-note">${svgIco('clock')}Ventana de 7 días · $${MANDADITO_BOOST_FEE_MXN} MXN</div><div class="slot-cal-grid">`;
+  days.forEach(d=>{
+    const ds=dToDs(d);
+    const isFull=mandaditoBoostWindowWouldBeFull(ds);
+    const isToday=ds===dToDs(today);
+    h+=`<div class="slot-day${isFull?' full':''}" data-ds="${ds}" onclick="pickMandaditoBoostDay(this,${isFull})">
+      <div class="slot-day-dow">${dayNames[d.getDay()]}${isToday?' · hoy':''}</div>
+      <div class="slot-day-num">${d.getDate()}</div>
+      <div class="slot-day-mon">${monthNames[d.getMonth()]}</div>
+      <div class="slot-day-status">${isFull?'Ocupado':'Libre'}</div>
+    </div>`;
+  });
+  h+=`</div><div class="slot-cal-selected" id="mandadito-boost-selected"></div>`;
+  return h;
+}
+function pickMandaditoBoostDay(el,isFull){
+  document.querySelectorAll('#mandadito-boost-cal .slot-day').forEach(d=>d.classList.remove('sel'));
+  el.classList.add('sel');
+  const ds=el.dataset.ds;
+  selectedMandaditoBoostStart=ds;
+  const start=new Date(ds+'T12:00:00');
+  const end=new Date(start);end.setDate(end.getDate()+6);
+  const monthNamesLong=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const label=`${start.getDate()} al ${end.getDate()} de ${monthNamesLong[end.getMonth()]}`;
+  const sel=document.getElementById('mandadito-boost-selected');
+  if(isFull){
+    sel.innerHTML=`<div class="slot-cal-full-msg">${svgIco('clock')}Esa semana ya está ocupada. Puedes unirte a la lista de espera y te avisamos si se libera.</div>
+      <button class="submit-btn" onclick="confirmMandaditoBoost(true)">Unirme a la lista de espera</button>`;
+  } else {
+    sel.innerHTML=`<div class="slot-cal-ok-msg">${svgIco('checkBadge')}Impulsarás tu perfil del ${label} por $${MANDADITO_BOOST_FEE_MXN} MXN.</div>
+      <button class="submit-btn" onclick="confirmMandaditoBoost(false)">Pagar $${MANDADITO_BOOST_FEE_MXN} e impulsar</button>`;
+  }
+}
+async function confirmMandaditoBoost(isFull){
+  if(!selectedMandaditoBoostStart)return;
+  // MC.currentAccount() doesn't carry the mandadito profile (only the
+  // account-view's own Promise.all does) — look it up directly here.
+  const mine=await MC.myMandadito();
+  if(!mine){toast('No encontramos tu perfil de mandadito.');return;}
+  if(isFull){
+    const {error}=await MC.joinMandaditoBoostWaitlist(mine.id,selectedMandaditoBoostStart);
+    if(error){toast(pgErrorToast(error,'No se pudo unir a la lista de espera.'));return;}
+    closeModal();
+    toast('Estás en la lista de espera — te avisaremos ✓');
+    return;
+  }
+  sessionStorage.setItem('mc_pending_mandadito_boost',JSON.stringify({mandaditoId:mine.id,startDs:selectedMandaditoBoostStart}));
+  window.location.href=STRIPE_LINK_MANDADITO_BOOST;
+}
+async function openMandaditoBoost(){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Impulsar mi perfil';
+  document.getElementById('modal-body').innerHTML=`<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>`;
+  document.getElementById('modal-bg').classList.add('on');
+  const bookings=await MC.fetchMandaditoBoosts();
+  mandaditoBoostCounts=computeMandaditoBoostDayCounts(bookings);
+  selectedMandaditoBoostStart=null;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:10px">Tu perfil aparece primero en el directorio de Mandaditos durante 7 días. Solo hay 2 espacios disponibles a la vez — si tu semana ya está ocupada, puedes unirte a la lista de espera.</div>
+    <div id="mandadito-boost-cal">${mandaditoBoostCalendarHtml()}</div>
+  `;
+}
+
 /* ══════════════ MONTH CALENDAR (the 'monthcal' field type) ══════════════
    Unlike slotCalendarHtml() (Ofertas' rolling-future-only, occupied/free
    day picker), this is a real month-grid with prev/next navigation and
@@ -2269,6 +2369,16 @@ function renderAccountSignedIn(acct){
           <span class="menu-item-sub">${acct.myMandadito
             ? (acct.myMandadito.status==='pending'?'Tu registro está en revisión':acct.myMandadito.status==='rejected'?(acct.myMandadito.rejection_reason||'No se aprobó tu registro anterior'):'')
             : 'Regístrate en el directorio de mandaditos'}</span>
+        </span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:''}
+    ${(acct.myMandadito&&acct.myMandadito.status==='published'&&MANDADITOS.length>=5)?`
+      <button class="menu-item" onclick="openMandaditoBoost()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico" style="background:var(--wall)"><svg class="ico" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Impulsar mi perfil</span>
+          <span class="menu-item-sub">$${MANDADITO_BOOST_FEE_MXN} MXN · 7 días arriba en el directorio</span>
         </span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
@@ -3910,6 +4020,17 @@ async function checkPaymentReturn(){
       return;
     }
     toast('¡Pago recibido! Este negocio ahora puede tener hasta 10 productos ✓');
+  } else if(paid==='mandadito_boost'){
+    const pending=sessionStorage.getItem('mc_pending_mandadito_boost');
+    if(!pending){toast('Pago recibido, pero no encontramos los detalles de tu impulso. Escríbenos por WhatsApp.');return;}
+    sessionStorage.removeItem('mc_pending_mandadito_boost');
+    const {mandaditoId,startDs}=JSON.parse(pending);
+    const {error}=await MC.submitMandaditoBoost(mandaditoId,startDs);
+    if(error){
+      toast('Pago recibido, pero esa semana ya no está disponible — alguien más la reservó mientras pagabas. Escríbenos por WhatsApp para reprogramar.');
+      return;
+    }
+    toast('¡Pago recibido! Tu perfil quedará impulsado esas fechas ✓');
   }
 }
 

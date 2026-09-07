@@ -719,6 +719,28 @@ MC.markMandaditoReportReviewed=async function(id){
   return sb.from('mandadito_reports').update({reviewed_at:new Date().toISOString()}).eq('id',id);
 };
 
+/* Active/upcoming boost bookings platform-wide — same shape as
+   MC.fetchFeaturedBookings(), just a different table. app.js expands
+   this into a ds->count map client-side, same pattern. */
+MC.fetchMandaditoBoosts=async function(){
+  const {data,error}=await sb.from('mandadito_boosts').select('mandadito_id,start_date,end_date').gte('end_date',TODAY_DS);
+  if(error){console.error(error);return [];}
+  return data;
+};
+/* Joining the waitlist is NOT a payment event — same reasoning as
+   ofertas_waitlist: an unconfirmed reservation shouldn't cost anything. */
+MC.joinMandaditoBoostWaitlist=async function(mandaditoId,requestedDate){
+  const uid=await MC.ready;
+  return sb.from('mandadito_boost_waitlist').insert({mandadito_id:mandaditoId,requested_date:requestedDate,submitted_by:uid});
+};
+/* Only ever called from checkPaymentReturn() after a real Stripe
+   redirect back with ?paid=mandadito_boost — the capacity trigger is the
+   real enforcement; this can still fail if the window filled up while
+   the mandadito was paying, and the caller needs to handle that. */
+MC.submitMandaditoBoost=async function(mandaditoId,startDs){
+  return sb.from('mandadito_boosts').insert({mandadito_id:mandaditoId,start_date:startDs});
+};
+
 MC.fetchOfertas=async function(){
   const {data,error}=await sb.from('ofertas').select('*, ofertas_bookings(booked_date)')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);

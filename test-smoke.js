@@ -157,6 +157,9 @@ const SAMPLE = {
   // Populated per-test; both start empty.
   mandadito_contacts: [],
   mandadito_reports: [],
+  // Mandaditos Step 3 — the $99 / 7-day / cap-2 boost + its waitlist.
+  mandadito_boosts: [],
+  mandadito_boost_waitlist: [],
   perdidos: [
     { id: 'pf1', report_type: 'perdido', title: 'Gato test', description: 'desc', location: 'Zona test', image_url: '', contact_info: '981 555 0000' },
     // owned by the test user (uid-1) — a still-pending one and another user's, for MC.fetchMyPosts
@@ -1832,6 +1835,106 @@ const fakeClient = {
       // Clean up so later Pendiente-count assertions are unaffected.
       SAMPLE.mandadito_contacts = [];
       SAMPLE.mandadito_reports = [];
+      window.closeModal();
+    }
+
+    // ── Mandaditos (Step 3/3): the $99 / 7-day / cap-2 boost + waitlist.
+    //    Whole feature is gated behind MANDADITOS.length >= 5. Joining the
+    //    waitlist is a direct insert, NOT a payment event (mirrors Ofertas). ──
+    {
+      const restoreMandaditos = SAMPLE.mandaditos.slice();
+      window.closeModal();
+
+      // Below the 5-published threshold: no "Impulsar mi perfil" entry,
+      // even for an account whose own mandadito is already published.
+      SAMPLE.mandaditos = [
+        { id: 'md1', display_name: 'Mandadito Test', phone: '981 400 5000', vehicle_type: 'Motocicleta', zona: 'Centro', status: 'published', submitted_by: 'uid-2', created_at: NOW.toISOString() },
+        { id: 'md-mine', display_name: 'Ricardo Martín', phone: '+529811234567', vehicle_type: 'Auto', zona: 'Centro', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+      ];
+      await window.refreshContent();
+      await window.openAccount();
+      await new Promise(r => setTimeout(r, 20));
+      assert(!text('modal-body').includes('Impulsar mi perfil'), 'the boost entry stays hidden below 5 published mandaditos, even for an account with a published profile of its own');
+
+      // At/above the threshold: the entry appears.
+      SAMPLE.mandaditos = SAMPLE.mandaditos.concat([
+        { id: 'md-a', display_name: 'A', phone: '981 000 0001', vehicle_type: 'Bicicleta', zona: 'Lerma', status: 'published', submitted_by: 'uid-x1', created_at: NOW.toISOString() },
+        { id: 'md-b', display_name: 'B', phone: '981 000 0002', vehicle_type: 'Auto', zona: 'San Román', status: 'published', submitted_by: 'uid-x2', created_at: NOW.toISOString() },
+        { id: 'md-c', display_name: 'C', phone: '981 000 0003', vehicle_type: 'A pie', zona: 'Centro', status: 'published', submitted_by: 'uid-x3', created_at: NOW.toISOString() },
+      ]);
+      await window.refreshContent();
+      await window.openAccount();
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('modal-body').includes('Impulsar mi perfil') && text('modal-body').includes('openMandaditoBoost()'), 'once 5+ published mandaditos exist, the "Impulsar mi perfil" entry appears for a published-mandadito account');
+
+      // Open week → pay redirect. sessionStorage payload set, no booking yet.
+      SAMPLE.mandadito_boosts = [];
+      window.sessionStorage.removeItem('mc_pending_mandadito_boost');
+      await window.openMandaditoBoost();
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('modal-title') === 'Impulsar mi perfil' && !!doc.getElementById('mandadito-boost-cal'), 'openMandaditoBoost() renders the 7-day boost calendar');
+      const openDay = doc.querySelector('#mandadito-boost-cal .slot-day:not(.full)');
+      assert(!!openDay, 'with no existing boosts every start day is free');
+      const openStartDs = openDay.dataset.ds;
+      window.pickMandaditoBoostDay(openDay, false);
+      assert(text('modal-body').includes('Pagar $99 e impulsar'), 'picking a free week shows the pay button');
+      await window.confirmMandaditoBoost(false);
+      await new Promise(r => setTimeout(r, 20));
+      const boostPendingRaw = window.sessionStorage.getItem('mc_pending_mandadito_boost');
+      assert(!!boostPendingRaw, 'confirming a paid boost stashes mc_pending_mandadito_boost before the Stripe redirect');
+      const bp = JSON.parse(boostPendingRaw);
+      assert(bp.mandaditoId === 'md-mine' && bp.startDs === openStartDs, 'the stashed payload carries this account\'s own mandadito id and the chosen week start');
+
+      // Full week (two overlapping boosts, cap 2) → waitlist: direct insert,
+      // NO redirect, NO sessionStorage write.
+      SAMPLE.mandadito_boosts = [
+        { mandadito_id: 'md-a', start_date: ds(0), end_date: ds(6) },
+        { mandadito_id: 'md-b', start_date: ds(0), end_date: ds(6) },
+      ];
+      SAMPLE.mandadito_boost_waitlist = [];
+      window.sessionStorage.removeItem('mc_pending_mandadito_boost');
+      delete lastInsert.mandadito_boost_waitlist;
+      await window.openMandaditoBoost();
+      await new Promise(r => setTimeout(r, 20));
+      const fullDay = doc.querySelector('#mandadito-boost-cal .slot-day.full');
+      assert(!!fullDay && fullDay.dataset.ds === ds(0), 'two overlapping boosts mark that week\'s start days "Ocupado" (cap 2)');
+      const fullStartDs = fullDay.dataset.ds;
+      window.pickMandaditoBoostDay(fullDay, true);
+      assert(text('modal-body').includes('Unirme a la lista de espera') && !text('modal-body').includes('Pagar $99'), 'a full week shows the waitlist button, not a pay button');
+      await window.confirmMandaditoBoost(true);
+      await new Promise(r => setTimeout(r, 20));
+      assert(lastInsert.mandadito_boost_waitlist && lastInsert.mandadito_boost_waitlist.mandadito_id === 'md-mine' && lastInsert.mandadito_boost_waitlist.requested_date === fullStartDs && lastInsert.mandadito_boost_waitlist.submitted_by === 'uid-1', 'joining the waitlist inserts directly into mandadito_boost_waitlist for this account\'s mandadito');
+      assert(text('toast') === 'Estás en la lista de espera — te avisaremos ✓', 'and confirms it');
+      assert(!window.sessionStorage.getItem('mc_pending_mandadito_boost'), 'joining the waitlist is NOT a payment event — nothing is stashed, no Stripe redirect');
+
+      // ?paid=mandadito_boost return → the real booking is created.
+      window.closeModal();
+      window.sessionStorage.setItem('mc_pending_mandadito_boost', JSON.stringify({ mandaditoId: 'md-mine', startDs: ds(8) }));
+      window.history.pushState({}, '', '/?paid=mandadito_boost');
+      delete lastInsert.mandadito_boosts;
+      await window.checkPaymentReturn();
+      await new Promise(r => setTimeout(r, 20));
+      assert(lastInsert.mandadito_boosts && lastInsert.mandadito_boosts.mandadito_id === 'md-mine' && lastInsert.mandadito_boosts.start_date === ds(8), 'a ?paid=mandadito_boost return creates the real mandadito_boosts booking via MC.submitMandaditoBoost from the stashed payload');
+      assert(text('toast') === '¡Pago recibido! Tu perfil quedará impulsado esas fechas ✓', 'and shows the paid-and-booked confirmation');
+      assert(!window.sessionStorage.getItem('mc_pending_mandadito_boost'), 'the pending payload is cleared so a refresh cannot re-book it');
+
+      // ?paid return but the week filled while paying → honest recovery
+      // toast (forced insert error), not a crash.
+      forcedErrors.insert.mandadito_boosts = { code: 'P0001', message: 'mandadito_boost_window_full' };
+      window.sessionStorage.setItem('mc_pending_mandadito_boost', JSON.stringify({ mandaditoId: 'md-mine', startDs: ds(9) }));
+      window.history.pushState({}, '', '/?paid=mandadito_boost');
+      await window.checkPaymentReturn();
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('toast') === 'Pago recibido, pero esa semana ya no está disponible — alguien más la reservó mientras pagabas. Escríbenos por WhatsApp para reprogramar.', 'a booking that fails on return (window filled during payment) shows the honest recovery message, not a crash');
+      forcedErrors.insert.mandadito_boosts = null;
+
+      // Restore for the rest of the suite.
+      SAMPLE.mandaditos = restoreMandaditos;
+      SAMPLE.mandadito_boosts = [];
+      SAMPLE.mandadito_boost_waitlist = [];
+      window.sessionStorage.removeItem('mc_pending_mandadito_boost');
+      window.history.pushState({}, '', '/');
+      await window.refreshContent();
       window.closeModal();
     }
 
