@@ -1694,7 +1694,7 @@ function renderAlertas(){
     const preview=firstLine.slice(0,100);
     const truncated=x.desc.length>preview.length;
     return `
-    <div class="alert-card ${x.cls}" role="button" tabindex="0" onclick="openAlertaDetail('${x.id}')">
+    <div class="alert-card ${x.cls}" role="button" tabindex="0" onclick="openAlertaDetail('${x.id}')" ${admRm('alertas',x.id,x.title||x.type)}>
       <div class="alert-thumb" style="background-image:url('${e(x.img)}')"></div>
       <div class="alert-body">
         <div class="alert-top"><span class="alert-type">${x.cls==='resolved'?'✓ Resuelto — ':''}${e(x.type)}</span><span class="alert-time">${x.time}</span></div>
@@ -1708,6 +1708,7 @@ function renderAlertas(){
     ?`<button class="menu-item" style="justify-content:center;margin-top:4px" onclick="showAllAlertas()">Ver más</button>`
     :'';
   el.innerHTML=cards+more;
+  wireAdminRemove(el);
 }
 function showAllAlertas(){alertasExpanded=true;renderAlertas();}
 /* Resident-facing detail modal — mirrors openProdView (a content card on a
@@ -1759,25 +1760,25 @@ const POST_FORMS={
   ]},
   producto:{title:'Publicar un producto',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Pastel de tres leches'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida/Bebida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'money',ph:'150'},
     {k:'availability',lbl:'Disponibilidad',type:'seg',opts:[['ahora','Disponible ahora'],['pedido','Sobre pedido']]},
     {k:'lead_time',lbl:'¿Con cuánta anticipación?',type:'text',ph:'Ej. 2 días',showIf:{field:'availability',val:'pedido'}},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega a domicilio'],['ambos','Ambos']]},
-    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.'},
     {k:'photo',lbl:'Fotos del producto',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista — usa buena luz y muestra bien lo que vendes.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, tamaño, disponibilidad...'}
   ]},
   clasificado:{title:'Publicar en Clasificados',note:'Un artículo por persona. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Bicicleta usada'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida/Bebida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'money',ph:'150'},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega'],['ambos','Ambos']]},
     {k:'zone',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',note:'Los interesados te contactarán a este número por los medios que elijas.'},
-    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms']},
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.'},
     {k:'photo',lbl:'Fotos del artículo',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
   ]},
@@ -1795,7 +1796,7 @@ const POST_FORMS={
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles que ayuden a identificarlo...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','No hace falta']]},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Quien lo vea te contactará por los medios que elijas.'},
-    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms'],showIf:{field:'want_contact',val:'si'}}
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.',showIf:{field:'want_contact',val:'si'}}
   ]},
   empleos:{title:'Publicar una vacante',fields:[
     {k:'title',lbl:'Puesto',type:'text',ph:'Ej. Mesero(a) con experiencia'},
@@ -1804,7 +1805,7 @@ const POST_FORMS={
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Requisitos, horario...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','En la descripción']]},
     {k:'contact_phone',lbl:'Número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Quien busca trabajo te contactará por los medios que elijas.'},
-    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms'],showIf:{field:'want_contact',val:'si'}}
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.',showIf:{field:'want_contact',val:'si'}}
   ]},
   reportar:{title:'Reportar un problema',fields:[
     {k:'cat',lbl:'Tipo de problema',type:'select',opts:['Bache','Semáforo','Árbol caído','Alumbrado','Fuga de agua','Basura acumulada','Otro']},
@@ -1821,7 +1822,7 @@ const POST_FORMS={
     {k:'anon',lbl:'¿Cómo lo firmas?',type:'seg',opts:[['no','Con mi nombre'],['si','Anónimo']]},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['no','No hace falta'],['si','Sí, que me contacten']]},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Los vecinos te contactarán por los medios que elijas.'},
-    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:['whatsapp','llamada','sms'],showIf:{field:'want_contact',val:'si'}}
+    {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.',showIf:{field:'want_contact',val:'si'}}
   ]},
   oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
@@ -1843,7 +1844,7 @@ const POST_FORMS={
     {k:'delivers',lbl:'¿Entregas a domicilio?',type:'seg',opts:[['no','No'],['si','Sí']]},
     {k:'delivery_info',lbl:'Zonas y costo de entrega',type:'text',ph:'Ej. Centro y San Román · $30, gratis desde $300',showIf:{field:'delivers',val:'si'}},
     {k:'pickup_address',lbl:'Dirección para recoger',type:'text',ph:'Si es distinta a la dirección de tu negocio'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida/Bebida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'hours',lbl:'Horario de atención',type:'text',ph:'Ej. Lun-Sáb 9am-8pm'},
     {k:'social',lbl:'Red social o sitio web',type:'text',ph:'Ej. instagram.com/tunegocio'},
     {k:'rfc',lbl:'RFC',type:'text',ph:''}
@@ -2310,7 +2311,7 @@ function mcModalSnap(){
     document.getElementById('modal-body').innerHTML=h;
   };
 }
-function mcModalPushView(key){mcModalStack.push({key,restore:mcModalSnap()});}
+function mcModalPushView(key,customRestore){mcModalStack.push({key,restore:customRestore||mcModalSnap()});}
 // No targetKey: pop one level (✕ / backdrop / hardware back), closing the
 // modal when that was the last. targetKey: pop back to that named level,
 // dropping everything above it — and do nothing if it isn't on the stack
@@ -2495,6 +2496,17 @@ function renderAccountSignedIn(acct){
         ${rej?`<span class="menu-badge on">${rej>99?'99+':rej}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>`;})()}
+    ${(biz||(acct.businesses||[]).length)?`
+      <button class="menu-item" onclick="openMyActiveOfertas(null,'account')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico">${svgIco('tienda')}</span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Ofertas activas</span>
+          <span class="menu-item-sub">Confirma cada venta cuando te paguen</span>
+        </span>
+        ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`<span class="menu-badge on">${acct.myActiveOfertas.length}</span>`:''}
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:''}
     ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
@@ -2601,8 +2613,8 @@ async function cancelBusinessPremiumUpgrade(businessId){
    checks server-side; there's no undo by design, which is why Step2 has
    its own confirm screen. */
 let myActiveOfertasList=[];
-async function openMyActiveOfertas(businessId){
-  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('bizProfile');
+async function openMyActiveOfertas(businessId,backKey){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'bizProfile');
   document.getElementById('modal-title').textContent='Ofertas activas';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
@@ -2743,7 +2755,7 @@ function renderBusinessProfile(biz){
           <span class="menu-item-lbl">Mis productos en Tienda</span>
           <span class="menu-item-sub">Edita o revisa el estado de lo publicado</span>
         </span>
-        <span class="menu-badge on">${n}</span>
+        <span class="menu-count">${n}</span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:'';})()}
@@ -2765,7 +2777,7 @@ function renderBusinessProfile(biz){
           <span class="menu-item-lbl">Mis vacantes</span>
           <span class="menu-item-sub">Edita o revisa el estado de lo publicado</span>
         </span>
-        <span class="menu-badge on">${n}</span>
+        <span class="menu-count">${n}</span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:'';})()}
@@ -3177,8 +3189,21 @@ async function resolveMandaditoReportAdmin(id){
 }
 async function openPending(){
   // Opened from the "Tu cuenta" view — remember it so ✕ / back returns
-  // there, not all the way to the home screen.
-  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  // there, not all the way to the home screen. Restore replays the snapshot
+  // instantly (keeps back navigation synchronous), then re-fetches the
+  // account view live on the next tick so counts an admin just cleared in
+  // here don't linger — but only if the user is actually still sitting on
+  // the account view by then, not if they've navigated somewhere else.
+  if(document.getElementById('modal-bg').classList.contains('on')){
+    const snap=mcModalSnap();
+    mcModalPushView('account',()=>{
+      snap();
+      setTimeout(()=>{
+        if(document.getElementById('modal-bg').classList.contains('on')
+          &&document.getElementById('modal-title').textContent==='Tu cuenta')openAccount();
+      },0);
+    });
+  }
   pendingTab='approvals';
   document.getElementById('modal-title').textContent='Pendiente';
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;

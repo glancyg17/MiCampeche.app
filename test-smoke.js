@@ -1233,7 +1233,9 @@ const fakeClient = {
     window.segPick(doc.querySelector('#pf-anon .seg-btn[data-v="si"]'));
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
     doc.getElementById('pf-contact_phone').value = '981 111 2222';
-    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="sms"]')); // drop SMS, keep WhatsApp + Llamada
+    // Pills start unselected now — pick WhatsApp + Llamada, leave SMS off.
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]'));
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="llamada"]'));
     delete lastInsert.avisos;
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 50));
@@ -1376,15 +1378,17 @@ const fakeClient = {
     forcedErrors.insert.avisos = null;
 
     // Perdidos: the contact toggle defaults to "sí" and the number is
-    // pre-filled from the account, so a normal report still carries a phone
-    // plus the full set of contact channels.
+    // pre-filled from the account; the contact-method pills now start
+    // unselected, so the poster picks the channels they want.
     await window.openPost('perdidos');
     doc.getElementById('pf-name').value = 'Gato perdido de prueba';
+    assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 0, 'Perdidos: contact-method pills start unselected');
+    doc.querySelectorAll('#pf-contact_methods .mchip').forEach(c => window.multiPick(c)); // pick all three
     delete lastInsert.perdidos;
     await window.submitPost('perdidos');
     await new Promise(r => setTimeout(r, 20));
     assert(lastInsert.perdidos && lastInsert.perdidos.contact_phone === '+529811234567', 'Perdidos: with the contact toggle at its "sí" default, the report carries the account phone (pre-filled)');
-    assert(Array.isArray(lastInsert.perdidos.contact_methods) && lastInsert.perdidos.contact_methods.length === 3, 'Perdidos: all three contact channels are attached by default');
+    assert(Array.isArray(lastInsert.perdidos.contact_methods) && lastInsert.perdidos.contact_methods.length === 3, 'Perdidos: the three contact channels the poster picked are all attached');
 
     // …but toggling it off attaches no contact at all.
     await window.openPost('perdidos');
@@ -1410,7 +1414,9 @@ const fakeClient = {
     doc.getElementById('pf-title').value = 'Se busca cajero';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
     doc.getElementById('pf-contact_phone').value = '981 444 5555';
-    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="llamada"]')); // WhatsApp + SMS only
+    // Pills start unselected now — pick WhatsApp + SMS, leave Llamada off.
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]'));
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="sms"]'));
     delete lastInsert.empleos;
     await window.submitPost('empleos');
     await new Promise(r => setTimeout(r, 20));
@@ -1439,7 +1445,7 @@ const fakeClient = {
     doc.getElementById('pf-name').value = 'Sin Descripcion';
     doc.getElementById('pf-address').value = 'Calle 1';
     doc.getElementById('pf-phone').value = '981 000 0000';
-    doc.getElementById('pf-cat').value = 'Comida';
+    doc.getElementById('pf-cat').value = 'Comida/Bebida';
     await window.submitPost('negocio_verificar');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Completa nombre, descripción, dirección, teléfono y categoría', 'submitting without a description is blocked, not silently accepted');
@@ -1449,7 +1455,7 @@ const fakeClient = {
     doc.getElementById('pf-desc').value = 'Tacos al pastor y de canasta, para llevar';
     doc.getElementById('pf-address').value = 'Calle 10 #123';
     doc.getElementById('pf-phone').value = '981 555 0000';
-    doc.getElementById('pf-cat').value = 'Comida';
+    doc.getElementById('pf-cat').value = 'Comida/Bebida';
     doc.getElementById('pf-hours').value = 'Lun-Sáb 9am-8pm';
     doc.getElementById('pf-social').value = 'instagram.com/tacolocotest';
     await window.submitPost('negocio_verificar');
@@ -1501,6 +1507,7 @@ const fakeClient = {
       assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('photo-upload-btn-sm'), 'the add-tile is still shown while under the 3-photo cap');
 
       doc.getElementById('pf-name').value = 'Producto con foto';
+      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]')); // pills start unselected now
       await window.submitPost('producto');
       await new Promise(r => setTimeout(r, 20));
       assert(lastInsert.productos && Array.isArray(lastInsert.productos.image_urls) && lastInsert.productos.image_urls.length === 2
@@ -1645,7 +1652,7 @@ const fakeClient = {
     doc.getElementById('pf-desc').value = 'Tercera sucursal';
     doc.getElementById('pf-address').value = 'Calle 30';
     doc.getElementById('pf-phone').value = '981 000 9999';
-    doc.getElementById('pf-cat').value = 'Comida';
+    doc.getElementById('pf-cat').value = 'Comida/Bebida';
     delete lastInsert.businesses;
     window.sessionStorage.removeItem('mc_pending_business_setup');
     await window.submitPost('negocio_verificar');
@@ -1674,7 +1681,7 @@ const fakeClient = {
     doc.getElementById('pf-desc').value = 'Sin pago';
     doc.getElementById('pf-address').value = 'Calle 40';
     doc.getElementById('pf-phone').value = '981 000 1234';
-    doc.getElementById('pf-cat').value = 'Comida';
+    doc.getElementById('pf-cat').value = 'Comida/Bebida';
     delete lastInsert.businesses;
     window.sessionStorage.removeItem('mc_pending_business_setup');
     await window.submitPost('negocio_verificar');
@@ -1700,6 +1707,7 @@ const fakeClient = {
     await window.openPost('producto');
     doc.getElementById('pf-name').value = 'Producto de prueba';
     await attachListingPhoto();
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]')); // pills start unselected now
     await window.submitPost('producto');
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Actualiza a Premium', 'product cap error opens the real Premium upgrade prompt instead of a dead-end toast');
@@ -1720,8 +1728,8 @@ const fakeClient = {
       await window.openPost('producto');
       assert(!!doc.getElementById('pf-item_condition') && !!doc.getElementById('pf-availability') && !!doc.getElementById('pf-fulfillment'),
         'the producto form now carries estado / disponibilidad / entrega controls');
-      assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 3,
-        'all three contact methods are pre-selected by default');
+      assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 0,
+        'contact methods start unselected by default');
       await attachListingPhoto();
 
       doc.getElementById('pf-name').value = 'Pan artesanal';
@@ -1733,7 +1741,9 @@ const fakeClient = {
       window.segPick(doc.querySelector('#pf-availability .seg-btn[data-v="pedido"]'));
       doc.getElementById('pf-lead_time').value = '2 días';
       window.segPick(doc.querySelector('#pf-fulfillment .seg-btn[data-v="ambos"]'));
-      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="sms"]')); // drop SMS, keep WhatsApp + Llamada
+      // Pills start unselected now — pick WhatsApp + Llamada, leave SMS off.
+      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]'));
+      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="llamada"]'));
       delete lastInsert.productos;
       await window.submitPost('producto');
       await new Promise(r => setTimeout(r, 20));
@@ -1766,6 +1776,7 @@ const fakeClient = {
       assert(doc.getElementById('pf-contact_phone').value === currentProfile.phone,
         'the clasificado contact number pre-fills from the signed-in account');
       await attachListingPhoto();
+      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]')); // pills start unselected now — pick one so the phone-required guard is what bites below
       doc.getElementById('pf-name').value = 'Bici de montaña';
       doc.getElementById('pf-contact_phone').value = '';
       delete lastInsert.clasificados;
@@ -2390,6 +2401,7 @@ const fakeClient = {
     await window.openPost('producto');
     assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the picker\'s default follows real is_primary data — now biz-2');
     await attachListingPhoto();
+    window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]')); // pills start unselected now
     doc.getElementById('pf-name').value = 'Producto de biz-2';
     doc.getElementById('pf-price').value = '99'; // money field — "$" is auto-prefixed on submit
     delete lastInsert.productos;
