@@ -1697,7 +1697,7 @@ function renderServiciosUtiles(){
 const POST_FORMS={
   eventos:{title:'Publicar un evento',fields:[
     {k:'name',lbl:'Nombre del evento',type:'text',ph:'Ej. Tianguis nocturno'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Mercado','Cultura','Deporte','Comunidad','Música','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Mercado','Cultura','Deporte','Comunidad','Música','Gastronomía','Religioso','Familiar','Educativo','Otro']},
     {k:'date',lbl:'Fecha',type:'monthcal'},
     {k:'time',lbl:'Hora',type:'time'},
     {k:'loc',lbl:'Lugar',type:'text',ph:'Dirección o punto de referencia'},
@@ -1711,9 +1711,9 @@ const POST_FORMS={
   ]},
   producto:{title:'Publicar un producto',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Pastel de tres leches'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
-    {k:'price',lbl:'Precio',type:'text',ph:'$'},
+    {k:'price',lbl:'Precio',type:'money',ph:'150'},
     {k:'availability',lbl:'Disponibilidad',type:'seg',opts:[['ahora','Disponible ahora'],['pedido','Sobre pedido']]},
     {k:'lead_time',lbl:'¿Con cuánta anticipación?',type:'text',ph:'Ej. 2 días',showIf:{field:'availability',val:'pedido'}},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega a domicilio'],['ambos','Ambos']]},
@@ -1723,9 +1723,9 @@ const POST_FORMS={
   ]},
   clasificado:{title:'Publicar en Clasificados',note:'Un artículo por persona. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
     {k:'name',lbl:'¿Qué vendes?',type:'text',ph:'Ej. Bicicleta usada'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
-    {k:'price',lbl:'Precio',type:'text',ph:'$'},
+    {k:'price',lbl:'Precio',type:'money',ph:'150'},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega'],['ambos','Ambos']]},
     {k:'zone',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',note:'Los interesados te contactarán a este número por los medios que elijas.'},
@@ -1766,7 +1766,7 @@ const POST_FORMS={
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más sobre el problema...'}
   ]},
   avisos:{title:'Publicar un aviso',note:'Un aviso por persona al día. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
-    {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Otro']},
+    {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Mascotas','Eventos vecinales','Otro']},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Buscamos a un familiar'},
     {k:'photo',lbl:'Foto (opcional)',type:'imgupload'},
     {k:'desc',lbl:'Mensaje',type:'textarea',ph:'Cuenta los detalles a tus vecinos...'},
@@ -1778,9 +1778,9 @@ const POST_FORMS={
   oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntale a la gente qué incluye esta oferta...'},
-    {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload'},
-    {k:'priceWas',lbl:'Precio normal',type:'text',ph:'$'},
-    {k:'priceNow',lbl:'Precio con descuento',type:'text',ph:'$'},
+    {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload',note:'Usa buena luz y muestra bien lo que ofreces — no podrás editar esta oferta ni pedir un reembolso después de enviarla, así que revisa todo con cuidado antes de continuar.'},
+    {k:'priceWas',lbl:'Precio normal',type:'money',ph:'200'},
+    {k:'priceNow',lbl:'Precio con descuento',type:'money',ph:'150'},
     {k:'qty',lbl:'Cantidad disponible',type:'number',ph:'Ej. 10'},
     {k:'terms',lbl:'Condiciones (opcional)',type:'textarea',ph:'Ej. Válido de lunes a viernes, no aplica con otras promociones...'},
     {k:'slot',lbl:'Elige el día',type:'calendar'}
@@ -1795,7 +1795,7 @@ const POST_FORMS={
     {k:'delivers',lbl:'¿Entregas a domicilio?',type:'seg',opts:[['no','No'],['si','Sí']]},
     {k:'delivery_info',lbl:'Zonas y costo de entrega',type:'text',ph:'Ej. Centro y San Román · $30, gratis desde $300',showIf:{field:'delivers',val:'si'}},
     {k:'pickup_address',lbl:'Dirección para recoger',type:'text',ph:'Si es distinta a la dirección de tu negocio'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Servicios','Otro']},
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Comida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'hours',lbl:'Horario de atención',type:'text',ph:'Ej. Lun-Sáb 9am-8pm'},
     {k:'social',lbl:'Red social o sitio web',type:'text',ph:'Ej. instagram.com/tunegocio'},
     {k:'rfc',lbl:'RFC',type:'text',ph:''}
@@ -1861,6 +1861,7 @@ async function openPost(kind){
       monthCalView[f.k]=monthCalView[f.k]||{year:new Date().getFullYear(),month:new Date().getMonth()};
       h+=`<div id="pf-${f.k}-cal">${monthCalHtml(f.k)}</div>`;
     }
+    else if(f.type==='money')h+=`<div class="fi-money-wrap"><span class="fi-money-prefix">$</span><input class="fi fi-money" id="pf-${f.k}" type="text" inputmode="decimal" placeholder="${f.ph||''}"></div>`;
     else if(f.type==='imgupload')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else h+=`<input class="fi" id="pf-${f.k}" type="${f.type}" placeholder="${f.ph||''}">`;
     if(f.note)h+=`<div class="field-note">${f.note}</div>`;
@@ -3418,7 +3419,7 @@ const MY_POST_EDIT={
 function applyPostEditFill(fill){
   Object.entries(fill.input||{}).forEach(([k,v])=>{
     const el=document.getElementById('pf-'+k);
-    if(el&&v!=null&&v!=='')el.value=v;
+    if(el&&v!=null&&v!=='')el.value=el.classList.contains('fi-money')?String(v).replace(/^\$\s*/,''):v;
   });
   Object.entries(fill.seg||{}).forEach(([k,v])=>{
     const btn=document.querySelector(`#pf-${k} .seg-btn[data-v="${v}"]`);
@@ -3867,6 +3868,7 @@ async function submitPost(kind){
     else if(f.type==='multi'){data[f.k]=[...document.querySelectorAll(`#pf-${f.k} .mchip.on`)].map(b=>b.dataset.v);}
     else if(f.type==='calendar'){data[f.k]=selectedSlotDate;}
     else if(f.type==='monthcal'){data[f.k]=monthCalSelected[f.k]||'';}
+    else if(f.type==='money'){const el=document.getElementById('pf-'+f.k);const raw=el?el.value.trim():'';data[f.k]=raw?('$'+raw):'';}
     else if(f.type==='imgupload'){data[f.k]=uploadedImageUrls[f.k]||null;}
     else{const el=document.getElementById('pf-'+f.k);data[f.k]=el?el.value:'';}
   });
@@ -3882,6 +3884,7 @@ async function submitPost(kind){
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
   if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
+  if(kind==='oferta'&&!data.photo){stop();toast('Agrega una foto para publicar tu oferta');return;}
   if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'){
     if(!(data.contact_phone||'').trim()){stop();toast('Escribe tu número o elige "No hace falta"');return;}
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}

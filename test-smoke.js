@@ -535,6 +535,17 @@ const fakeClient = {
   const text = (id) => { const el = doc.getElementById(id); return el ? el.innerHTML : null; };
   const moderationQueueCountFromTitle = (title) => { const m = /\((\d+)\)/.exec(title || ''); return m ? Number(m[1]) : null; };
 
+  // Ofertas now require a photo at submit (see submitPost's kind==='oferta'
+  // guard). Attach one through the REAL upload pipeline before any
+  // submitPost('oferta') in the pay-first / admin-bypass flow tests below.
+  const attachOfertaPhoto = async () => {
+    const c = createCanvas(800, 600); const cx = c.getContext('2d');
+    cx.fillStyle = 'blue'; cx.fillRect(0, 0, 800, 600);
+    const f = new window.File([c.toBuffer('image/jpeg')], 'oferta.jpg', { type: 'image/jpeg' });
+    await window.handlePhotoSelect({ files: [f] }, 'photo');
+    await new Promise(r => setTimeout(r, 120)); // real async decode + resize + fake upload
+  };
+
   // Spy on refreshContent so we can confirm a successful self-edit and a
   // successful moderateItem() both actually re-fetch/re-render the public
   // lists, instead of leaving stale content visible until some unrelated
@@ -1681,7 +1692,10 @@ const fakeClient = {
         'all three contact methods are pre-selected by default');
 
       doc.getElementById('pf-name').value = 'Pan artesanal';
-      doc.getElementById('pf-price').value = '$45 la pieza';
+      // The price field is now a "money" type: the "$" is a CSS prefix, so
+      // the input itself only ever holds the part after it. submitPost
+      // prepends "$" back when building the row.
+      doc.getElementById('pf-price').value = '45 la pieza';
       window.segPick(doc.querySelector('#pf-item_condition .seg-btn[data-v="usado"]'));
       window.segPick(doc.querySelector('#pf-availability .seg-btn[data-v="pedido"]'));
       doc.getElementById('pf-lead_time').value = '2 días';
@@ -2046,6 +2060,7 @@ const fakeClient = {
     // Pinned non-admin: admins skip the Stripe link (covered below).
     currentProfile.is_admin = false;
     await window.openPost('oferta');
+    await attachOfertaPhoto();
     doc.getElementById('pf-item').value = 'Oferta de prueba';
     doc.getElementById('pf-priceWas').value = '100';
     doc.getElementById('pf-priceNow').value = '50';
@@ -2074,6 +2089,7 @@ const fakeClient = {
     // trigger rejects the booking (e.g. cap hit in the interim). Must
     // surface a specific, honest message, not a silent failure.
     await window.openPost('oferta');
+    await attachOfertaPhoto();
     doc.getElementById('pf-item').value = 'Segunda oferta';
     doc.getElementById('pf-priceWas').value = '100';
     doc.getElementById('pf-priceNow').value = '50';
@@ -2092,6 +2108,7 @@ const fakeClient = {
     // MC.submitOferta runs immediately, nothing stashed.
     currentProfile.is_admin = true;
     await window.openPost('oferta');
+    await attachOfertaPhoto();
     doc.getElementById('pf-item').value = 'Oferta admin';
     doc.getElementById('pf-priceWas').value = '100';
     doc.getElementById('pf-priceNow').value = '50';
@@ -2332,7 +2349,7 @@ const fakeClient = {
     await window.openPost('producto');
     assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the picker\'s default follows real is_primary data — now biz-2');
     doc.getElementById('pf-name').value = 'Producto de biz-2';
-    doc.getElementById('pf-price').value = '$99';
+    doc.getElementById('pf-price').value = '99'; // money field — "$" is auto-prefixed on submit
     delete lastInsert.productos;
     await window.submitPost('producto');
     await new Promise(r => setTimeout(r, 20));
@@ -2340,6 +2357,7 @@ const fakeClient = {
 
     currentProfile.is_admin = false; // pay-first paths below need a non-admin acting account
     await window.openPost('oferta');
+    await attachOfertaPhoto();
     assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the same real default-selection applies to the Oferta form');
     doc.getElementById('pf-item').value = 'Oferta de biz-2';
     doc.getElementById('pf-priceWas').value = '100';
