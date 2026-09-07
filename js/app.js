@@ -3332,11 +3332,13 @@ function advancePendingQueue(prevIndex){
    straight into the edit form. Open to every signed-in account. */
 let myPostsList=[];
 let myPostsTab='pending';
+let myPostsTypeFilter=null; // null = "Todos"; otherwise a table name like 'productos'
 let myPostsTableFilter=null; // null = show every self-editable table (the plain "Mis publicaciones" case); an array like ['productos'] scopes the same list/tabs/edit/discard machinery to just that table, used by the new "Mi negocio" sections
 let myPostsTitleBase='Mis publicaciones';
 async function openMyPosts(tables,title,backKey){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'account');
   myPostsTab='pending';
+  myPostsTypeFilter=null;
   myPostsTableFilter=tables||null;
   myPostsTitleBase=title||'Mis publicaciones';
   document.getElementById('modal-title').textContent=myPostsTitleBase;
@@ -3350,6 +3352,7 @@ async function refreshMyPosts(){
   renderMyPosts();
 }
 function setMyPostsTab(tab){myPostsTab=tab;renderMyPosts();}
+function setMyPostsTypeFilter(t){myPostsTypeFilter=t||null;renderMyPosts();}
 /* An event stops being "Activo" once its last day has fully passed — the
    same boundary the daily cleanup-expired-eventos job uses (falls back
    to event_date for single-day events), so a finished event sits in the
@@ -3386,10 +3389,24 @@ function postStatusBadge(status,bucket){
   return `<span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${lbl}</span>`;
 }
 function renderMyPosts(){
-  const source=myPostsTableFilter?myPostsList.filter(p=>myPostsTableFilter.includes(p.table)):myPostsList;
+  const byTable=myPostsTableFilter?myPostsList.filter(p=>myPostsTableFilter.includes(p.table)):myPostsList;
+  // Type filter row only makes sense on the generic "Mis publicaciones" entry
+  // point (myPostsTableFilter null) — a Mi negocio sub-view is already
+  // scoped to one table, so there's nothing to filter there.
+  const typeChipsHtml=(()=>{
+    if(myPostsTableFilter)return '';
+    const seen=new Map();
+    myPostsList.forEach(p=>{if(!seen.has(p.table))seen.set(p.table,p.label);});
+    if(seen.size<2)return ''; // only one type present — a filter row would be pointless
+    return `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="chip${myPostsTypeFilter?'':' on'}" onclick="setMyPostsTypeFilter('')">Todos</button>
+      ${[...seen.entries()].map(([t,l])=>`<button class="chip${t===myPostsTypeFilter?' on':''}" onclick="setMyPostsTypeFilter('${t}')">${e(l)}</button>`).join('')}
+    </div>`;
+  })();
+  const source=myPostsTypeFilter?byTable.filter(p=>p.table===myPostsTypeFilter):byTable;
   document.getElementById('modal-title').textContent=`${myPostsTitleBase} (${source.length})`;
   if(!source.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
+    document.getElementById('modal-body').innerHTML=typeChipsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
     return;
   }
   const buckets={pending:[],active:[],finished:[]};
@@ -3400,10 +3417,10 @@ function renderMyPosts(){
   const list=buckets[myPostsTab];
   const emptyMsgs={pending:'Nada en revisión ahora mismo.',active:'Nada activo todavía.',finished:'Nada finalizado todavía.'};
   if(!list.length){
-    document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${emptyMsgs[myPostsTab]}</div>`;
+    document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${emptyMsgs[myPostsTab]}</div>`;
     return;
   }
-  document.getElementById('modal-body').innerHTML=tabsHtml+list.map(p=>{
+  document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+list.map(p=>{
     const isRejected=p.status==='rejected';
     const editable=!!MY_POST_EDIT[p.table]&&!isRejected;
     return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px${editable?';cursor:pointer':''}"${editable?` onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')"`:''}>
