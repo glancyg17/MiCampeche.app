@@ -1581,6 +1581,9 @@ const fakeClient = {
 
     // Additional-business submission pays FIRST — never calls
     // MC.verifyBusiness (i.e. never reaches a real insert) directly.
+    // Pin the acting account to non-admin here: admins skip every
+    // self-service payment link (covered separately below).
+    currentProfile.is_admin = false;
     await window.openAdditionalBusinessForm();
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Agregar otro negocio', 'the additional-business form has its own distinct title');
@@ -1606,6 +1609,25 @@ const fakeClient = {
     assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco 3', 'checkPaymentReturn calls MC.verifyBusiness with the real stashed data');
     assert(!window.sessionStorage.getItem('mc_pending_business_setup'), 'sessionStorage is cleared after the additional business is created');
     assert(text('toast') === '¡Pago recibido! Tu nuevo negocio fue enviado para revisión ✓', 'a successful additional-business creation shows the right confirmation toast');
+
+    // ── Admin bypass: an admin-signed-in account creating an additional
+    //    business skips the Stripe redirect entirely — MC.verifyBusiness
+    //    runs immediately, nothing is stashed. ──
+    currentProfile.is_admin = true;
+    await window.openAdditionalBusinessForm();
+    await new Promise(r => setTimeout(r, 20));
+    doc.getElementById('pf-name').value = 'Taco Loco Admin';
+    doc.getElementById('pf-desc').value = 'Sin pago';
+    doc.getElementById('pf-address').value = 'Calle 40';
+    doc.getElementById('pf-phone').value = '981 000 1234';
+    doc.getElementById('pf-cat').value = 'Comida';
+    delete lastInsert.businesses;
+    window.sessionStorage.removeItem('mc_pending_business_setup');
+    await window.submitPost('negocio_verificar');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.businesses && lastInsert.businesses.business_name === 'Taco Loco Admin', 'an admin account creating an additional business calls MC.verifyBusiness directly, no payment step');
+    assert(!window.sessionStorage.getItem('mc_pending_business_setup'), 'and nothing is stashed for a Stripe return');
+    assert(text('toast') === 'Negocio creado sin pago (cuenta admin) ✓', 'and the admin-bypass toast fires');
 
     // The normal (non-additional, non-editing) path still calls
     // MC.verifyBusiness directly, unaffected by this step — proven
@@ -1868,6 +1890,8 @@ const fakeClient = {
       assert(text('modal-body').includes('Impulsar mi perfil') && text('modal-body').includes('openMandaditoBoost()'), 'once 5+ published mandaditos exist, the "Impulsar mi perfil" entry appears for a published-mandadito account');
 
       // Open week → pay redirect. sessionStorage payload set, no booking yet.
+      // Pinned non-admin: admins skip the Stripe link (covered below).
+      currentProfile.is_admin = false;
       SAMPLE.mandadito_boosts = [];
       window.sessionStorage.removeItem('mc_pending_mandadito_boost');
       await window.openMandaditoBoost();
@@ -1884,6 +1908,22 @@ const fakeClient = {
       assert(!!boostPendingRaw, 'confirming a paid boost stashes mc_pending_mandadito_boost before the Stripe redirect');
       const bp = JSON.parse(boostPendingRaw);
       assert(bp.mandaditoId === 'md-mine' && bp.startDs === openStartDs, 'the stashed payload carries this account\'s own mandadito id and the chosen week start');
+
+      // Admin bypass: same open-week flow, but as an admin — the boost is
+      // created immediately via MC.submitMandaditoBoost, no redirect / stash.
+      currentProfile.is_admin = true;
+      window.sessionStorage.removeItem('mc_pending_mandadito_boost');
+      delete lastInsert.mandadito_boosts;
+      await window.openMandaditoBoost();
+      await new Promise(r => setTimeout(r, 20));
+      const adminOpenDay = doc.querySelector('#mandadito-boost-cal .slot-day:not(.full)');
+      const adminOpenDs = adminOpenDay.dataset.ds;
+      window.pickMandaditoBoostDay(adminOpenDay, false);
+      await window.confirmMandaditoBoost(false);
+      await new Promise(r => setTimeout(r, 20));
+      assert(lastInsert.mandadito_boosts && lastInsert.mandadito_boosts.mandadito_id === 'md-mine' && lastInsert.mandadito_boosts.start_date === adminOpenDs, 'an admin confirming a boost calls MC.submitMandaditoBoost directly');
+      assert(!window.sessionStorage.getItem('mc_pending_mandadito_boost'), 'and stashes nothing for a Stripe return');
+      assert(text('toast') === 'Impulsado sin pago (cuenta admin) ✓', 'and shows the admin-bypass toast');
 
       // Full week (two overlapping boosts, cap 2) → waitlist: direct insert,
       // NO redirect, NO sessionStorage write.
@@ -1982,6 +2022,8 @@ const fakeClient = {
     // the user to pay first. Confirmed here without actually navigating
     // (jsdom doesn't support real navigation; the persisted state is what
     // matters and is what the real return trip reads back).
+    // Pinned non-admin: admins skip the Stripe link (covered below).
+    currentProfile.is_admin = false;
     await window.openPost('oferta');
     doc.getElementById('pf-item').value = 'Oferta de prueba';
     doc.getElementById('pf-priceWas').value = '100';
@@ -2025,6 +2067,22 @@ const fakeClient = {
     assert(text('toast') === 'Pago recibido, pero llegaste al límite de espacios de tu plan justo antes de que se confirmara. Escríbenos por WhatsApp — te ayudamos a resolverlo.', 'a cap-reached failure AFTER payment shows the specific, honest recovery message');
     forcedErrors.insert.ofertas_bookings = null;
 
+    // Admin bypass: an admin booking an open Ofertas slot skips Stripe —
+    // MC.submitOferta runs immediately, nothing stashed.
+    currentProfile.is_admin = true;
+    await window.openPost('oferta');
+    doc.getElementById('pf-item').value = 'Oferta admin';
+    doc.getElementById('pf-priceWas').value = '100';
+    doc.getElementById('pf-priceNow').value = '50';
+    window.pickSlotDay(doc.querySelector('.slot-day:not(.full)'), false);
+    delete lastInsert.ofertas;
+    window.sessionStorage.removeItem('mc_pending_oferta');
+    await window.submitPost('oferta');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.ofertas && lastInsert.ofertas.title === 'Oferta admin', 'an admin account booking an Ofertas slot calls MC.submitOferta directly, no payment step');
+    assert(!window.sessionStorage.getItem('mc_pending_oferta'), 'and nothing is stashed for a Stripe return');
+    assert(text('toast') === 'Reservado sin pago (cuenta admin) ✓', 'and the admin-bypass toast fires');
+
     // Premium's return path: confirmation only — must NEVER self-grant
     // is_premium client-side. That stays a founder-verified, manual step.
     window.history.pushState({}, '', '/?paid=premium');
@@ -2066,6 +2124,8 @@ const fakeClient = {
     // MC.submitEvento(data)` call and its error check — so seeing BOTH
     // the real insert (lastInsert.eventos) and the persisted pending
     // record below is exactly what "submitEvento ran first" looks like.
+    // Pinned non-admin: admins skip the Stripe link (covered below).
+    currentProfile.is_admin = false;
     await window.openPost('eventos');
     doc.getElementById('pf-name').value = 'Evento destacado';
     doc.getElementById('pf-loc').value = 'Centro';
@@ -2091,6 +2151,24 @@ const fakeClient = {
     assert(lastInsert.eventos_featured_bookings && lastInsert.eventos_featured_bookings.event_id === pendingFeature.eventId && lastInsert.eventos_featured_bookings.start_date === pendingFeature.startDs, 'checkPaymentReturn calls MC.submitEventoFeature with the real eventId/startDs read back from sessionStorage');
     assert(text('toast') === '¡Pago recibido! Tu evento quedará destacado en esas fechas ✓', 'a successful feature booking shows the right confirmation toast');
     assert(!window.sessionStorage.getItem('mc_pending_evento_feature'), 'sessionStorage is cleared after the feature booking completes, so a page refresh cannot re-submit it');
+
+    // Admin bypass: an admin submitting a want_feature="si" event gets the
+    // free event AND the feature booking immediately, no Stripe redirect.
+    currentProfile.is_admin = true;
+    await window.openPost('eventos');
+    doc.getElementById('pf-name').value = 'Evento destacado admin';
+    doc.getElementById('pf-loc').value = 'Centro';
+    window.segPick(doc.querySelector('#pf-want_feature .seg-btn[data-v="si"]'));
+    window.pickFeatureDay(doc.querySelector('#pf-feature_start .slot-day:not(.full)'), false);
+    delete lastInsert.eventos;
+    delete lastInsert.eventos_featured_bookings;
+    window.sessionStorage.removeItem('mc_pending_evento_feature');
+    await window.submitPost('eventos');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.eventos && lastInsert.eventos.title === 'Evento destacado admin', 'the free event still goes out via MC.submitEvento for an admin');
+    assert(lastInsert.eventos_featured_bookings, 'and MC.submitEventoFeature runs directly — no payment step');
+    assert(!window.sessionStorage.getItem('mc_pending_evento_feature'), 'and nothing is stashed for a Stripe return');
+    assert(text('toast') === 'Enviado y destacado sin pago (cuenta admin) ✓', 'and the admin-bypass toast fires');
 
     // featureWindowWouldBeFull: 4 existing bookings all covering the same
     // 3-day window should block ANY start day whose own 3-day span
@@ -2239,6 +2317,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(lastInsert.productos && lastInsert.productos.business_id === 'biz-2' && lastInsert.productos.business_name_snapshot === 'Taco Loco 2', 'MC.submitProducto is called with the selected (here, non-original) business id, not hardcoded to biz-1');
 
+    currentProfile.is_admin = false; // pay-first paths below need a non-admin acting account
     await window.openPost('oferta');
     assert(doc.querySelector('#pf-post-business .seg-btn.on').dataset.v === 'biz-2', 'the same real default-selection applies to the Oferta form');
     doc.getElementById('pf-item').value = 'Oferta de biz-2';
@@ -2268,7 +2347,7 @@ const fakeClient = {
     assert(!text('modal-body').includes('Cancelar Premium'), 'and "Cancelar Premium" does not, since no upgrade exists yet');
 
     window.sessionStorage.removeItem('mc_pending_business_premium_upgrade');
-    window.startBusinessPremiumUpgrade('biz-2');
+    await window.startBusinessPremiumUpgrade('biz-2');
     const pendingPremiumRaw = window.sessionStorage.getItem('mc_pending_business_premium_upgrade');
     assert(!!pendingPremiumRaw && JSON.parse(pendingPremiumRaw).businessId === 'biz-2', 'starting the upgrade stores the real businessId in sessionStorage before the (jsdom-unfollowable) redirect to STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE');
 
@@ -2279,6 +2358,17 @@ const fakeClient = {
     assert(lastInsert.business_premium_upgrades && lastInsert.business_premium_upgrades.business_id === 'biz-2', 'the ?paid=business_premium_upgrade return calls MC.submitBusinessPremiumUpgrade with the real stashed businessId');
     assert(!window.sessionStorage.getItem('mc_pending_business_premium_upgrade'), 'sessionStorage is cleared after the upgrade is created');
     assert(text('toast') === '¡Pago recibido! Este negocio ahora puede tener hasta 10 productos ✓', 'a successful upgrade shows the right confirmation toast');
+
+    // Admin bypass: startBusinessPremiumUpgrade for an admin calls
+    // MC.submitBusinessPremiumUpgrade directly, no Stripe redirect / stash.
+    currentProfile.is_admin = true;
+    window.sessionStorage.removeItem('mc_pending_business_premium_upgrade');
+    delete lastInsert.business_premium_upgrades;
+    await window.startBusinessPremiumUpgrade('biz-2');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.business_premium_upgrades && lastInsert.business_premium_upgrades.business_id === 'biz-2', 'an admin starting a per-business Premium upgrade calls MC.submitBusinessPremiumUpgrade directly');
+    assert(!window.sessionStorage.getItem('mc_pending_business_premium_upgrade'), 'and nothing is stashed for a Stripe return');
+    assert(text('toast') === 'Premium activado sin pago (cuenta admin) ✓', 'and the admin-bypass toast fires');
 
     // Now simulate the upgrade actually existing (the fake insert above
     // doesn't mutate SAMPLE, same as every other fake insert in this

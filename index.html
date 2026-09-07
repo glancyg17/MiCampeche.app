@@ -142,8 +142,8 @@
     <!-- ═══ TIENDA (Oferta del Día hero + Tienda ⇄ Clasificados toggle) ═══ -->
     <div class="scr" id="scr-tienda">
       <div class="pad">
-        <div class="sec-title">Tienda</div>
-        <div class="sec-sub">Ofertas, negocios y clasificados de Campeche</div>
+        <div class="sec-title">Comercio</div>
+        <div class="sec-sub">Ofertas, negocios, clasificados y mandaditos de Campeche</div>
       </div>
       <div class="of-hdr">
         <div class="of-hdr-txt">Nuevas ofertas cada mañana · cantidad limitada</div>
@@ -152,7 +152,7 @@
       <div class="of-list" id="of-list"></div>
       <div class="mkt-divider"><span>Explorar</span></div>
       <div class="subtog subtog3">
-        <button class="subtog-btn on" data-v="mercado" onclick="setTiendaMode('mercado')">Tienda</button>
+        <button class="subtog-btn on" data-v="mercado" onclick="setTiendaMode('mercado')">Mercado</button>
         <button class="subtog-btn" data-v="clasificados" onclick="setTiendaMode('clasificados')">Clasificados</button>
         <button class="subtog-btn" data-v="mandaditos" onclick="setTiendaMode('mandaditos')">Mandaditos</button>
       </div>
@@ -516,74 +516,72 @@
         <span class="menu-badge" id="menu-account-badge"></span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      <!-- Temporarily hidden — "Pagar servicios" still holds mock data, pending the Pagar Servicios revamp. Restore this button to bring it back.
-      <button class="menu-item" onclick="goToServicios()">
-        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Pagar servicios</span>
-          <span class="menu-item-sub">CFE, agua y más</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      -->
 
-      <button class="menu-item" onclick="goToKoox()">
-        <span class="menu-item-ico" style="background:var(--gulf)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M3 12h18"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M6 4v4M18 4v4"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Transporte (Ko'ox)</span>
-          <span class="menu-item-sub">Rutas, tarifas y apps en tiempo real</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      <button class="menu-section-hdr" onclick="toggleMenuSection('explorar')">
+        <span>Explorar</span>
+        <svg class="ico menu-section-chev" id="menu-section-chev-explorar" style="transform:rotate(90deg)" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
+      <div class="menu-section-body" id="menu-section-explorar">
+        <button class="menu-item" onclick="closeMenu();nav('tienda')">
+          <span class="menu-item-ico" style="background:var(--wall)"><svg class="ico" viewBox="0 0 24 24"><path d="M4 8l1.5-4h13L20 8"/><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8z"/><path d="M9 12a3 3 0 0 0 6 0"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Comercio</span><span class="menu-item-sub">Ofertas, mercado, clasificados y mandaditos</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <!-- Temporarily hidden — "Pagar servicios" still holds mock data, pending the Pagar Servicios revamp. Restore this button to bring it back.
+        <button class="menu-item" onclick="goToServicios()">
+          <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Pagar servicios</span><span class="menu-item-sub">CFE, agua y más</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        -->
+        <button class="menu-item" onclick="closeMenu();nav('noticias')">
+          <span class="menu-item-ico" style="background:var(--gulf)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Noticias</span><span class="menu-item-sub">Lo último de Campeche</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="menu-item" onclick="closeMenu();nav('anuncios')">
+          <span class="menu-item-ico" style="background:var(--signal)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Anuncios</span><span class="menu-item-sub">Eventos, empleos y alertas</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="menu-item" onclick="closeMenu();nav('reportar')">
+          <span class="menu-item-ico" style="background:var(--palm)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Vecinos</span><span class="menu-item-sub">Avisos, reportes y perdidos</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="menu-item" onclick="goToKoox()">
+          <span class="menu-item-ico" style="background:var(--gulf)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M3 12h18"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M6 4v4M18 4v4"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Transporte (Ko'ox)</span><span class="menu-item-sub">Rutas, tarifas y apps en tiempo real</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
 
-      <button class="menu-item" onclick="openPreferences()">
-        <span class="menu-item-ico" style="background:var(--wall-dk)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Preferencias</span>
-          <span class="menu-item-sub">Consejos y ajustes de la app</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      <button class="menu-section-hdr" onclick="toggleMenuSection('mas')">
+        <span>Más</span>
+        <svg class="ico menu-section-chev" id="menu-section-chev-mas" style="transform:rotate(90deg)" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      <button class="menu-item" onclick="goToInfo()">
-        <span class="menu-item-ico" style="background:var(--palm)"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Cómo funciona</span>
-          <span class="menu-item-sub">Sobre MiCampeche</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      <button class="menu-item" onclick="contactUs()">
-        <span class="menu-item-ico" style="background:var(--signal)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Contacto</span>
-          <span class="menu-item-sub">Escríbenos por correo</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      <button class="menu-item" onclick="closeMenu();nav('privacidad')">
-        <span class="menu-item-ico" style="background:var(--ink3)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Aviso de privacidad y Términos</span>
-          <span class="menu-item-sub">Cómo tratamos tus datos</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      <button class="menu-item" onclick="triggerInstall()">
-        <span class="menu-item-ico" style="background:var(--wall)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13m0 0l-4-4m4 4l4-4"/><path d="M4 18v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Instalar la app</span>
-          <span class="menu-item-sub">Agrégala a tu pantalla de inicio</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      <button class="menu-item" onclick="checkForUpdates()">
-        <span class="menu-item-ico" style="background:var(--night)"><svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Buscar actualizaciones</span>
-          <span class="menu-item-sub">Revisa si hay una versión más reciente</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
+      <div class="menu-section-body" id="menu-section-mas">
+        <button class="menu-item" onclick="openPreferences()">
+          <span class="menu-item-ico" style="background:var(--wall-dk)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Preferencias</span><span class="menu-item-sub">Consejos, instalación y ajustes</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="menu-item" onclick="goToInfo()">
+          <span class="menu-item-ico" style="background:var(--palm)"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Cómo funciona</span><span class="menu-item-sub">Sobre MiCampeche</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="menu-item" onclick="contactUs()">
+          <span class="menu-item-ico" style="background:var(--signal)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Contacto</span><span class="menu-item-sub">Escríbenos por correo</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button class="menu-item" onclick="closeMenu();nav('privacidad')">
+          <span class="menu-item-ico" style="background:var(--ink3)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg></span>
+          <span class="menu-item-txt"><span class="menu-item-lbl">Aviso de privacidad y Términos</span><span class="menu-item-sub">Cómo tratamos tus datos</span></span>
+          <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
     </div>
   </div>
 </div>

@@ -125,6 +125,12 @@ const STRIPE_LINK_MANDADITO_BOOST='https://buy.stripe.com/6oU14o1A59CFgUGeiX4F20
 const MANDADITO_BOOST_FEE_MXN=99;
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
+function toggleMenuSection(key){
+  const body=document.getElementById('menu-section-'+key);
+  const chev=document.getElementById('menu-section-chev-'+key);
+  const closed=body.classList.toggle('closed');
+  if(chev)chev.style.transform=closed?'':'rotate(90deg)';
+}
 function goToServicios(){closeMenu();nav('servicios');}
 function goToInfo(){closeMenu();nav('info');}
 function goToKoox(){closeMenu();nav('koox');}
@@ -275,11 +281,12 @@ function initPullToRefresh(){
   });
 }
 
-/* Manual "check now" from the menu. Updates normally apply on their own
-   (skipWaiting in sw.js + the controllerchange handler in index.html);
-   this just forces the check immediately and reports what it found. If a
-   new version is pulled, the service worker activates it and the page
-   reloads itself at the next safe moment — usually within seconds. */
+/* Forces an update check immediately and reports what it found. Updates
+   normally apply on their own (skipWaiting in sw.js + the controllerchange
+   handler in index.html); this just brings the check forward. The
+   standalone "Buscar actualizaciones" menu item is gone (pull-to-refresh
+   covers the "did I miss something" itch) — pull-to-refresh is now the
+   only caller (see the PULL TO REFRESH block above). */
 async function checkForUpdates(){
   closeMenu();
   if(!('serviceWorker' in navigator)){toast('Este navegador no soporta actualizaciones automáticas');return;}
@@ -597,7 +604,7 @@ async function loadAllData(){
 /* ══════════════ BOTTOM NAV (4 primary tabs) ══════════════ */
 const TAB_DEFS=[
   {k:'inicio',lbl:'Inicio',ico:'home'},
-  {k:'tienda',lbl:'Tienda',ico:'tienda'},
+  {k:'tienda',lbl:'Comercio',ico:'tienda'},
   {k:'anuncios',lbl:'Anuncios',ico:'eventos'},
   {k:'reportar',lbl:'Vecinos',ico:'reportar'}
 ];
@@ -1002,9 +1009,14 @@ function renderPreferencesBody(){
         <button class="chip${on?'':' on'}" onclick="setTipsEnabled(false)">Desactivados</button>
       </div>
     </div>
-    <button class="menu-item" onclick="resetTipGates()" style="border:1.5px solid var(--line2);justify-content:center">
+    <button class="menu-item" onclick="resetTipGates()" style="border:1.5px solid var(--line2);justify-content:center;margin-bottom:${isStandalone()?'0':'4px'}">
       <span class="menu-item-lbl">Ver los consejos de nuevo</span>
     </button>
+    ${isStandalone()?'':`
+      <button class="menu-item" onclick="triggerInstall()" style="border:1.5px solid var(--line2);justify-content:center;margin-top:6px">
+        <span class="menu-item-lbl">Instalar la app</span>
+      </button>
+    `}
   `;
 }
 function setTipsEnabled(on){
@@ -2064,6 +2076,14 @@ async function confirmMandaditoBoost(isFull){
     toast('Estás en la lista de espera — te avisaremos ✓');
     return;
   }
+  const acct=await MC.currentAccount();
+  if(acct.isAdmin){
+    const {error}=await MC.submitMandaditoBoost(mine.id,selectedMandaditoBoostStart);
+    if(error){toast(pgErrorToast(error,'No se pudo impulsar.'));return;}
+    closeModal();
+    toast('Impulsado sin pago (cuenta admin) ✓');
+    return;
+  }
   sessionStorage.setItem('mc_pending_mandadito_boost',JSON.stringify({mandaditoId:mine.id,startDs:selectedMandaditoBoostStart}));
   window.location.href=STRIPE_LINK_MANDADITO_BOOST;
 }
@@ -2569,7 +2589,16 @@ async function confirmOfertaSaleStep2(id){
    every other paid add-on in this app (Ofertas, Eventos featuring, the
    $99 additional-business setup): an unpaid "reservation" would just
    squat on the thing being paid for. */
-function startBusinessPremiumUpgrade(businessId){
+async function startBusinessPremiumUpgrade(businessId){
+  const acct=await MC.currentAccount();
+  if(acct.isAdmin){
+    const {error}=await MC.submitBusinessPremiumUpgrade(businessId);
+    if(error){toast(pgErrorToast(error,'No se pudo activar Premium.'));return;}
+    mcModalBack('myBusinesses');
+    openMyBusinesses();
+    toast('Premium activado sin pago (cuenta admin) ✓');
+    return;
+  }
   sessionStorage.setItem('mc_pending_business_premium_upgrade',JSON.stringify({businessId}));
   window.location.href=STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE;
 }
@@ -3785,6 +3814,7 @@ async function submitPost(kind){
   const originalLabel=btn?btn.textContent:'';
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
   const stop=()=>{if(btn){btn.disabled=false;btn.textContent=originalLabel;}};
+  const acct=await MC.currentAccount();
 
   if(kind==='producto'||kind==='clasificado'){
     if(!(data.name||'').trim()){stop();toast('Escribe qué vendes');return;}
@@ -3829,6 +3859,14 @@ async function submitPost(kind){
       // the real enforcement server-side regardless of what this UI
       // already gated on.
       creatingAdditionalBusiness=false;
+      if(acct.isAdmin){
+        const {error}=await MC.verifyBusiness(data);
+        if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+        if(error){toast(pgErrorToast(error,'No se pudo crear el negocio.'));return;}
+        closeModal();
+        toast('Negocio creado sin pago (cuenta admin) ✓');
+        return;
+      }
       if(btn){btn.disabled=false;btn.textContent=originalLabel;}
       sessionStorage.setItem('mc_pending_business_setup',JSON.stringify({data}));
       window.location.href=STRIPE_LINK_BUSINESS_SETUP;
@@ -3871,6 +3909,14 @@ async function submitPost(kind){
     // slot cap: an unpaid "reservation" would just squat on the calendar.
     const biz=selectedPostBusinessId?await MC.fetchBusinessById(selectedPostBusinessId):await MC.myBusiness();
     if(!biz){if(btn){btn.disabled=false;btn.textContent=originalLabel;}openBusinessPrompt('oferta');return;}
+    if(acct.isAdmin){
+      const result=await MC.submitOferta(data,selectedSlotDate,false,selectedPostBusinessId);
+      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+      if(result.error){toast(pgErrorToast(result.error,'No se pudo reservar.'));return;}
+      closeModal();
+      toast('Reservado sin pago (cuenta admin) ✓');
+      return;
+    }
     sessionStorage.setItem('mc_pending_oferta',JSON.stringify({data,slotDs:selectedSlotDate,businessId:selectedPostBusinessId}));
     window.location.href=STRIPE_LINK_OFERTA;
     return;
@@ -3900,6 +3946,13 @@ async function submitPost(kind){
       toast('Tu evento fue enviado ✓, pero no pudimos iniciar el pago para destacarlo — escríbenos por WhatsApp.');
       return;
     }
+    if(acct.isAdmin){
+      const {error}=await MC.submitEventoFeature(eventId,selectedFeatureStart);
+      closeModal();
+      if(error){toast('Tu evento fue enviado ✓, pero no se pudo destacar sin pago — inténtalo de nuevo desde Mis publicaciones.');return;}
+      toast('Enviado y destacado sin pago (cuenta admin) ✓');
+      return;
+    }
     // Pay BEFORE the featured booking is created — same reasoning as
     // Ofertas: an unpaid "reservation" would just squat on a scarce
     // feature window.
@@ -3912,7 +3965,6 @@ async function submitPost(kind){
     // display_name / phone aren't form fields — they come straight from
     // the account (snapshotted server-side too). A directory listing, not
     // a job: the row just goes through the normal Pendiente queue.
-    const acct=await MC.currentAccount();
     data.display_name=acct.displayName||'';
     data.phone=acct.phone||'';
     if(!(data.vehicle_type||'').trim()){stop();toast('Elige cómo te mueves');return;}

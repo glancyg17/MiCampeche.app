@@ -499,6 +499,9 @@ svg{display:block}
 .menu-close .ico{width:14px;height:14px}
 .menu-body{padding:10px 12px;overflow-y:auto}
 .menu-item{width:100%;display:flex;align-items:center;gap:13px;background:none;border:none;padding:13px 10px;border-radius:var(--r);cursor:pointer;font-family:inherit;text-align:left}
+.menu-section-hdr{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;padding:14px 4px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3);cursor:pointer;font-family:inherit}
+.menu-section-chev{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;transition:transform .15s}
+.menu-section-body.closed{display:none}
 .menu-item:active{background:var(--paper2)}
 .menu-item-ico{width:38px;height:38px;border-radius:11px;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .menu-item-ico .ico{width:18px;height:18px}
