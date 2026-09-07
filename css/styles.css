@@ -216,6 +216,12 @@ svg{display:block}
 .slot-cal-full-msg{background:var(--paper3);color:var(--ink2)}
 .slot-cal-ok-msg .ico,.slot-cal-full-msg .ico{width:15px;height:15px;flex-shrink:0;margin-top:1px}
 .of-card{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:#fff;box-shadow:var(--sh1);position:relative;flex:0 0 82%;min-height:190px;scroll-snap-align:start}
+.of-card.of-featured{display:block;padding:0}
+.of-card.of-featured .of-hero-img{height:150px;background-size:cover;background-position:center;background-color:var(--paper2);border-radius:var(--r) var(--r) 0 0}
+.of-card.of-featured .of-hero-overlay{padding:12px 14px}
+.of-hero-overlay{padding:12px 14px;background:linear-gradient(180deg,rgba(18,32,29,0) 0%,rgba(18,32,29,.55) 45%,rgba(18,32,29,.92) 100%);margin-top:-40px;position:relative;color:#fff}
+.of-hero-overlay .of-seller{color:rgba(255,255,255,.85)}
+.of-hero-overlay .of-name{color:#fff}
 .of-card.sold-out{opacity:.55}
 .of-top{display:flex;gap:12px;padding:14px 14px 0}
 .of-img{width:64px;height:64px;border-radius:var(--rs);background-size:cover;background-position:center;background-color:var(--paper2);flex-shrink:0}
@@ -499,9 +505,6 @@ svg{display:block}
 .menu-close .ico{width:14px;height:14px}
 .menu-body{padding:10px 12px;overflow-y:auto}
 .menu-item{width:100%;display:flex;align-items:center;gap:13px;background:none;border:none;padding:13px 10px;border-radius:var(--r);cursor:pointer;font-family:inherit;text-align:left}
-.menu-section-hdr{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;padding:14px 4px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3);cursor:pointer;font-family:inherit}
-.menu-section-chev{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;transition:transform .15s}
-.menu-section-body.closed{display:none}
 .menu-item:active{background:var(--paper2)}
 .menu-item-ico{width:38px;height:38px;border-radius:11px;background:var(--gulf);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .menu-item-ico .ico{width:18px;height:18px}

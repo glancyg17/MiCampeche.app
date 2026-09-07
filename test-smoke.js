@@ -622,7 +622,8 @@ const fakeClient = {
   assert(/\d{1,2}:\d{2}\s*(a\.m\.|p\.m\.)/.test(wxb) && /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(wxb), 'the weather modal shows a real clock time and a month — the moment it was opened');
   window.closeWeatherLightbox();
   assert(text('mkt-grid') && text('mkt-grid').includes('Producto test'), 'Tienda/Mercado rendered real productos row');
-  assert(text('clas-grid') && text('clas-grid').includes('Artículo test') && text('clas-grid').includes('Ricardo T.'), 'Clasificados rendered real row with joined profile name');
+  assert(text('clas-grid') && text('clas-grid').includes('Artículo test'), 'Clasificados rendered the real fetched row');
+  assert(!text('clas-grid').includes('Ricardo T.'), 'Clasificados no longer shows the poster name — personal listings are name-free now');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');
   assert(text('of-list').includes('wa.me/529812003000') && text('of-list').includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
   // Mandaditos directory: a published profile shows up with a working

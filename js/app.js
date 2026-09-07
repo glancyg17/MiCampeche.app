@@ -125,14 +125,7 @@ const STRIPE_LINK_MANDADITO_BOOST='https://buy.stripe.com/6oU14o1A59CFgUGeiX4F20
 const MANDADITO_BOOST_FEE_MXN=99;
 function openMenu(){document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
-function toggleMenuSection(key){
-  const body=document.getElementById('menu-section-'+key);
-  const chev=document.getElementById('menu-section-chev-'+key);
-  const closed=body.classList.toggle('closed');
-  if(chev)chev.style.transform=closed?'':'rotate(90deg)';
-}
 function goToServicios(){closeMenu();nav('servicios');}
-function goToInfo(){closeMenu();nav('info');}
 function goToKoox(){closeMenu();nav('koox');}
 function openMandaditoSignup(){closeMenu();editingBusinessId=null;nav('tienda');setTiendaMode('mandaditos');openPost('mandadito');}
 /* Static reference only — no live data. Ko'ox's routes have changed
@@ -918,6 +911,10 @@ function showNoticia(id){
    inner markup/CSS, just wrapped in a full-screen dismiss-to-continue
    overlay instead of being pinned inline atop the list. */
 const SECTION_TIPS={
+  inicio:['info','Bienvenido a MiCampeche',
+    'Noticias, ofertas, la tienda local, avisos y reportes de tu comunidad — todo junto, revisado a mano antes de publicarse. Hecho en Campeche, para Campeche.',
+    null,
+    null,null],
   eventos:['eventos','Publica tu propio evento',
     '¿Organizas algo en Campeche? Compártelo aquí, gratis.',
     ['Toca el botón <b>+</b> abajo a la derecha.',
@@ -1228,7 +1225,7 @@ function prodCardHtml(x){
         <div class="prod-body">
           <div class="prod-name">${e(x.name)}</div>
           <div class="prod-price">${e(x.price)}</div>
-          <div class="prod-seller">${e(x.seller)}</div>
+          ${x.sellerType==='negocio'?`<div class="prod-seller">${e(x.seller)}</div>`:''}
           ${tags.length?`<div class="prod-tags">${tags.join('')}</div>`:''}
         </div>
       </div>
@@ -1265,7 +1262,7 @@ function openProdView(sellerType,id){
   document.getElementById('modal-body').innerHTML=`
     ${x.img?`<div class="pv-hero" style="background-image:url('${e(x.img)}')"></div>`:''}
     <div style="font-size:20px;font-weight:800;color:var(--palm)">${e(x.price||'')}</div>
-    <div style="font-size:13px;color:var(--ink3)">${e(x.seller)}</div>
+    ${x.sellerType==='negocio'?`<div style="font-size:13px;color:var(--ink3)">${e(x.seller)}</div>`:''}
     ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${e(x.desc)}</div>`:''}
     ${rows.length?`<div class="pv-rows">${rows.map(r=>`<div class="pv-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>`:''}
     ${cta}
@@ -1385,16 +1382,29 @@ function renderOfertas(){
   const el=document.getElementById('of-list');
   const visible=OFERTAS.filter(o=>ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
-  el.innerHTML=visible.map(o=>{
+  el.innerHTML=visible.map((o,i)=>{
     const soldOut=o.sold>=o.total;
+    const isFeatured=i===0;
     const pct=Math.min(100,Math.round((o.sold/o.total)*100));
     const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
     const num=digitsOnly(o.phone);
     const intl=num?(num.length===10?'52'+num:num):'';
     const msg=encodeURIComponent(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
     return `
-    <div class="of-card${soldOut?' sold-out':''}" ${admRm('ofertas',o.id,o.name)}>
+    <div class="of-card${soldOut?' sold-out':''}${isFeatured?' of-featured':''}" ${admRm('ofertas',o.id,o.name)}>
       ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
+      ${isFeatured?`
+      <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
+      <div class="of-hero-overlay">
+        <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
+        <div class="of-name">${e(o.name)}</div>
+        <div class="of-price-row">
+          <span class="of-price-now">$${o.priceNow}</span>
+          <span class="of-price-was">$${o.priceWas}</span>
+          <span class="of-pct">-${discountPct}%</span>
+        </div>
+      </div>
+      `:`
       <div class="of-top">
         <div class="of-img" style="background-image:url('${o.img}')"></div>
         <div class="of-body">
@@ -1407,6 +1417,7 @@ function renderOfertas(){
           </div>
         </div>
       </div>
+      `}
       <div class="of-bottom">
         <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
         <div class="of-claim-row">
@@ -1716,7 +1727,7 @@ const POST_FORMS={
   ]},
   empleos:{title:'Publicar una vacante',fields:[
     {k:'title',lbl:'Puesto',type:'text',ph:'Ej. Mesero(a) con experiencia'},
-    {k:'co',lbl:'Negocio (opcional)',type:'text',ph:'Déjalo en blanco para no dar el nombre'},
+    {k:'co',lbl:'Negocio (opcional)',type:'text',ph:'Ej. Repostería Tsuk Tun, o "restaurante concurrido en el Centro"'},
     {k:'pay',lbl:'Pago',type:'text',ph:'Ej. $350/día + propinas'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Requisitos, horario...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','En la descripción']]},
@@ -4223,6 +4234,7 @@ async function init(){
   setReportarMode('avisos');
   renderKooxApps();
   initPullToRefresh();
+  if(!document.getElementById('install-gate').classList.contains('on'))maybeShowTipGate('inicio');
   if(!isStandalone()&&sessionStorage.getItem('mc_just_updated')==='1'){
     try{sessionStorage.removeItem('mc_just_updated');}catch(e){}
     setTimeout(()=>maybeNudgeInstall(),1200);
