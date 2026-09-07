@@ -762,15 +762,16 @@ MC.fetchOfertas=async function(){
    for a business's own oferta that's always the business owner's own uid,
    so this is safe without needing a businesses join at all
    (business_name_snapshot already lives on the row). */
-MC.fetchMyActiveOfertas=async function(){
+MC.fetchMyActiveOfertas=async function(businessId){
   const uid=await MC.ready;
   if(!uid)return [];
-  const {data,error}=await sb.from('ofertas').select('*')
-    .eq('submitted_by',uid).eq('status','published');
+  let q=sb.from('ofertas').select('*').eq('submitted_by',uid).eq('status','published');
+  if(businessId)q=q.eq('business_id',businessId);
+  const {data,error}=await q;
   if(error){console.error(error);return [];}
   return (data||[])
     .filter(r=>(r.quantity_sold||0)<r.quantity_total)
-    .map(r=>({id:r.id,name:r.title,businessName:r.business_name_snapshot,sold:r.quantity_sold||0,total:r.quantity_total}));
+    .map(r=>({id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,sold:r.quantity_sold||0,total:r.quantity_total}));
 };
 /* The business's own "+1 pago confirmado" action — thin wrapper around the
    RPC, which does its own ownership check and bounds check server-side.

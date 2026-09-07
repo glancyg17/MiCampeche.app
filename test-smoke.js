@@ -67,6 +67,10 @@ function makeChain(getResult, onEq) {
               if (f === 'status' && hasOwnerFilter) rows = rows.filter(r => r && r[f] === v);
               if (f === 'id') rows = rows.filter(r => r && String(r.id) === String(v));
               if (f === 'is_primary') rows = rows.filter(r => r && !!r.is_primary === v);
+              // fetchMyActiveOfertas(businessId) narrows an owner's live
+              // ofertas to a single business — honored so the per-business
+              // scoping in "Mi negocio" is exercised for real.
+              if (f === 'business_id') rows = rows.filter(r => r && r[f] === v);
               // Mandaditos Step 2: mandadito_contacts is scoped by contacted_by
               // and the nudge filters out already-resolved rows.
               if (f === 'contacted_by') rows = rows.filter(r => r && r[f] === v);
@@ -1293,17 +1297,20 @@ const fakeClient = {
     window.closeModal();
     const savedClaimSess = currentSession;
 
-    // The "Ofertas activas" pill shows in Tu cuenta while there's a live
-    // oferta this account owns (o1.submitted_by === 'uid-1').
+    // The standalone "Ofertas activas" row was folded out of Tu cuenta and
+    // into the business profile ("Mi negocio") — see the business-profile
+    // block further down for the in-profile pill assertion.
     await window.openAccount();
-    await new Promise(r => setTimeout(r, 20)); // the pill loads alongside the rejections/pending counts, then re-renders
-    assert(text('modal-body').includes('Ofertas activas') && text('modal-body').includes('openMyActiveOfertas()'), 'the "Ofertas activas" pill appears in Tu cuenta while the account owns a live oferta');
+    await new Promise(r => setTimeout(r, 20)); // the counts load alongside the rejections/pending counts, then re-render
+    assert(!text('modal-body').includes('openMyActiveOfertas('), 'the standalone "Ofertas activas" row is gone from Tu cuenta');
 
-    // The list itself, via the real openMyActiveOfertas() -> fetchMyActiveOfertas().
-    await window.openMyActiveOfertas();
+    // The list itself still works via the real openMyActiveOfertas('biz-1')
+    // -> fetchMyActiveOfertas('biz-1') (ofertas come from their own table,
+    // independent of whether a business entity exists yet in this fixture).
+    await window.openMyActiveOfertas('biz-1');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Ofertas activas' && text('modal-body').includes('Negocio Oferta') && text('modal-body').includes('2 de 5 vendidos'), 'openMyActiveOfertas() lists this account\'s own live, not-sold-out oferta with the real counts');
-    assert(!text('modal-body').includes('Oferta de otra persona'), 'fetchMyActiveOfertas() is scoped by submitted_by — another account\'s oferta (o2) never appears');
+    assert(text('modal-title') === 'Ofertas activas' && text('modal-body').includes('Negocio Oferta') && text('modal-body').includes('2 de 5 vendidos'), 'openMyActiveOfertas(businessId) lists this business\'s own live, not-sold-out oferta with the real counts');
+    assert(!text('modal-body').includes('Oferta de otra persona'), 'fetchMyActiveOfertas() is scoped by submitted_by + business_id — another account\'s oferta (o2) never appears');
 
     // Two-step confirm: quantity_sold 2 -> 3 through the real RPC.
     window.confirmOfertaSaleStep1('o1');
@@ -1513,6 +1520,10 @@ const fakeClient = {
     assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Lun-Sáb 9am-8pm'), 'the profile shows the full business record, not just the name');
     assert(text('modal-body').includes('Editar negocio'), 'the profile carries the edit action that sends changes back to review');
     assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell stays hidden for admin accounts — admin already has premium (and more) rights');
+    // The "Ofertas activas" pill (folded here from the old standalone
+    // account-menu row) shows once the background load finds this business
+    // owns a live, not-sold-out oferta (o1, 2/5).
+    assert(text('modal-body').includes('Ofertas activas') && text('modal-body').includes("openMyActiveOfertas('biz-1')"), 'the business profile shows the "Ofertas activas" pill while this business owns a live oferta');
     window.mcModalBack();
     assert(text('modal-title') === 'Tu cuenta', 'closing the business profile returns to the account view, not the home screen');
 
@@ -1731,17 +1742,26 @@ const fakeClient = {
     //    signup) instead of a plain success toast. display_name/phone are
     //    NOT form fields — they come from the account. ──
     {
-      // "Quiero ser mandadito" account-menu entry shows while this account
-      // has no mandaditos row (md1 belongs to uid-2).
+      // The "Quiero ser mandadito" signup entry moved OFF the account menu
+      // and onto the Mandaditos tab itself, as a persistent status-aware CTA
+      // (#mandaditos-cta), not just the once-per-device tip-gate popup.
       await window.openAccount();
-      await new Promise(r => setTimeout(r, 20)); // myMandadito loads with the rejections/pending counts, then re-renders
-      assert(text('modal-body').includes('Quiero ser mandadito') && text('modal-body').includes('openMandaditoSignup()'), 'the "Quiero ser mandadito" entry appears when the account has no mandadito profile');
+      await new Promise(r => setTimeout(r, 20));
+      assert(!text('modal-body').includes('openMandaditoSignup()'), 'the "Quiero ser mandadito" entry is no longer in the account menu');
+      window.closeModal();
+
+      // It shows on the Mandaditos tab while this account has no mandaditos
+      // row (md1 belongs to uid-2). setTiendaMode('mandaditos') triggers
+      // refreshMandaditoTabCta() -> MC.myMandadito() then re-renders.
+      window.setTiendaMode('mandaditos');
+      await new Promise(r => setTimeout(r, 20));
+      assert(text('mandaditos-cta').includes('Quiero ser mandadito') && text('mandaditos-cta').includes('openMandaditoSignup()'), 'the persistent "Quiero ser mandadito" CTA appears on the Mandaditos tab when the account has no mandadito profile');
 
       // …and disappears once this account has a PUBLISHED mandadito.
       SAMPLE.mandaditos.push({ id: 'md-mine', display_name: 'Ricardo Martín', phone: '+529811234567', vehicle_type: 'Auto', zona: 'Centro', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() });
-      await window.openAccount();
+      window.setTiendaMode('mandaditos');
       await new Promise(r => setTimeout(r, 20));
-      assert(!text('modal-body').includes('Quiero ser mandadito'), 'the entry is hidden once this account already has a published mandadito');
+      assert(!text('mandaditos-cta').includes('Quiero ser mandadito'), 'the CTA is hidden once this account already has a published mandadito');
       SAMPLE.mandaditos.pop(); // restore the fixture — later Pendiente-count assertions depend on it
 
       // The form: no name/phone fields (account-sourced), submit goes to

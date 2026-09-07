@@ -1206,6 +1206,7 @@ function setTiendaMode(mode){
   document.getElementById('tienda-mandaditos').style.display=mode==='mandaditos'?'block':'none';
   document.getElementById('tienda-fab').style.display=mode==='mandaditos'?'none':'flex';
   document.getElementById('tienda-fab').onclick=function(){openPost(mode==='mercado'?'producto':'clasificado');};
+  if(mode==='mandaditos')refreshMandaditoTabCta();
   if(curScreen==='tienda')maybeShowTipGate(mode);
 }
 
@@ -1311,6 +1312,29 @@ function renderClasificados(){
    outside the app (same as Tienda/Clasificados). This distinction is
    deliberate and load-bearing — see the Master Codex. */
 let MANDADITOS=[];
+let myMandaditoStatus=null; // cached account mandadito row, refreshed each time the Mandaditos tab is opened — powers the persistent CTA below
+async function refreshMandaditoTabCta(){
+  myMandaditoStatus=await MC.myMandadito();
+  renderMandaditoTabCta();
+}
+function renderMandaditoTabCta(){
+  const el=document.getElementById('mandaditos-cta');
+  if(!el)return;
+  if(myMandaditoStatus&&myMandaditoStatus.status==='published'){el.innerHTML='';return;}
+  const label=(myMandaditoStatus&&myMandaditoStatus.status==='rejected')?'Volver a intentar como mandadito':'Quiero ser mandadito';
+  const sub=myMandaditoStatus
+    ? (myMandaditoStatus.status==='pending'?'Tu registro está en revisión':(myMandaditoStatus.rejection_reason||'No se aprobó tu registro anterior'))
+    : 'Regístrate en el directorio para que vecinos y negocios te contacten';
+  el.innerHTML=`
+    <button class="menu-item" onclick="openMandaditoSignup()" style="border:1.5px solid var(--line2);margin-bottom:14px">
+      <span class="menu-item-ico" style="background:var(--wall)"><svg class="ico" viewBox="0 0 24 24"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2m9-2a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/></svg></span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">${label}</span>
+        <span class="menu-item-sub">${sub}</span>
+      </span>
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>`;
+}
 function renderMandaditos(){
   const el=document.getElementById('mandaditos-list');
   if(!MANDADITOS.length){el.innerHTML=emptyState('tienda','Nadie registrado todavía','Sé el primero en registrarte como mandadito.');return;}
@@ -2367,8 +2391,9 @@ function renderAccountSignedIn(acct){
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
         <span class="menu-item-txt">
           <span class="menu-item-lbl">Mis negocios (${bizList.length})</span>
-          <span class="menu-item-sub">Administra tus negocios</span>
+          <span class="menu-item-sub">Negocio, productos, ofertas y vacantes</span>
         </span>
+        ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`<span class="menu-badge on">${acct.myActiveOfertas.length}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:biz?`
@@ -2380,6 +2405,7 @@ function renderAccountSignedIn(acct){
           <span class="menu-item-lbl">${e(biz.business_name)}</span>
           <span class="menu-item-sub">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio verificado'}${biz.category?' · '+e(biz.category):''}</span>
         </span>
+        ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`<span class="menu-badge on">${acct.myActiveOfertas.length}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:`
@@ -2392,18 +2418,6 @@ function renderAccountSignedIn(acct){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `}
-    ${(!acct.myMandadito||acct.myMandadito.status!=='published')?`
-      <button class="menu-item" onclick="openMandaditoSignup()" style="border:1.5px solid var(--line2);margin-bottom:4px">
-        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2m9-2a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM7 16a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/></svg></span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">${acct.myMandadito&&acct.myMandadito.status==='rejected'?'Volver a intentar como mandadito':'Quiero ser mandadito'}</span>
-          <span class="menu-item-sub">${acct.myMandadito
-            ? (acct.myMandadito.status==='pending'?'Tu registro está en revisión':acct.myMandadito.status==='rejected'?(acct.myMandadito.rejection_reason||'No se aprobó tu registro anterior'):'')
-            : 'Regístrate en el directorio de mandaditos'}</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-    `:''}
     ${(acct.myMandadito&&acct.myMandadito.status==='published'&&MANDADITOS.length>=5)?`
       <button class="menu-item" onclick="openMandaditoBoost()" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico" style="background:var(--wall)"><svg class="ico" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg></span>
@@ -2426,17 +2440,6 @@ function renderAccountSignedIn(acct){
         ${rej?`<span class="menu-badge on">${rej>99?'99+':rej}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>`;})()}
-    ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`
-      <button class="menu-item" onclick="openMyActiveOfertas()" style="border:1.5px solid var(--line2);margin-bottom:4px">
-        <span class="menu-item-ico">${svgIco('tienda')}</span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Ofertas activas</span>
-          <span class="menu-item-sub">Confirma cada venta cuando te paguen</span>
-        </span>
-        <span class="menu-badge on">${acct.myActiveOfertas.length}</span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-    `:''}
     ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
@@ -2543,12 +2546,12 @@ async function cancelBusinessPremiumUpgrade(businessId){
    checks server-side; there's no undo by design, which is why Step2 has
    its own confirm screen. */
 let myActiveOfertasList=[];
-async function openMyActiveOfertas(){
-  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+async function openMyActiveOfertas(businessId){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('bizProfile');
   document.getElementById('modal-title').textContent='Ofertas activas';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
-  myActiveOfertasList=await MC.fetchMyActiveOfertas();
+  myActiveOfertasList=await MC.fetchMyActiveOfertas(businessId);
   renderMyActiveOfertas();
 }
 function renderMyActiveOfertas(){
@@ -2630,14 +2633,23 @@ async function openAdditionalBusinessForm(){
    sends the changes back to review. Part of the modal view stack, so
    ✕ / back / hardware-back returns to wherever it was opened from, and
    finishing an edit returns here (now showing "En revisión"). */
+let bizProfilePosts=[]; // this account's fetchMyPosts() results, cached while a business profile is open — filtered per-section in renderBusinessProfile
+let bizProfileActiveOfertas=[]; // this specific business's active ofertas, from fetchMyActiveOfertas(id)
 async function openBusinessProfile(id){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(myBusinessesList.length>1?'myBusinesses':'account');
   viewingBusinessId=id;
+  bizProfilePosts=[];
+  bizProfileActiveOfertas=[];
   document.getElementById('modal-title').textContent='Negocio';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
   const biz=await MC.fetchBusinessById(id);
   if(!biz){mcModalBack();return;}
+  renderBusinessProfile(biz);
+  const [posts,activeOfertas]=await Promise.all([MC.fetchMyPosts(),MC.fetchMyActiveOfertas(id)]);
+  if(viewingBusinessId!==id)return; // navigated to a different business before this landed
+  bizProfilePosts=posts;
+  bizProfileActiveOfertas=activeOfertas;
   renderBusinessProfile(biz);
 }
 function renderBusinessProfile(biz){
@@ -2669,6 +2681,39 @@ function renderBusinessProfile(biz){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </a>
     `:''}
+    ${(()=>{const n=bizProfilePosts.filter(p=>p.table==='productos'&&p.raw.business_id===biz.id).length;return n?`
+      <button class="menu-item" onclick="openMyPosts(['productos'],'Mis productos en Tienda','bizProfile')" style="border:1.5px solid var(--line2);margin-bottom:4px;margin-top:10px">
+        <span class="menu-item-ico">${svgIco('tienda')}</span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Mis productos en Tienda</span>
+          <span class="menu-item-sub">Edita o revisa el estado de lo publicado</span>
+        </span>
+        <span class="menu-badge on">${n}</span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:'';})()}
+    ${bizProfileActiveOfertas.length?`
+      <button class="menu-item" onclick="openMyActiveOfertas('${biz.id}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico">${svgIco('tienda')}</span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Ofertas activas</span>
+          <span class="menu-item-sub">Confirma cada venta cuando te paguen</span>
+        </span>
+        <span class="menu-badge on">${bizProfileActiveOfertas.length}</span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:''}
+    ${(()=>{const n=bizProfilePosts.filter(p=>p.table==='empleos').length;return n?`
+      <button class="menu-item" onclick="openMyPosts(['empleos'],'Mis vacantes','bizProfile')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">Mis vacantes</span>
+          <span class="menu-item-sub">Edita o revisa el estado de lo publicado</span>
+        </span>
+        <span class="menu-badge on">${n}</span>
+        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    `:'';})()}
   `;
   document.getElementById('modal-bg').classList.add('on');
 }
@@ -3207,10 +3252,14 @@ function advancePendingQueue(prevIndex){
    straight into the edit form. Open to every signed-in account. */
 let myPostsList=[];
 let myPostsTab='pending';
-async function openMyPosts(){
-  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+let myPostsTableFilter=null; // null = show every self-editable table (the plain "Mis publicaciones" case); an array like ['productos'] scopes the same list/tabs/edit/discard machinery to just that table, used by the new "Mi negocio" sections
+let myPostsTitleBase='Mis publicaciones';
+async function openMyPosts(tables,title,backKey){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'account');
   myPostsTab='pending';
-  document.getElementById('modal-title').textContent='Mis publicaciones';
+  myPostsTableFilter=tables||null;
+  myPostsTitleBase=title||'Mis publicaciones';
+  document.getElementById('modal-title').textContent=myPostsTitleBase;
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
   myPostsList=await MC.fetchMyPosts();
@@ -3257,13 +3306,14 @@ function postStatusBadge(status,bucket){
   return `<span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${lbl}</span>`;
 }
 function renderMyPosts(){
-  document.getElementById('modal-title').textContent=`Mis publicaciones (${myPostsList.length})`;
-  if(!myPostsList.length){
+  const source=myPostsTableFilter?myPostsList.filter(p=>myPostsTableFilter.includes(p.table)):myPostsList;
+  document.getElementById('modal-title').textContent=`${myPostsTitleBase} (${source.length})`;
+  if(!source.length){
     document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
     return;
   }
   const buckets={pending:[],active:[],finished:[]};
-  myPostsList.forEach(p=>buckets[myPostBucket(p)].push(p));
+  source.forEach(p=>buckets[myPostBucket(p)].push(p));
   const tabsHtml=`<div style="display:flex;gap:8px;margin-bottom:14px">${MY_POSTS_TABS.map(([v,l])=>
     `<button class="chip${v===myPostsTab?' on':''}" onclick="setMyPostsTab('${v}')">${l} (${buckets[v].length})</button>`
   ).join('')}</div>`;
