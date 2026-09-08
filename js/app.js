@@ -1010,6 +1010,30 @@ let tipGateShownThisSession=new Set();
 function tipsEnabled(){
   try{return localStorage.getItem('mc_tips_enabled')!=='0';}catch(_){return true;}
 }
+function themePref(){
+  try{return localStorage.getItem('mc_theme')||'auto';}catch(_){return 'auto';}
+}
+function resolveTheme(pref){
+  if(pref==='auto'){
+    try{return (window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}catch(_){return 'light';}
+  }
+  return pref;
+}
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme',resolveTheme(themePref()));
+}
+function setThemePref(pref){
+  try{localStorage.setItem('mc_theme',pref);}catch(_){}
+  applyTheme();
+  document.getElementById('modal-body').innerHTML=renderPreferencesBody();
+}
+// Keeps "Automático" in sync if the OS-level setting changes while the app
+// is open — only actually re-applies when the saved preference is 'auto'.
+try{
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{
+    if(themePref()==='auto')applyTheme();
+  });
+}catch(_){}
 function maybeShowTipGate(key){
   if(tipGateShownThisSession.has(key))return;
   tipGateShownThisSession.add(key);
@@ -1042,7 +1066,16 @@ function openPreferences(){
 }
 function renderPreferencesBody(){
   const on=tipsEnabled();
+  const theme=themePref();
   return `
+    <div style="margin-bottom:14px">
+      <div class="fl" style="margin-bottom:8px">Tema</div>
+      <div style="display:flex;gap:8px">
+        <button class="chip${theme==='light'?' on':''}" onclick="setThemePref('light')">Claro</button>
+        <button class="chip${theme==='dark'?' on':''}" onclick="setThemePref('dark')">Oscuro</button>
+        <button class="chip${theme==='auto'?' on':''}" onclick="setThemePref('auto')">Automático</button>
+      </div>
+    </div>
     <div style="margin-bottom:14px">
       <div class="fl" style="margin-bottom:8px">Consejos al entrar a una sección</div>
       <div style="display:flex;gap:8px">
@@ -1050,9 +1083,6 @@ function renderPreferencesBody(){
         <button class="chip${on?'':' on'}" onclick="setTipsEnabled(false)">Desactivados</button>
       </div>
     </div>
-    <button class="menu-item" onclick="resetTipGates()" style="border:1.5px solid var(--line2);justify-content:center;margin-bottom:${isStandalone()?'0':'4px'}">
-      <span class="menu-item-lbl">Ver los consejos de nuevo</span>
-    </button>
     ${isStandalone()?'':`
       <button class="menu-item" onclick="triggerInstall()" style="border:1.5px solid var(--line2);justify-content:center;margin-top:6px">
         <span class="menu-item-lbl">Instalar la app</span>
@@ -1062,12 +1092,11 @@ function renderPreferencesBody(){
 }
 function setTipsEnabled(on){
   try{localStorage.setItem('mc_tips_enabled',on?'1':'0');}catch(_){}
+  if(on){
+    Object.keys(SECTION_TIPS).forEach(k=>{try{localStorage.removeItem('mc_onboard_'+k);}catch(_){}});
+    tipGateShownThisSession=new Set();
+  }
   document.getElementById('modal-body').innerHTML=renderPreferencesBody();
-}
-function resetTipGates(){
-  Object.keys(SECTION_TIPS).forEach(k=>{try{localStorage.removeItem('mc_onboard_'+k);}catch(_){}});
-  tipGateShownThisSession=new Set();
-  toast('Los consejos volverán a aparecer al entrar a cada sección');
 }
 
 /* ══════════════ RENDER: EVENTOS (sub-view inside Anuncios) ══════════════ */
@@ -4416,4 +4445,5 @@ async function init(){
   }
   mcBackInit();
 }
+applyTheme();
 init();
