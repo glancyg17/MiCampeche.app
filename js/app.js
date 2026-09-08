@@ -1011,7 +1011,7 @@ function tipsEnabled(){
   try{return localStorage.getItem('mc_tips_enabled')!=='0';}catch(_){return true;}
 }
 function themePref(){
-  try{return localStorage.getItem('mc_theme')||'auto';}catch(_){return 'auto';}
+  try{return localStorage.getItem('mc_theme')||'light';}catch(_){return 'light';}
 }
 function resolveTheme(pref){
   if(pref==='auto'){
