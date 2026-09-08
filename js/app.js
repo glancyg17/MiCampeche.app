@@ -2217,13 +2217,15 @@ function monthCalHtml(fieldKey){
     cells+=`<div class="mcal-day${isToday?' today':''}${isSel?' sel':''}" onclick="pickMonthCalDay('${fieldKey}','${ds}')">${d}</div>`;
   }
   return `
-    <div class="mcal-hdr">
-      <button type="button" class="mcal-nav mcal-prev" onclick="shiftMonthCal('${fieldKey}',-1)">${svgIco('chevronR')}</button>
-      <span class="mcal-label">${MCAL_MONTHS_ES[v.month]} ${v.year}</span>
-      <button type="button" class="mcal-nav" onclick="shiftMonthCal('${fieldKey}',1)">${svgIco('chevronR')}</button>
+    <div class="mcal-wrap">
+      <div class="mcal-hdr">
+        <button type="button" class="mcal-nav mcal-prev" onclick="shiftMonthCal('${fieldKey}',-1)">${svgIco('chevronR')}</button>
+        <span class="mcal-label">${MCAL_MONTHS_ES[v.month]} ${v.year}</span>
+        <button type="button" class="mcal-nav" onclick="shiftMonthCal('${fieldKey}',1)">${svgIco('chevronR')}</button>
+      </div>
+      <div class="mcal-dow">${MCAL_DOW_ES.map(d=>`<span>${d}</span>`).join('')}</div>
+      <div class="mcal-grid">${cells}</div>
     </div>
-    <div class="mcal-dow">${MCAL_DOW_ES.map(d=>`<span>${d}</span>`).join('')}</div>
-    <div class="mcal-grid">${cells}</div>
   `;
 }
 function shiftMonthCal(fieldKey,delta){
@@ -2311,7 +2313,17 @@ function mcModalSnap(){
     document.getElementById('modal-body').innerHTML=h;
   };
 }
-function mcModalPushView(key,customRestore){mcModalStack.push({key,restore:customRestore||mcModalSnap()});}
+const MC_MODAL_LIVE_REFRESH={
+  // Screens that should always re-fetch live when backed into, rather than
+  // replaying a cached snapshot — because something nested inside them
+  // (confirming an oferta sale, editing/discarding a post, resolving a
+  // Pendiente item, etc.) can change counts/badges they display.
+  account:()=>openAccount(),
+  bizProfile:()=>refreshBusinessProfile()
+};
+function mcModalPushView(key,customRestore){
+  mcModalStack.push({key,restore:customRestore||MC_MODAL_LIVE_REFRESH[key]||mcModalSnap()});
+}
 // No targetKey: pop one level (✕ / backdrop / hardware back), closing the
 // modal when that was the last. targetKey: pop back to that named level,
 // dropping everything above it — and do nothing if it isn't on the stack
@@ -2785,7 +2797,13 @@ function renderBusinessProfile(biz){
   document.getElementById('modal-bg').classList.add('on');
 }
 async function refreshBusinessProfile(){
-  renderBusinessProfile(await MC.fetchBusinessById(viewingBusinessId));
+  if(!viewingBusinessId)return;
+  const id=viewingBusinessId;
+  const [biz,posts,activeOfertas]=await Promise.all([MC.fetchBusinessById(id),MC.fetchMyPosts(),MC.fetchMyActiveOfertas(id)]);
+  if(viewingBusinessId!==id)return; // navigated to a different business before this landed
+  bizProfilePosts=posts;
+  bizProfileActiveOfertas=activeOfertas;
+  renderBusinessProfile(biz);
 }
 
 /* Country-code select + phone input pair. Reused by signup, login, and
