@@ -1293,12 +1293,12 @@ function prodCardHtml(x){
   if(FULFILLMENT_LABEL[x.fulfillment])tags.push(`<span class="prod-tag">${FULFILLMENT_LABEL[x.fulfillment]}</span>`);
   return `
     <div class="prod-wrap" ${admRm(x.sellerType==='negocio'?'productos':'clasificados',x.id,x.name)}>
-      ${x.featured?'<span class="prod-badge">Destacado</span>':''}
+      ${x.discountActive?'<span class="prod-badge-discount">¡Descuento!</span>':(x.featured?'<span class="prod-badge">Destacado</span>':'')}
       <div class="prod-card" onclick="openProdView('${x.sellerType}','${e(String(x.id))}')">
         <div class="prod-img" style="background-image:url('${x.img}')"></div>
         <div class="prod-body">
           <div class="prod-name">${e(x.name)}</div>
-          <div class="prod-price">${e(x.price)}</div>
+          <div class="prod-price">${x.discountActive&&x.discountPrice?`<span class="prod-price-was">${e(x.price)}</span>${e(x.discountPrice)}`:e(x.price)}</div>
           ${x.sellerType==='negocio'?`<div class="prod-seller">${e(x.seller)}</div>`:''}
           ${tags.length?`<div class="prod-tags">${tags.join('')}</div>`:''}
         </div>
@@ -1339,7 +1339,7 @@ function openProdView(sellerType,id){
   document.getElementById('modal-title').textContent=x.name;
   document.getElementById('modal-body').innerHTML=`
     ${galleryHtml}
-    <div style="font-size:20px;font-weight:800;color:var(--palm)">${e(x.price||'')}</div>
+    <div style="font-size:20px;font-weight:800;color:var(--palm)">${x.discountActive&&x.discountPrice?`<span style="font-size:14px;color:var(--ink3);text-decoration:line-through;margin-right:8px;font-weight:600">${e(x.price||'')}</span>${e(x.discountPrice)}`:e(x.price||'')}</div>
     ${x.sellerType==='negocio'?`<div style="font-size:13px;color:var(--ink3)">${e(x.seller)}</div>`:''}
     ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${e(x.desc)}</div>`:''}
     ${rows.length?`<div class="pv-rows">${rows.map(r=>`<div class="pv-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>`:''}
@@ -1792,6 +1792,9 @@ const POST_FORMS={
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida/Bebida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'money',ph:'150'},
+    {k:'featured',lbl:'Destacado',type:'seg',opts:[['no','No'],['si','Sí']],premiumOnly:true,note:'Aparece resaltado en Mercado. Tu negocio puede tener hasta 2 productos destacados o en descuento a la vez.'},
+    {k:'discount_active',lbl:'Descuento',type:'seg',opts:[['no','No'],['si','Sí']],premiumOnly:true},
+    {k:'discount_price',lbl:'Precio con descuento',type:'money',ph:'120',showIf:{field:'discount_active',val:'si'},note:'El precio de arriba se mostrará tachado; este es el nuevo precio.'},
     {k:'availability',lbl:'Disponibilidad',type:'seg',opts:[['ahora','Disponible ahora'],['pedido','Sobre pedido']]},
     {k:'lead_time',lbl:'¿Con cuánta anticipación?',type:'text',ph:'Ej. 2 días',showIf:{field:'availability',val:'pedido'}},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega a domicilio'],['ambos','Ambos']]},
@@ -1997,6 +2000,20 @@ function applyProductoBusinessHints(biz){
     const existingCrNote=cr.querySelector('.field-note');
     if(existingCrNote)existingCrNote.remove();
     if(biz&&biz.phone)cr.insertAdjacentHTML('beforeend',`<div class="field-note">Los clientes te contactarán al número de tu negocio: ${e(biz.phone)}.</div>`);
+  }
+  const isPremium=!!(biz&&biz.is_premium);
+  ['row-featured','row-discount_active','row-discount_price'].forEach(id=>{
+    const row=document.getElementById(id);
+    if(row)row.style.display=isPremium?'':'none';
+  });
+  if(!isPremium){
+    // Force both toggles back to "No" when hidden, so a business that
+    // loses Premium mid-edit (or switches to a non-Premium business in a
+    // multi-business account) can't silently submit stale si/si values.
+    ['featured','discount_active'].forEach(k=>{
+      const noBtn=document.querySelector(`#pf-${k} .seg-btn[data-v="no"]`);
+      if(noBtn)segPick(noBtn);
+    });
   }
 }
 
@@ -3547,8 +3564,8 @@ const MY_POST_EDIT={
     img:{photo:r.image_url}
   })},
   productos:{form:'producto',fill:r=>({
-    input:{name:r.title,cat:r.category,price:r.price_text||'',lead_time:r.lead_time,desc:r.description},
-    seg:{item_condition:r.item_condition||'nuevo',availability:r.availability||'ahora',fulfillment:r.fulfillment||'recoger'},
+    input:{name:r.title,cat:r.category,price:r.price_text||'',lead_time:r.lead_time,desc:r.description,discount_price:r.discount_price_text||''},
+    seg:{item_condition:r.item_condition||'nuevo',availability:r.availability||'ahora',fulfillment:r.fulfillment||'recoger',featured:r.featured?'si':'no',discount_active:r.discount_active?'si':'no'},
     multi:{contact_methods:r.contact_methods},
     imgMulti:{photo:r.image_urls||[]}
   })},
@@ -3610,6 +3627,10 @@ async function openMyPostEdit(table,id){
   document.getElementById('modal-title').textContent='Editar publicación';
   applyPostEditFill(cfg.fill(item.raw));
   applyConditionalRows(POST_FORMS[cfg.form]); // re-sync showIf rows now that seg values are set
+  if(table==='productos'){
+    const acct=await MC.currentAccount();
+    applyProductoBusinessHints((acct.businesses||[]).find(b=>String(b.id)===String(item.raw.business_id))||acct.business);
+  }
   // Featuring is offered at fresh-submission time only, not via self-edit
   // (out of scope for this step) — hide both rows during edit.
   ['want_feature','feature_start'].forEach(k=>{const row=document.getElementById('row-'+k);if(row)row.style.display='none';});

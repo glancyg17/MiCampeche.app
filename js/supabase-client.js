@@ -646,7 +646,7 @@ MC.fetchTienda=async function(){
   if(clas.error)console.error(clas.error);
   const negocios=(prod.data||[]).map(r=>({
     id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
-    seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,sellerType:'negocio',
+    seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,discountActive:!!r.discount_active,discountPrice:r.discount_price_text||(r.discount_price_mxn!=null?fmtMXN(r.discount_price_mxn):''),sellerType:'negocio',
     desc:r.description||'',condition:r.item_condition||'nuevo',availability:r.availability||'ahora',leadTime:r.lead_time||'',
     fulfillment:r.fulfillment||'',phone:r.seller_phone||'',contactMethods:r.contact_methods||[]
   }));
