@@ -157,9 +157,16 @@
         <button class="subtog-btn" data-v="mandaditos" onclick="setTiendaMode('mandaditos')">Mandaditos</button>
       </div>
       <div id="tienda-mercado">
-        <div class="chiprow" id="mkt-chips"></div>
         <div class="filter-row">
-          <input class="fi" id="mkt-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setMktColonia(this.value)">
+          <div class="filter-select-wrap">
+            <select class="filter-select" id="mkt-cat-select" onchange="setMktFilter(this.value)"></select>
+            <svg class="filter-select-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <input class="filter-colonia" id="mkt-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Colonia" oninput="setMktColonia(this.value)">
+        </div>
+        <div class="filter-search-row">
+          <svg class="filter-search-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input class="filter-search" id="mkt-search" type="text" placeholder="Buscar en Mercado..." oninput="setMktSearch(this.value)">
         </div>
         <div class="tienda-grid" id="mkt-grid"></div>
       </div>
@@ -167,9 +174,16 @@
         <div class="of-hdr">
           <div class="of-hdr-txt">Publicado por vecinos de Campeche — un artículo por persona</div>
         </div>
-        <div class="chiprow" id="clas-chips"></div>
         <div class="filter-row">
-          <input class="fi" id="clas-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setClasColonia(this.value)">
+          <div class="filter-select-wrap">
+            <select class="filter-select" id="clas-cat-select" onchange="setClasFilter(this.value)"></select>
+            <svg class="filter-select-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <input class="filter-colonia" id="clas-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Colonia" oninput="setClasColonia(this.value)">
+        </div>
+        <div class="filter-search-row">
+          <svg class="filter-search-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input class="filter-search" id="clas-search" type="text" placeholder="Buscar en Clasificados..." oninput="setClasSearch(this.value)">
         </div>
         <div class="tienda-grid" id="clas-grid"></div>
       </div>

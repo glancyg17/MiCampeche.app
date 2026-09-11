@@ -1352,38 +1352,65 @@ function openProdView(sellerType,id){
 
 let mktFilter='all';
 let mktColonia='';
+let mktSearch='';
 function setMktColonia(v){mktColonia=v.trim();renderMercado();}
+function setMktSearch(v){mktSearch=v.trim().toLowerCase();renderMercado();}
+// Kept the old function name (renderMktChips) even though it now populates
+// a <select> rather than literal chips, so nothing else that calls it
+// needs to change.
 function renderMktChips(){
   const negocios=TIENDA.filter(x=>x.sellerType==='negocio');
   const cats=['all',...new Set(negocios.map(x=>x.cat))];
-  document.getElementById('mkt-chips').innerHTML=cats.map(c=>
-    `<button class="chip${c===mktFilter?' on':''}" onclick="setMktFilter('${c}')">${c==='all'?'Todo':c}</button>`
-  ).join('');
+  const sel=document.getElementById('mkt-cat-select');
+  if(!sel)return;
+  const prev=cats.includes(mktFilter)?mktFilter:'all';
+  sel.innerHTML=cats.map(c=>`<option value="${c}">${c==='all'?'Todas':e(c)}</option>`).join('');
+  sel.value=prev;
+  mktFilter=prev;
 }
-function setMktFilter(c){mktFilter=c;renderMktChips();renderMercado();}
+function setMktFilter(c){mktFilter=c;renderMercado();}
 function renderMercado(){
-  const list=TIENDA.filter(x=>x.sellerType==='negocio'&&(mktFilter==='all'||x.cat===mktFilter)&&(!mktColonia||x.colonia===mktColonia));
+  const list=TIENDA.filter(x=>x.sellerType==='negocio'
+    &&(mktFilter==='all'||x.cat===mktFilter)
+    &&(!mktColonia||x.colonia===mktColonia)
+    &&(!mktSearch||x.name.toLowerCase().includes(mktSearch)));
   const el=document.getElementById('mkt-grid');
-  if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar en esta categoría.');return;}
+  if(!list.length){
+    const filtered=mktFilter!=='all'||mktColonia||mktSearch;
+    el.innerHTML=emptyState('tienda','Nada por aquí todavía',filtered?'Nada coincide con este filtro.':'Sé el primero en publicar en esta categoría.');
+    return;
+  }
   el.innerHTML=list.map(prodCardHtml).join('');
   wireAdminRemove(el);
 }
 
 let clasFilter='all';
 let clasColonia='';
+let clasSearch='';
 function setClasColonia(v){clasColonia=v.trim();renderClasificados();}
+function setClasSearch(v){clasSearch=v.trim().toLowerCase();renderClasificados();}
 function renderClasChips(){
   const personales=TIENDA.filter(x=>x.sellerType==='personal');
   const cats=['all',...new Set(personales.map(x=>x.cat))];
-  document.getElementById('clas-chips').innerHTML=cats.map(c=>
-    `<button class="chip${c===clasFilter?' on':''}" onclick="setClasFilter('${c}')">${c==='all'?'Todo':c}</button>`
-  ).join('');
+  const sel=document.getElementById('clas-cat-select');
+  if(!sel)return;
+  const prev=cats.includes(clasFilter)?clasFilter:'all';
+  sel.innerHTML=cats.map(c=>`<option value="${c}">${c==='all'?'Todas':e(c)}</option>`).join('');
+  sel.value=prev;
+  clasFilter=prev;
 }
-function setClasFilter(c){clasFilter=c;renderClasChips();renderClasificados();}
+function setClasFilter(c){clasFilter=c;renderClasificados();}
 function renderClasificados(){
-  const list=TIENDA.filter(x=>x.sellerType==='personal'&&(clasFilter==='all'||x.cat===clasFilter)&&(!clasColonia||x.colonia===clasColonia));
+  const list=TIENDA.filter(x=>x.sellerType==='personal'
+    &&(clasFilter==='all'||x.cat===clasFilter)
+    &&(!clasColonia||x.colonia===clasColonia)
+    &&(!clasSearch||x.name.toLowerCase().includes(clasSearch)));
   const el=document.getElementById('clas-grid');
-  if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar algo por aquí.');return;}
+  if(!list.length){
+    const filtered=clasFilter!=='all'||clasColonia||clasSearch;
+    el.innerHTML=emptyState('tienda','Nada por aquí todavía',filtered?'Nada coincide con este filtro.':'Sé el primero en publicar algo por aquí.');
+    return;
+  }
   el.innerHTML=list.map(prodCardHtml).join('');
   wireAdminRemove(el);
 }
