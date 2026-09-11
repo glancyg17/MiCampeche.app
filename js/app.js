@@ -656,6 +656,24 @@ function renderBottomNav(){
 
 let curScreen='inicio';        // the actual visible .scr (tabs AND detail screens)
 let mcScreenStack=[];          // breadcrumb trail for the hardware back button
+/* Umami tracks real URL changes automatically, but this whole app lives on
+   one URL — every screen change is JS state, not navigation. This computes
+   a virtual path/title for whatever's on screen right now, called from
+   nav() and the three sub-tab switchers (setTiendaMode/setAnunciosMode/
+   setReportarMode) so "top pages" in Umami actually means something. */
+function analyticsPageInfo(){
+  if(curScreen==='tienda')return {path:'/comercio/'+tiendaMode,title:'Comercio · '+tiendaMode};
+  if(curScreen==='anuncios')return {path:'/anuncios/'+anunciosMode,title:'Anuncios · '+anunciosMode};
+  if(curScreen==='reportar')return {path:'/vecinos/'+reportarMode,title:'Vecinos · '+reportarMode};
+  return {path:'/'+curScreen,title:curScreen};
+}
+function trackPage(){
+  try{
+    if(typeof umami==='undefined')return;
+    const info=analyticsPageInfo();
+    umami.track(props=>({...props,url:info.path,title:info.title}));
+  }catch(e){}
+}
 function nav(tab,fromBack){
   document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));
   const target=document.getElementById('scr-'+tab);
@@ -683,6 +701,7 @@ function nav(tab,fromBack){
   }
   curScreen=tab;
   mcSyncBackTrap();
+  trackPage();
 }
 
 /* ══════════════ HARDWARE BACK BUTTON (Android / installed PWA) ══════════════
@@ -1269,7 +1288,7 @@ function setAnunciosMode(mode){
   document.getElementById('anuncios-empleos').style.display=mode==='empleos'?'block':'none';
   document.getElementById('anuncios-alertas').style.display=mode==='alertas'?'block':'none';
   document.getElementById('anuncios-fab').style.display=mode==='alertas'?'none':'flex';
-  if(curScreen==='anuncios')maybeShowTipGate(mode);
+  if(curScreen==='anuncios'){maybeShowTipGate(mode);trackPage();}
 }
 
 let tiendaMode='mercado';
@@ -1282,7 +1301,7 @@ function setTiendaMode(mode){
   document.getElementById('tienda-fab').style.display=mode==='mandaditos'?'none':'flex';
   document.getElementById('tienda-fab').onclick=function(){openPost(mode==='mercado'?'producto':'clasificado');};
   if(mode==='mandaditos')refreshMandaditoTabCta();
-  if(curScreen==='tienda')maybeShowTipGate(mode);
+  if(curScreen==='tienda'){maybeShowTipGate(mode);trackPage();}
 }
 
 /* Shared card markup for both Mercado and Clasificados grids — same visual
@@ -1642,7 +1661,7 @@ function setReportarMode(mode){
   document.getElementById('reportar-reportes').style.display=mode==='reportes'?'block':'none';
   document.getElementById('reportar-avisos').style.display=mode==='avisos'?'block':'none';
   document.getElementById('reportar-perdidos').style.display=mode==='perdidos'?'block':'none';
-  if(curScreen==='reportar')maybeShowTipGate(mode);
+  if(curScreen==='reportar'){maybeShowTipGate(mode);trackPage();}
 }
 let repFilter='all';
 let repColonia='';
