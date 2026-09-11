@@ -627,7 +627,7 @@ MC.fetchEventos=async function(){
     const hasRange=r.end_date&&r.end_date!==r.event_date;
     return {
       id:r.id,cat:r.category||'Otro',name:r.title,ds:r.event_date,endDs:r.end_date||r.event_date,day,mon,
-      time:r.event_time||'',loc:r.location||'',
+      time:r.event_time||'',loc:r.location||'',colonia:r.colonia||'',
       desc:r.description||'',img:r.image_url||'',
       website:r.website||'',phone:r.contact_phone||'',
       price:(r.price_text||'').trim(),
@@ -652,7 +652,7 @@ MC.fetchTienda=async function(){
   }));
   const personales=(clas.data||[]).map(r=>({
     id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
-    seller:(r.profiles&&r.profiles.display_name)||'Vecino',img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:false,sellerType:'personal',
+    seller:(r.profiles&&r.profiles.display_name)||'Vecino',img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:false,colonia:r.colonia,sellerType:'personal',
     desc:r.description||'',condition:r.item_condition||'nuevo',availability:'ahora',leadTime:'',
     fulfillment:r.fulfillment||'',zone:r.zone||'',phone:r.contact_phone||'',contactMethods:r.contact_methods||[]
   }));
@@ -812,7 +812,7 @@ MC.fetchPerdidos=async function(){
   const {data,error}=await sb.from('perdidos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,tag:r.report_type,name:r.title,desc:r.description||'',loc:r.location||'',img:r.image_url||'',
+  return data.map(r=>({id:r.id,tag:r.report_type,name:r.title,desc:r.description||'',loc:r.location||'',colonia:r.colonia||'',img:r.image_url||'',
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
 };
 
@@ -847,7 +847,7 @@ MC.fetchEmpleos=async function(){
   const {data,error}=await sb.from('empleos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,title:r.title,co:r.company||'',pay:r.pay||'A convenir',tags:r.tags||[],desc:r.description||'',
+  return data.map(r=>({id:r.id,title:r.title,co:r.company||'',pay:r.pay||'A convenir',tags:r.tags||[],desc:r.description||'',colonia:r.colonia||'',
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
 };
 
@@ -878,7 +878,7 @@ MC.fetchReportes=async function(){
     const total=countsById[r.id]||0;
     const iVotedResolved=myResolveVotes.has(r.id);
     const resolveTotal=resolveCountsById[r.id]||0;
-    return {id:r.id,cat:r.category||'Otro',title:r.title,loc:r.location_text||'',desc:r.description||'',
+    return {id:r.id,cat:r.category||'Otro',title:r.title,loc:r.location_text||'',loc_colonia:r.colonia||'',desc:r.description||'',
       confirms:iConfirmed?Math.max(0,total-1):total,status:r.resolved?'resuelto':'abierto',
       // net of my own vote, same "base count + 1 if me" convention as confirms
       resolveVotes:iVotedResolved?Math.max(0,resolveTotal-1):resolveTotal,
@@ -891,7 +891,7 @@ MC.fetchAvisos=async function(){
   const {data,error}=await sb.from('avisos').select('*, profiles(display_name)')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',img:r.image_url||'',
+  return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',img:r.image_url||'',colonia:r.colonia||'',
     author:r.anonymous?'Vecino anónimo':((r.profiles&&r.profiles.display_name)||'Vecino'),
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[],
     time:relTimeEs(r.created_at)}));

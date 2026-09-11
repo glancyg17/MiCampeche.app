@@ -168,6 +168,9 @@
           <div class="of-hdr-txt">Publicado por vecinos de Campeche — un artículo por persona</div>
         </div>
         <div class="chiprow" id="clas-chips"></div>
+        <div class="filter-row">
+          <input class="fi" id="clas-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setClasColonia(this.value)">
+        </div>
         <div class="tienda-grid" id="clas-grid"></div>
       </div>
       <div id="tienda-mandaditos" style="display:none">
@@ -194,9 +197,15 @@
       <div id="anuncios-eventos">
         <div class="chiprow" id="evt-date-chips"></div>
         <div class="chiprow" id="evt-chips"></div>
+        <div class="filter-row">
+          <input class="fi" id="evt-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setEvtColonia(this.value)">
+        </div>
         <div class="evt-list" id="evt-list"></div>
       </div>
       <div id="anuncios-empleos" style="display:none">
+        <div class="filter-row">
+          <input class="fi" id="emp-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setEmpColonia(this.value)">
+        </div>
         <div class="job-list" id="job-list"></div>
       </div>
       <div id="anuncios-alertas" style="display:none">
@@ -220,14 +229,23 @@
         <div class="of-hdr">
           <div class="of-hdr-txt">Avisos de la comunidad · un aviso por persona al día</div>
         </div>
+        <div class="filter-row">
+          <input class="fi" id="av-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setAvColonia(this.value)">
+        </div>
         <div class="av-list" id="av-list"></div>
       </div>
       <div id="reportar-reportes" style="display:none">
         <div class="chiprow" id="rep-chips"></div>
+        <div class="filter-row">
+          <input class="fi" id="rep-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setRepColonia(this.value)">
+        </div>
         <div class="rep-list" id="rep-list"></div>
       </div>
       <div id="reportar-perdidos" style="display:none">
         <div class="chiprow" id="pf-chips"></div>
+        <div class="filter-row">
+          <input class="fi" id="pf-colonia-filter" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setPfColonia(this.value)">
+        </div>
         <div class="pf-list" id="pf-list"></div>
       </div>
       <button class="fab" id="reportar-fab" onclick="openPost(reportarMode==='reportes'?'reportar':(reportarMode==='perdidos'?'perdidos':'avisos'))"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>

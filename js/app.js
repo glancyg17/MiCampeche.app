@@ -1101,6 +1101,8 @@ function setTipsEnabled(on){
 
 /* ══════════════ RENDER: EVENTOS (sub-view inside Anuncios) ══════════════ */
 let evtFilter='all';
+let evtColonia='';
+function setEvtColonia(v){evtColonia=v.trim();renderEventos();}
 let evtDateFilter='all';
 function renderEvtChips(){
   const cats=['all',...new Set(EVENTOS.map(x=>x.cat))];
@@ -1145,7 +1147,7 @@ function evtInDateRange(x){
 }
 function renderEventos(){
   renderEvtDateChips();
-  const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&evtInDateRange(x));
+  const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&(!evtColonia||x.colonia===evtColonia)&&evtInDateRange(x));
   const el=document.getElementById('evt-list');
   if(!list.length){
     const sub=(evtFilter!=='all'||evtDateFilter!=='all')
@@ -1368,6 +1370,8 @@ function renderMercado(){
 }
 
 let clasFilter='all';
+let clasColonia='';
+function setClasColonia(v){clasColonia=v.trim();renderClasificados();}
 function renderClasChips(){
   const personales=TIENDA.filter(x=>x.sellerType==='personal');
   const cats=['all',...new Set(personales.map(x=>x.cat))];
@@ -1377,7 +1381,7 @@ function renderClasChips(){
 }
 function setClasFilter(c){clasFilter=c;renderClasChips();renderClasificados();}
 function renderClasificados(){
-  const list=TIENDA.filter(x=>x.sellerType==='personal'&&(clasFilter==='all'||x.cat===clasFilter));
+  const list=TIENDA.filter(x=>x.sellerType==='personal'&&(clasFilter==='all'||x.cat===clasFilter)&&(!clasColonia||x.colonia===clasColonia));
   const el=document.getElementById('clas-grid');
   if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar algo por aquí.');return;}
   el.innerHTML=list.map(prodCardHtml).join('');
@@ -1538,9 +1542,13 @@ function renderOfertas(){
   wireAdminRemove(el);
 }
 
+let empColonia='';
+function setEmpColonia(v){empColonia=v.trim();renderEmpleos();}
 function renderEmpleos(){
+  const list=EMPLEOS.filter(x=>!empColonia||x.colonia===empColonia);
   const el=document.getElementById('job-list');
-  el.innerHTML=EMPLEOS.map(x=>`
+  if(!list.length){el.innerHTML=emptyState('empleos','Nada por aquí todavía','No hay vacantes en esta colonia por ahora.');return;}
+  el.innerHTML=list.map(x=>`
     <div class="job-card" style="cursor:pointer" onclick="openEmpleo('${x.id}')" ${admRm('empleos',x.id,x.title)}>
       <div class="job-top"><div class="job-title">${e(x.title)}</div><div class="job-pay">${e(x.pay)}</div></div>
       ${x.co?`<div class="job-co">${e(x.co)}</div>`:''}
@@ -1571,6 +1579,8 @@ function openEmpleo(id){
 
 /* ══════════════ RENDER: PERDIDOS (full page) ══════════════ */
 let pfFilter='all';
+let pfColonia='';
+function setPfColonia(v){pfColonia=v.trim();renderPerdidos();}
 function renderPfChips(){
   const opts=[['all','Todos'],['perdido','Perdidos'],['encontrado','Encontrados']];
   document.getElementById('pf-chips').innerHTML=opts.map(([v,l])=>
@@ -1579,7 +1589,7 @@ function renderPfChips(){
 }
 function setPfFilter(v){pfFilter=v;renderPfChips();renderPerdidos();}
 function renderPerdidos(){
-  const list=PERDIDOS.filter(x=>pfFilter==='all'||x.tag===pfFilter);
+  const list=PERDIDOS.filter(x=>(pfFilter==='all'||x.tag===pfFilter)&&(!pfColonia||x.colonia===pfColonia));
   const el=document.getElementById('pf-list');
   if(!list.length){el.innerHTML=emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
   el.innerHTML=list.map(x=>`
@@ -1608,6 +1618,8 @@ function setReportarMode(mode){
   if(curScreen==='reportar')maybeShowTipGate(mode);
 }
 let repFilter='all';
+let repColonia='';
+function setRepColonia(v){repColonia=v.trim();renderReportes();}
 const confirmedByMe={};
 const resolvedByMe={};
 function renderRepChips(){
@@ -1618,7 +1630,7 @@ function renderRepChips(){
 }
 function setRepFilter(c){repFilter=c;renderRepChips();renderReportes();}
 function renderReportes(){
-  const list=REPORTES.filter(x=>repFilter==='all'||x.cat===repFilter);
+  const list=REPORTES.filter(x=>(repFilter==='all'||x.cat===repFilter)&&(!repColonia||x.loc_colonia===repColonia));
   const el=document.getElementById('rep-list');
   if(!list.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
   el.innerHTML=list.map(x=>{
@@ -1691,10 +1703,13 @@ async function toggleResolveVote(id){
     renderReportes();
   }
 }
+let avColonia='';
+function setAvColonia(v){avColonia=v.trim();renderAvisos();}
 function renderAvisos(){
+  const list=AVISOS.filter(a=>!avColonia||a.colonia===avColonia);
   const el=document.getElementById('av-list');
-  if(!AVISOS.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía','Sé el primero en publicar un aviso para tus vecinos.');return;}
-  el.innerHTML=AVISOS.map(a=>`
+  if(!list.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía',avColonia?'No hay avisos en esta colonia por ahora.':'Sé el primero en publicar un aviso para tus vecinos.');return;}
+  el.innerHTML=list.map(a=>`
     <div class="av-card" ${admRm('avisos',a.id,a.title)}>
       <div class="av-top"><span class="av-cat">${e(a.cat)}</span><span class="av-time">${a.time}</span></div>
       <div class="av-main">
