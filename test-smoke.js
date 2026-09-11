@@ -202,7 +202,7 @@ const SAMPLE = {
   avisos: [
     // av1: the test user's own REJECTED aviso — drives the "no aprobadas"
     // count badge and the rejection-reason surfacing in Mis publicaciones.
-    { id: 'av1', category: 'Comunidad', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', status: 'rejected', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' },
+    { id: 'av1', category: 'Comunidad', colonia: 'San Román', title: 'Aviso test', description: 'desc', contact_info: '981 000 0000', status: 'rejected', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' }, rejection_reason: 'La descripción no es clara' },
     // av2: the same user's PUBLISHED aviso — so Mis publicaciones spans
     // more than one status (and, with pf2, more than one table). Carries
     // an image_url (avisos.image_url is a new column) to exercise the
@@ -1219,6 +1219,7 @@ const fakeClient = {
     // to run in the auth context they now actually require.
     await window.openPost('avisos');
     doc.getElementById('pf-title').value = 'Prueba de envío';
+    doc.getElementById('pf-colonia').value = 'San Román';
     doc.getElementById('pf-desc').value = 'Contenido de prueba';
     // contact + anon are opt-in toggles now — a plain aviso attaches neither
     delete lastInsert.avisos;
@@ -1230,6 +1231,7 @@ const fakeClient = {
     // Now opt into both: anonymous, and a contact number with chosen channels.
     await window.openPost('avisos');
     doc.getElementById('pf-title').value = 'Vieron a esta persona';
+    doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-anon .seg-btn[data-v="si"]'));
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
     doc.getElementById('pf-contact_phone').value = '981 111 2222';
@@ -1278,6 +1280,7 @@ const fakeClient = {
       await new Promise(r => setTimeout(r, 100));
     }
     doc.getElementById('pf-title').value = 'Aviso con foto';
+    doc.getElementById('pf-colonia').value = 'San Román';
     doc.getElementById('pf-desc').value = 'Descripción con foto adjunta';
     delete lastInsert.avisos;
     await window.submitPost('avisos');
@@ -1309,6 +1312,7 @@ const fakeClient = {
     assert(!!clickedSelCell && clickedSelCell.textContent.trim() === '1', 'picking a day cell in the rendered calendar marks it selected');
     doc.getElementById('pf-name').value = 'Evento con fecha pasada';
     doc.getElementById('pf-loc').value = 'Centro';
+    doc.getElementById('pf-colonia').value = 'San Román';
     delete lastInsert.eventos;
     await window.submitPost('eventos');
     await new Promise(r => setTimeout(r, 20));
@@ -1372,6 +1376,7 @@ const fakeClient = {
     forcedErrors.insert.avisos = { code: '23505', message: 'duplicate key value violates unique constraint "one_aviso_per_person_per_day"' };
     await window.openPost('avisos');
     doc.getElementById('pf-title').value = 'Segundo aviso';
+    doc.getElementById('pf-colonia').value = 'San Román';
     await window.submitPost('avisos');
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Ya publicaste un aviso hoy — puedes publicar otro mañana.', 'duplicate-submission error (through the REAL MC.submitAviso) maps to the correct friendly Spanish toast, not a generic one');
@@ -1382,6 +1387,7 @@ const fakeClient = {
     // unselected, so the poster picks the channels they want.
     await window.openPost('perdidos');
     doc.getElementById('pf-name').value = 'Gato perdido de prueba';
+    doc.getElementById('pf-colonia').value = 'San Román';
     assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 0, 'Perdidos: contact-method pills start unselected');
     doc.querySelectorAll('#pf-contact_methods .mchip').forEach(c => window.multiPick(c)); // pick all three
     delete lastInsert.perdidos;
@@ -1393,6 +1399,7 @@ const fakeClient = {
     // …but toggling it off attaches no contact at all.
     await window.openPost('perdidos');
     doc.getElementById('pf-name').value = 'Reporte sin contacto';
+    doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
     delete lastInsert.perdidos;
     await window.submitPost('perdidos');
@@ -1403,6 +1410,7 @@ const fakeClient = {
     await window.openPost('empleos');
     doc.getElementById('pf-title').value = 'Se busca ayudante';
     doc.getElementById('pf-co').value = '';
+    doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
     delete lastInsert.empleos;
     await window.submitPost('empleos');
@@ -1412,6 +1420,7 @@ const fakeClient = {
     // …and with the toggle on, an empleo carries the phone + chosen channels.
     await window.openPost('empleos');
     doc.getElementById('pf-title').value = 'Se busca cajero';
+    doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="si"]'));
     doc.getElementById('pf-contact_phone').value = '981 444 5555';
     // Pills start unselected now — pick WhatsApp + SMS, leave Llamada off.
@@ -1454,6 +1463,7 @@ const fakeClient = {
     doc.getElementById('pf-name').value = 'Taco Loco';
     doc.getElementById('pf-desc').value = 'Tacos al pastor y de canasta, para llevar';
     doc.getElementById('pf-address').value = 'Calle 10 #123';
+    doc.getElementById('pf-colonia').value = 'San Román';
     doc.getElementById('pf-phone').value = '981 555 0000';
     doc.getElementById('pf-cat').value = 'Comida/Bebida';
     doc.getElementById('pf-hours').value = 'Lun-Sáb 9am-8pm';
@@ -1651,6 +1661,7 @@ const fakeClient = {
     doc.getElementById('pf-name').value = 'Taco Loco 3';
     doc.getElementById('pf-desc').value = 'Tercera sucursal';
     doc.getElementById('pf-address').value = 'Calle 30';
+    doc.getElementById('pf-colonia').value = 'San Román';
     doc.getElementById('pf-phone').value = '981 000 9999';
     doc.getElementById('pf-cat').value = 'Comida/Bebida';
     delete lastInsert.businesses;
@@ -1680,6 +1691,7 @@ const fakeClient = {
     doc.getElementById('pf-name').value = 'Taco Loco Admin';
     doc.getElementById('pf-desc').value = 'Sin pago';
     doc.getElementById('pf-address').value = 'Calle 40';
+    doc.getElementById('pf-colonia').value = 'San Román';
     doc.getElementById('pf-phone').value = '981 000 1234';
     doc.getElementById('pf-cat').value = 'Comida/Bebida';
     delete lastInsert.businesses;
@@ -1778,6 +1790,7 @@ const fakeClient = {
       await attachListingPhoto();
       window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]')); // pills start unselected now — pick one so the phone-required guard is what bites below
       doc.getElementById('pf-name').value = 'Bici de montaña';
+      doc.getElementById('pf-colonia').value = 'San Román';
       doc.getElementById('pf-contact_phone').value = '';
       delete lastInsert.clasificados;
       await window.submitPost('clasificado');
@@ -1786,13 +1799,12 @@ const fakeClient = {
       assert(!lastInsert.clasificados, 'the blocked clasificado never reached Supabase');
 
       doc.getElementById('pf-contact_phone').value = '981 222 3333';
-      doc.getElementById('pf-zone').value = 'San Román';
       window.segPick(doc.querySelector('#pf-fulfillment .seg-btn[data-v="recoger"]'));
       window.segPick(doc.querySelector('#pf-item_condition .seg-btn[data-v="usado"]'));
       await window.submitPost('clasificado');
       await new Promise(r => setTimeout(r, 20));
       const c = lastInsert.clasificados;
-      assert(!!c && c.contact_phone === '981 222 3333' && c.zone === 'San Román' && c.fulfillment === 'recoger' && c.item_condition === 'usado',
+      assert(!!c && c.contact_phone === '981 222 3333' && c.colonia === 'San Román' && c.fulfillment === 'recoger' && c.item_condition === 'usado',
         'the clasificado transaction + contact fields are all sent');
       assert(text('toast') === 'Enviado — en revisión antes de publicarse ✓', 'a complete clasificado submits successfully');
     }
@@ -2189,6 +2201,7 @@ const fakeClient = {
     await window.openPost('eventos');
     doc.getElementById('pf-name').value = 'Evento sin destacar';
     doc.getElementById('pf-loc').value = 'Centro';
+    doc.getElementById('pf-colonia').value = 'San Román';
     delete lastInsert.eventos;
     window.sessionStorage.removeItem('mc_pending_evento_feature');
     await window.submitPost('eventos');
@@ -2219,6 +2232,7 @@ const fakeClient = {
     await window.openPost('eventos');
     doc.getElementById('pf-name').value = 'Evento destacado';
     doc.getElementById('pf-loc').value = 'Centro';
+    doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-want_feature .seg-btn[data-v="si"]'));
     const featureCell = doc.querySelector('#pf-feature_start .slot-day:not(.full)');
     assert(!!featureCell, 'the feature-window calendar rendered at least one available start day');
@@ -2248,6 +2262,7 @@ const fakeClient = {
     await window.openPost('eventos');
     doc.getElementById('pf-name').value = 'Evento destacado admin';
     doc.getElementById('pf-loc').value = 'Centro';
+    doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-want_feature .seg-btn[data-v="si"]'));
     window.pickFeatureDay(doc.querySelector('#pf-feature_start .slot-day:not(.full)'), false);
     delete lastInsert.eventos;

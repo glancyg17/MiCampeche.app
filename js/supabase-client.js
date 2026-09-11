@@ -301,7 +301,7 @@ MC.cancelBusinessPremiumUpgrade=async function(businessId){
    the 'si'/'no' string from the seg control. */
 function businessPayloadFromForm(d){
   return {
-    business_name:d.name,description:d.desc,address:d.address,phone:d.phone,category:d.cat,
+    business_name:d.name,description:d.desc,address:d.address,colonia:d.colonia,phone:d.phone,category:d.cat,
     business_image_url:d.photo||null,hours:d.hours||null,social_url:d.social||null,rfc:d.rfc||null,
     payment_methods:Array.isArray(d.payment_methods)?d.payment_methods:[],
     delivers:d.delivers===true||d.delivers==='si',
@@ -426,17 +426,17 @@ const CONTENT_TABLES=[
    decides, instead of approving/rejecting blind. */
 const MODERATION_DETAIL_FIELDS={
   noticias:[], // rendered by renderNoticiaModerationFields() in app.js instead — needs an editable summary box, not just a field dump
-  eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['price_text','Precio'],['website','Sitio web'],['contact_phone','Tel. de contacto'],['description','Descripción'],['image_url','Imagen']],
+  eventos:[['title','Título'],['category','Categoría'],['event_date','Fecha'],['event_time','Hora'],['location','Ubicación'],['colonia','Colonia'],['price_text','Precio'],['website','Sitio web'],['contact_phone','Tel. de contacto'],['description','Descripción'],['image_url','Imagen']],
   productos:[['title','Producto'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['availability','Disponibilidad'],['lead_time','Anticipación'],['fulfillment','Entrega'],['description','Descripción'],['image_urls','Imágenes'],['seller_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['featured','Destacado']],
-  clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['zone','Zona'],['fulfillment','Entrega'],['description','Descripción'],['image_urls','Imágenes'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
+  clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['colonia','Colonia'],['fulfillment','Entrega'],['description','Descripción'],['image_urls','Imágenes'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   ofertas:[['title','Oferta'],['business_name_snapshot','Negocio'],['description','Descripción'],['terms','Condiciones'],['price_was','Precio normal'],['price_now','Precio con descuento'],['quantity_total','Cantidad disponible'],['image_url','Imagen']],
-  perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['description','Descripción'],['image_url','Imagen'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
-  empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['description','Descripción'],['tags','Etiquetas'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
-  reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['description','Descripción'],['image_url','Imagen']],
-  avisos:[['title','Título'],['category','Categoría'],['description','Mensaje'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['anonymous','Anónimo']],
+  perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['colonia','Colonia'],['description','Descripción'],['image_url','Imagen'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
+  empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['colonia','Colonia'],['description','Descripción'],['tags','Etiquetas'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
+  reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['colonia','Colonia'],['description','Descripción'],['image_url','Imagen']],
+  avisos:[['title','Título'],['category','Categoría'],['colonia','Colonia'],['description','Mensaje'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['anonymous','Anónimo']],
   alertas:[['title','Título'],['alert_type','Tipo'],['zone','Zona'],['description','Descripción'],['source','Fuente']],
   mandaditos:[['display_name','Nombre'],['phone','Teléfono'],['vehicle_type','Vehículo'],['zona','Zona'],['description','Descripción'],['image_url','Foto']],
-  businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC'],['payment_methods','Métodos de pago'],['delivers','Entrega a domicilio'],['delivery_info','Zonas y costo de entrega'],['pickup_address','Dirección para recoger']]
+  businesses:[['business_name','Nombre del negocio'],['description','Descripción'],['business_image_url','Logo o foto'],['address','Dirección'],['colonia','Colonia'],['phone','Teléfono'],['category','Categoría'],['hours','Horario'],['social_url','Red social / sitio web'],['rfc','RFC'],['payment_methods','Métodos de pago'],['delivers','Entrega a domicilio'],['delivery_info','Zonas y costo de entrega'],['pickup_address','Dirección para recoger']]
 };
 
 MC.fetchPendingQueue=async function(){
@@ -646,7 +646,7 @@ MC.fetchTienda=async function(){
   if(clas.error)console.error(clas.error);
   const negocios=(prod.data||[]).map(r=>({
     id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
-    seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,discountActive:!!r.discount_active,discountPrice:r.discount_price_text||(r.discount_price_mxn!=null?fmtMXN(r.discount_price_mxn):''),sellerType:'negocio',
+    seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,discountActive:!!r.discount_active,discountPrice:r.discount_price_text||(r.discount_price_mxn!=null?fmtMXN(r.discount_price_mxn):''),colonia:r.colonia,sellerType:'negocio',
     desc:r.description||'',condition:r.item_condition||'nuevo',availability:r.availability||'ahora',leadTime:r.lead_time||'',
     fulfillment:r.fulfillment||'',phone:r.seller_phone||'',contactMethods:r.contact_methods||[]
   }));
@@ -927,14 +927,14 @@ function defaultContactMethods(d){
 const CONTENT_PAYLOAD={
   eventos:(d)=>({
     title:d.name,category:d.cat||null,event_date:d.date||null,event_time:d.time||null,
-    location:d.loc||null,description:d.desc||null,image_url:d.photo||null,
+    location:d.loc||null,colonia:d.colonia||null,description:d.desc||null,image_url:d.photo||null,
     website:(d.website||'').trim()||null,contact_phone:(d.phone||'').trim()||null,
     price_text:(d.price||'').trim()||null
   }),
-  avisos:(d)=>({category:d.cat||null,title:d.title,description:d.desc||null,image_url:d.photo||null,...optContactFields(d),anonymous:d.anon==='si'}),
-  empleos:(d)=>({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,description:d.desc||null,...optContactFields(d)}),
-  perdidos:(d)=>({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d)}),
-  reportes:(d)=>({category:d.cat||null,title:d.title,location_text:d.loc||null,description:d.desc||null,image_url:d.photo||null}),
+  avisos:(d)=>({category:d.cat||null,colonia:d.colonia||null,title:d.title,description:d.desc||null,image_url:d.photo||null,...optContactFields(d),anonymous:d.anon==='si'}),
+  empleos:(d)=>({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,colonia:d.colonia||null,description:d.desc||null,...optContactFields(d)}),
+  perdidos:(d)=>({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,colonia:d.colonia||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d)}),
+  reportes:(d)=>({category:d.cat||null,title:d.title,location_text:d.loc||null,colonia:d.colonia||null,description:d.desc||null,image_url:d.photo||null}),
   productos:(d)=>{
     const onOrder=d.availability==='pedido';
     return {
@@ -948,7 +948,7 @@ const CONTENT_PAYLOAD={
   clasificados:(d)=>({
     title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),price_text:d.price||null,
     description:d.desc||null,image_urls:Array.isArray(d.photo)?d.photo:[],
-    fulfillment:d.fulfillment||null,zone:d.zone||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
+    fulfillment:d.fulfillment||null,colonia:d.colonia||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
     contact_phone:d.contact_phone||null,contact_methods:defaultContactMethods(d)
   }),
   mandaditos:(d)=>({

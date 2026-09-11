@@ -1349,6 +1349,8 @@ function openProdView(sellerType,id){
 }
 
 let mktFilter='all';
+let mktColonia='';
+function setMktColonia(v){mktColonia=v.trim();renderMercado();}
 function renderMktChips(){
   const negocios=TIENDA.filter(x=>x.sellerType==='negocio');
   const cats=['all',...new Set(negocios.map(x=>x.cat))];
@@ -1358,7 +1360,7 @@ function renderMktChips(){
 }
 function setMktFilter(c){mktFilter=c;renderMktChips();renderMercado();}
 function renderMercado(){
-  const list=TIENDA.filter(x=>x.sellerType==='negocio'&&(mktFilter==='all'||x.cat===mktFilter));
+  const list=TIENDA.filter(x=>x.sellerType==='negocio'&&(mktFilter==='all'||x.cat===mktFilter)&&(!mktColonia||x.colonia===mktColonia));
   const el=document.getElementById('mkt-grid');
   if(!list.length){el.innerHTML=emptyState('tienda','Nada por aquí todavía','Sé el primero en publicar en esta categoría.');return;}
   el.innerHTML=list.map(prodCardHtml).join('');
@@ -1779,6 +1781,7 @@ const POST_FORMS={
     {k:'date',lbl:'Fecha',type:'monthcal'},
     {k:'time',lbl:'Hora',type:'time'},
     {k:'loc',lbl:'Lugar',type:'text',ph:'Dirección o punto de referencia'},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'price',lbl:'Precio de entrada',type:'text',ph:'Ej. Gratis, $150, $150–$300',note:'Opcional — déjalo en blanco si no aplica.'},
     {k:'website',lbl:'Sitio web o página del evento',type:'url',ph:'https://...',note:'Opcional — página oficial, boletos o red social del evento.'},
     {k:'phone',lbl:'Teléfono de contacto',type:'tel',ph:'981 000 0000',note:'Opcional — se muestra como botón de llamada y WhatsApp.'},
@@ -1808,7 +1811,7 @@ const POST_FORMS={
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'money',ph:'150'},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega'],['ambos','Ambos']]},
-    {k:'zone',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',note:'Los interesados te contactarán a este número por los medios que elijas.'},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.'},
     {k:'photo',lbl:'Fotos del artículo',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista.'},
@@ -1823,7 +1826,8 @@ const POST_FORMS={
   perdidos:{title:'Reportar perdido o encontrado',fields:[
     {k:'tag',lbl:'Tipo de reporte',type:'seg',opts:[['perdido','Perdido'],['encontrado','Encontrado']]},
     {k:'name',lbl:'¿Qué se perdió / encontró?',type:'text',ph:'Ej. Gato atigrado'},
-    {k:'loc',lbl:'Zona',type:'text',ph:'Colonia o punto de referencia'},
+    {k:'loc',lbl:'Punto de referencia',type:'text',ph:'Ej. Cerca del parque, frente a la tienda...'},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'photo',lbl:'Foto',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles que ayuden a identificarlo...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','No hace falta']]},
@@ -1834,6 +1838,7 @@ const POST_FORMS={
     {k:'title',lbl:'Puesto',type:'text',ph:'Ej. Mesero(a) con experiencia'},
     {k:'co',lbl:'Negocio (opcional)',type:'text',ph:'Ej. Repostería Tsuk Tun, o "restaurante concurrido en el Centro"'},
     {k:'pay',lbl:'Pago',type:'text',ph:'Ej. $350/día + propinas'},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Requisitos, horario...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','En la descripción']]},
     {k:'contact_phone',lbl:'Número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Quien busca trabajo te contactará por los medios que elijas.'},
@@ -1842,12 +1847,14 @@ const POST_FORMS={
   reportar:{title:'Reportar un problema',fields:[
     {k:'cat',lbl:'Tipo de problema',type:'select',opts:['Bache','Semáforo','Árbol caído','Alumbrado','Fuga de agua','Basura acumulada','Otro']},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Bache grande sobre Calle 10'},
-    {k:'loc',lbl:'Ubicación',type:'text',ph:'Calle, colonia o punto de referencia'},
+    {k:'loc',lbl:'Ubicación',type:'text',ph:'Calle o punto de referencia'},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'photo',lbl:'Foto del problema',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más sobre el problema...'}
   ]},
   avisos:{title:'Publicar un aviso',note:'Un aviso por persona al día. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
     {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Mascotas','Eventos vecinales','Otro']},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Buscamos a un familiar'},
     {k:'photo',lbl:'Foto (opcional)',type:'imgupload'},
     {k:'desc',lbl:'Mensaje',type:'textarea',ph:'Cuenta los detalles a tus vecinos...'},
@@ -1870,7 +1877,8 @@ const POST_FORMS={
     {k:'name',lbl:'Nombre del negocio',type:'text',ph:'Ej. Repostería Tsuk Tun'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'¿Qué venden o qué servicio ofrecen?'},
     {k:'photo',lbl:'Logo o foto del negocio',type:'imgupload'},
-    {k:'address',lbl:'Dirección',type:'text',ph:'Calle, número, colonia'},
+    {k:'address',lbl:'Dirección',type:'text',ph:'Calle y número'},
+    {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'phone',lbl:'Teléfono del negocio',type:'tel',ph:'981 000 0000'},
     {k:'payment_methods',lbl:'Métodos de pago que aceptas',type:'multi',opts:[['efectivo','Efectivo'],['transferencia','Transferencia'],['terminal','Terminal']],def:[]},
     {k:'delivers',lbl:'¿Entregas a domicilio?',type:'seg',opts:[['no','No'],['si','Sí']]},
@@ -1943,6 +1951,7 @@ async function openPost(kind){
       h+=`<div id="pf-${f.k}-cal">${monthCalHtml(f.k)}</div>`;
     }
     else if(f.type==='money')h+=`<div class="fi-money-wrap"><span class="fi-money-prefix">$</span><input class="fi fi-money" id="pf-${f.k}" type="text" inputmode="decimal" placeholder="${f.ph||''}"></div>`;
+    else if(f.type==='colonia')h+=`<input class="fi" id="pf-${f.k}" type="text" list="colonia-datalist" autocomplete="off" placeholder="${f.ph||'Escribe tu colonia...'}">`;
     else if(f.type==='imgupload-multi')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else if(f.type==='imgupload')h+=`<div id="pf-${f.k}-wrap"></div>`;
     else h+=`<input class="fi" id="pf-${f.k}" type="${f.type}" placeholder="${f.ph||''}">`;
@@ -2248,6 +2257,7 @@ async function openMandaditoBoost(){
    applyPostEditFill() for a self-edit. */
 let monthCalView={};
 let monthCalSelected={};
+const CAMPECHE_COLONIAS=["18 de Marzo","20 de Noviembre","2da Ampliación Kalá","4 Caminos","Adolfo López Mateos (SUTERM)","Ah-kim-pech","Alameda","Altamira","Altavista","Ampliación Ciudad Concordia","Ampliación Esperanza","Ampliación Invasión Esperanza","Ampliación Jardines","Ampliación Josefa Ortiz de Domínguez","Ampliación Kalá","Ampliación Polvorín I","Ampliación Polvorín II","Ampliación San Antonio","Ampliación San Rafael","Aviación","Belén I","Belén II","Bellavista","Bello Horizonte","Benito Juárez","Bicentenario I","Bicentenario II","Bosques de Campeche","Buenavista","Buenos Aires","Bugambilias","Burócratas Federales (San Cayetano)","Burócratas Pensiones","Caminero","Camino Real","Campeche 1","Candelaria","Caribe","Casa Blanca","Centro SCT Campeche","Cerro de La Eminencia","Ciudad Concordia","Ciudad Militar","Cocotero de las Palmas","Colinas del Sur","Colonial Campeche","Colonial Campeche Sección Maquiladora","Colonial Campeche Sección Maquiladora II","Colonial Campeche Sección Maquiladora III","Colonia México","Cuatro Caminos 2da Ampliación","Cumbres I y II","Diana Laura","Dzarbay","Eduardo J. Lavalle Urbina","El Carmelo","El Doral","El Polvorín","El Vergel","Elvia María Pérez de González","Emiliano Zapata","Ernesto Zedillo","Esmeralda I","Esmeralda II","Esperanza","Fátima","Fénix","Ferrocarrilera","Fidel Velázquez","Flor de Limón","Flor de Liz","Fracciorama 2000","Girasoles","Granjas","Guadalajara","Guadalupe","Guadalupe Victoria","Hacienda Real Campeche","Hacienda San Antonio","Hacienda Santa María","Héroe de Nacozari","Héroes de Chapultepec (FOVI)","Hollywood","Huanal","Ignacio Zaragoza","Independencia","Infonavit Samula","Insurgentes","Invasión Esperanza","Invasión San Arturo","Jardines","Jardines del Pedregal","Josefa Ortiz de Domínguez","Justicia Social","Justo Sierra Méndez I y II","Kalá","Kalá II","Kaniste","La Ermita","La Huerta","La Paz","Las Arboledas","Las Campanillas","Las Flores","Las Quintas","Las Rosas","La Vista","Lazareto","Lázaro Cárdenas","Leovigildo Gómez","Lindavista C.T.M.","Lomas","Lomas de las Flores","Lomas de las Flores II","Lomas del Castillo","Lomas Delicias","Lomas del Polvorín","Lomas de San Rafael","Lomas de Zaragoza","Los Álamos","Los Cedros","Los Laureles","Los Reyes","Los Sauces","Luis Donaldo Colosio","Mártires de Río Blanco","Miguel Hidalgo","Minas","Mirador","Miramar","Montebello","Montecristo","Monte Verde","Morelos I","Morelos II","Morelos III","Multunchac","Murallas FSTSE","Nachi Cocom","Naval Campeche III","Nueva Era","Pablo García","Palma Real","Palmas I","Palmas II","Palmas III","Parque Residencial La Noria","Paseo de Campeche","Peña","Prado","Presidentes de México","Privada Exhacienda Kalá","Privada Guadalupana","Privada Narciso Mendoza","Privada Residencial Colonial","Quinta de los Españoles","Quinta Hermosa","Ramón Espínola Blanco I","Ramón Espínola Blanco II","Ramón Espínola Blanco III","Reforma","Reforma Agraria","Residencial Bugambilias","Residencial Campestre","Residencial del Bosque","Residencial Delicias","Residencial La Arboleda","Residencial La Hacienda","Residencial Los Almendros","Residencial Pedregal I","Residencial Pedregal II","Residencial Pedregal III","Residencial Resurgimiento","Residencial San Rafael","Revolución","Rinconada del Valle","Rinconada Samula","Samula","San Andrés","San Antonio","San Arturo","San Caralampio","San Francisco","San Francisco de Campeche Centro","San Joaquín","San José","San José el Alto","San Miguel","San Rafael","San Román","Santa Ana","Santa Bárbara I y II","Santa Cecilia","Santa Lucía","Sascalum","Siglo XXI","Solidaridad Nacional","Solidaridad Urbana","Sotavento","Tabachines","Tacubaya","Tepeyac","Terranova","Tomás Aznar","Tula","Tula II","Tula III","Tula IV","Unidad y Esperanza","Unidad y Trabajo Plan-Chac","Valle del Sol","Valle Dorado","Vicente Guerrero","Villa Dalias","Villa del Río","Villa Jazmín","Villa Laureles","Villa Laureles II","Villa Luisa","Villamar","Villa Mercedes","Villareal","Villas de Ah-kim-Pech","Villas de Kalá","Villas de Monte Real","Villas de Samula","Villas la Hacienda","Villas Residencial (Ix-Lol-Be)","Villas Universidad","Villa Turquesa","Vista Hermosa","VIVAH","Viveros"];
 const MCAL_MONTHS_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const MCAL_DOW_ES=['D','L','M','M','J','V','S'];
 function monthCalHtml(fieldKey){
@@ -3538,29 +3548,29 @@ async function discardMyPost(table,id){
    multi → toggle mchips, img → prefill uploadedImageUrls + preview. */
 const MY_POST_EDIT={
   avisos:{form:'avisos',fill:r=>({
-    input:{title:r.title,desc:r.description,cat:r.category,contact_phone:r.contact_phone},
+    input:{title:r.title,desc:r.description,cat:r.category,colonia:r.colonia||'',contact_phone:r.contact_phone},
     seg:{anon:r.anonymous?'si':'no',want_contact:r.contact_phone?'si':'no'},
     multi:{contact_methods:r.contact_methods},
     img:{photo:r.image_url}
   })},
   empleos:{form:'empleos',fill:r=>({
-    input:{title:r.title,co:r.company,pay:r.pay,desc:r.description,contact_phone:r.contact_phone},
+    input:{title:r.title,co:r.company,pay:r.pay,colonia:r.colonia||'',desc:r.description,contact_phone:r.contact_phone},
     seg:{want_contact:r.contact_phone?'si':'no'},
     multi:{contact_methods:r.contact_methods}
   })},
   perdidos:{form:'perdidos',fill:r=>({
-    input:{name:r.title,loc:r.location,desc:r.description,contact_phone:r.contact_phone},
+    input:{name:r.title,loc:r.location,colonia:r.colonia||'',desc:r.description,contact_phone:r.contact_phone},
     seg:{tag:r.report_type||'perdido',want_contact:r.contact_phone?'si':'no'},
     multi:{contact_methods:r.contact_methods},
     img:{photo:r.image_url}
   })},
   eventos:{form:'eventos',fill:r=>({
-    input:{name:r.title,cat:r.category,time:r.event_time,loc:r.location,price:r.price_text,website:r.website,phone:r.contact_phone,desc:r.description},
+    input:{name:r.title,cat:r.category,time:r.event_time,loc:r.location,colonia:r.colonia||'',price:r.price_text,website:r.website,phone:r.contact_phone,desc:r.description},
     img:{photo:r.image_url},
     monthcal:{date:r.event_date}
   })},
   reportes:{form:'reportar',fill:r=>({
-    input:{cat:r.category,title:r.title,loc:r.location_text,desc:r.description},
+    input:{cat:r.category,title:r.title,loc:r.location_text,colonia:r.colonia||'',desc:r.description},
     img:{photo:r.image_url}
   })},
   productos:{form:'producto',fill:r=>({
@@ -3570,7 +3580,7 @@ const MY_POST_EDIT={
     imgMulti:{photo:r.image_urls||[]}
   })},
   clasificados:{form:'clasificado',fill:r=>({
-    input:{name:r.title,cat:r.category,price:r.price_text||'',zone:r.zone,desc:r.description,contact_phone:r.contact_phone},
+    input:{name:r.title,cat:r.category,price:r.price_text||'',colonia:r.colonia||'',desc:r.description,contact_phone:r.contact_phone},
     seg:{item_condition:r.item_condition||'nuevo',fulfillment:r.fulfillment||'recoger'},
     multi:{contact_methods:r.contact_methods},
     imgMulti:{photo:r.image_urls||[]}
@@ -3891,7 +3901,7 @@ async function openBusinessEdit(){
   editingBusinessId=biz.id;
   await openPost('negocio_verificar');
   document.getElementById('modal-title').textContent='Editar mi negocio';
-  const fillMap={name:biz.business_name,desc:biz.description,address:biz.address,phone:biz.phone,cat:biz.category,hours:biz.hours,social:biz.social_url,rfc:biz.rfc,delivery_info:biz.delivery_info,pickup_address:biz.pickup_address};
+  const fillMap={name:biz.business_name,desc:biz.description,address:biz.address,colonia:biz.colonia,phone:biz.phone,cat:biz.category,hours:biz.hours,social:biz.social_url,rfc:biz.rfc,delivery_info:biz.delivery_info,pickup_address:biz.pickup_address};
   Object.keys(fillMap).forEach(k=>{
     const el=document.getElementById('pf-'+k);
     if(el&&fillMap[k])el.value=fillMap[k];
@@ -4050,16 +4060,26 @@ async function submitPost(kind){
   const stop=()=>{if(btn){btn.disabled=false;btn.textContent=originalLabel;}};
   const acct=await MC.currentAccount();
 
+  for(const f of form.fields){
+    if(f.type==='colonia'&&data[f.k]&&!CAMPECHE_COLONIAS.includes(data[f.k])){
+      stop();toast('Elige tu colonia de la lista (empieza a escribir y selecciona una opción)');return;
+    }
+  }
+
   if(kind==='producto'||kind==='clasificado'){
     if(!(data.name||'').trim()){stop();toast('Escribe qué vendes');return;}
     if(!Array.isArray(data.photo)||!data.photo.length){stop();toast('Agrega al menos una foto');return;}
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
+  if(kind==='clasificado'&&!(data.colonia||'').trim()){stop();toast('Elige tu colonia');return;}
   if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
   if(kind==='oferta'&&!data.photo){stop();toast('Agrega una foto para publicar tu oferta');return;}
   if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'){
     if(!(data.contact_phone||'').trim()){stop();toast('Escribe tu número o elige "No hace falta"');return;}
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
+  }
+  if((kind==='eventos'||kind==='perdidos'||kind==='empleos'||kind==='avisos'||kind==='reportar')&&!(data.colonia||'').trim()){
+    stop();toast('Elige tu colonia');return;
   }
 
   // Self-edit: same form, same validation (above), routed to an UPDATE of
@@ -4081,7 +4101,7 @@ async function submitPost(kind){
   }
 
   if(kind==='negocio_verificar'){
-    if(!data.name||!data.desc||!data.address||!data.phone||!data.cat){
+    if(!data.name||!data.desc||!data.address||!data.phone||!data.cat||!data.colonia){
       if(btn){btn.disabled=false;btn.textContent=originalLabel;}
       toast('Completa nombre, descripción, dirección, teléfono y categoría');
       return;
