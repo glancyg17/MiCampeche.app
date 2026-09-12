@@ -4336,17 +4336,12 @@ async function submitPost(kind){
     // slot cap: an unpaid "reservation" would just squat on the calendar.
     const biz=selectedPostBusinessId?await MC.fetchBusinessById(selectedPostBusinessId):await MC.myBusiness();
     if(!biz){if(btn){btn.disabled=false;btn.textContent=originalLabel;}openBusinessPrompt('oferta');return;}
-    if(acct.isAdmin){
-      const result=await MC.submitOferta(data,selectedSlotDate,false,selectedPostBusinessId);
-      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
-      if(result.error){toast(pgErrorToast(result.error,'No se pudo reservar.'));return;}
-      closeModal();
-      toast('Reservado sin pago (cuenta admin) ✓');
-      return;
-    }
-    // Premium businesses get their first oferta of each billing cycle
-    // included at no charge. The cycle is anchored to premium_since, not
-    // the calendar month — see oferta_free_slot_available in Supabase.
+    // Premium eligibility is checked BEFORE the admin bypass, not after —
+    // an admin submitting for a Premium business should still see (and
+    // correctly consume) that business's real free-cycle slot, rather
+    // than silently falling back to the generic admin path and leaving
+    // the allowance untouched. The cycle is anchored to premium_since,
+    // not the calendar month — see oferta_free_slot_available in Supabase.
     if(biz.is_premium){
       const freeAvailable=await MC.checkFreeOfertaEligible(biz.id);
       if(freeAvailable){
@@ -4358,6 +4353,14 @@ async function submitPost(kind){
         refreshOfertaPostCta();
         return;
       }
+    }
+    if(acct.isAdmin){
+      const result=await MC.submitOferta(data,selectedSlotDate,false,selectedPostBusinessId);
+      if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+      if(result.error){toast(pgErrorToast(result.error,'No se pudo reservar.'));return;}
+      closeModal();
+      toast('Reservado sin pago (cuenta admin) ✓');
+      return;
     }
     sessionStorage.setItem('mc_pending_oferta',JSON.stringify({data,slotDs:selectedSlotDate,businessId:selectedPostBusinessId}));
     window.location.href=STRIPE_LINK_OFERTA;
