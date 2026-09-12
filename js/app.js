@@ -622,13 +622,36 @@ const SERVICIOS_UTILES=[
    optimistic confirm caches from what's actually true in the database
    (see confirmedByMe/resolvedByMe further down), then hands off to the
    same render pipeline that used to run against mock arrays. */
+/* Random order every load — no seller gets an advantage from being
+   newest, oldest, or alphabetically first. Destacado/discount-flagged
+   products are the one deliberate exception: shuffled among themselves,
+   but always placed ahead of everyone else — on top of, not instead of,
+   their own separate Destacados carousel. Clasificados items never have
+   featured/discountActive set, so they always land in the second group
+   and get pure random order with no exception at all. Runs once per
+   loadAllData() call (initial load + pull-to-refresh), not on every
+   filter/search interaction — re-shuffling on every keystroke would feel
+   broken, not random.  */
+function shuffleArray(arr){
+  const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+function shuffleTiendaForDisplay(list){
+  const featured=list.filter(x=>x.featured||x.discountActive);
+  const rest=list.filter(x=>!(x.featured||x.discountActive));
+  return [...shuffleArray(featured),...shuffleArray(rest)];
+}
 async function loadAllData(){
   await MC.ready;
   const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked,featuredBookings,mandaditos]=await Promise.all([
     MC.fetchNoticias(),MC.fetchEventos(),MC.fetchTienda(),MC.fetchOfertas(),MC.fetchPerdidos(),
     MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates(),MC.fetchFeaturedBookings(),MC.fetchMandaditos()
   ]);
-  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=tienda;OFERTAS=ofertas;PERDIDOS=perdidos;MANDADITOS=mandaditos;
+  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=shuffleTiendaForDisplay(tienda);OFERTAS=ofertas;PERDIDOS=perdidos;MANDADITOS=mandaditos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
   alertasExpanded=false; // a fresh data load (incl. pull-to-refresh) collapses Alertas back to the top 10
   REPORTES.forEach(r=>{
@@ -2940,22 +2963,19 @@ async function openAdditionalBusinessForm(){
    ✕ / back / hardware-back returns to wherever it was opened from, and
    finishing an edit returns here (now showing "En revisión"). */
 let bizProfilePosts=[]; // this account's fetchMyPosts() results, cached while a business profile is open — filtered per-section in renderBusinessProfile
-let bizProfileActiveOfertas=[]; // this specific business's active ofertas, from fetchMyActiveOfertas(id)
 async function openBusinessProfile(id){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(myBusinessesList.length>1?'myBusinesses':'account');
   viewingBusinessId=id;
   bizProfilePosts=[];
-  bizProfileActiveOfertas=[];
   document.getElementById('modal-title').textContent='Negocio';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
   const biz=await MC.fetchBusinessById(id);
   if(!biz){mcModalBack();return;}
   renderBusinessProfile(biz);
-  const [posts,activeOfertas]=await Promise.all([MC.fetchMyPosts(),MC.fetchMyActiveOfertas(id)]);
+  const posts=await MC.fetchMyPosts();
   if(viewingBusinessId!==id)return; // navigated to a different business before this landed
   bizProfilePosts=posts;
-  bizProfileActiveOfertas=activeOfertas;
   renderBusinessProfile(biz);
 }
 function renderBusinessProfile(biz){
@@ -2998,17 +3018,6 @@ function renderBusinessProfile(biz){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:'';})()}
-    ${bizProfileActiveOfertas.length?`
-      <button class="menu-item" onclick="openMyActiveOfertas('${biz.id}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
-        <span class="menu-item-ico">${svgIco('tienda')}</span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Ofertas activas</span>
-          <span class="menu-item-sub">Confirma cada venta cuando te paguen</span>
-        </span>
-        <span class="menu-badge on">${bizProfileActiveOfertas.length}</span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-    `:''}
     ${(()=>{const n=bizProfilePosts.filter(p=>p.table==='empleos').length;return n?`
       <button class="menu-item" onclick="openMyPosts(['empleos'],'Mis vacantes','bizProfile')" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span>
@@ -3026,10 +3035,9 @@ function renderBusinessProfile(biz){
 async function refreshBusinessProfile(){
   if(!viewingBusinessId)return;
   const id=viewingBusinessId;
-  const [biz,posts,activeOfertas]=await Promise.all([MC.fetchBusinessById(id),MC.fetchMyPosts(),MC.fetchMyActiveOfertas(id)]);
+  const [biz,posts]=await Promise.all([MC.fetchBusinessById(id),MC.fetchMyPosts()]);
   if(viewingBusinessId!==id)return; // navigated to a different business before this landed
   bizProfilePosts=posts;
-  bizProfileActiveOfertas=activeOfertas;
   renderBusinessProfile(biz);
 }
 

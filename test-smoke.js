@@ -1584,10 +1584,10 @@ const fakeClient = {
     assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Lun-Sáb 9am-8pm'), 'the profile shows the full business record, not just the name');
     assert(text('modal-body').includes('Editar negocio'), 'the profile carries the edit action that sends changes back to review');
     assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell stays hidden for admin accounts — admin already has premium (and more) rights');
-    // The "Ofertas activas" pill (folded here from the old standalone
-    // account-menu row) shows once the background load finds this business
-    // owns a live, not-sold-out oferta (o1, 2/5).
-    assert(text('modal-body').includes('Ofertas activas') && text('modal-body').includes("openMyActiveOfertas('biz-1')"), 'the business profile shows the "Ofertas activas" pill while this business owns a live oferta');
+    // The "Ofertas activas" section was removed from Mi negocio entirely
+    // (redundant with the global account-menu entry, which has its own
+    // dedicated fetch/state and is unaffected) — confirm it's really gone.
+    assert(!text('modal-body').includes('Ofertas activas') && !text('modal-body').includes("openMyActiveOfertas("), 'the business profile no longer shows a redundant "Ofertas activas" section');
     window.mcModalBack();
     assert(text('modal-title') === 'Tu cuenta', 'closing the business profile returns to the account view, not the home screen');
 
