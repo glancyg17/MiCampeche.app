@@ -253,6 +253,7 @@ let refreshSessionCallCount = 0;
 let authStateChangeCallback = null;
 let fakePasswordResetRequests = [];
 let fakeResetIdCounter = 0;
+let mockFreeOfertaAvailable = false;
 Object.assign(forcedErrors, { updateUser: null, signIn: null });
 
 const lastInsert = {};
@@ -433,6 +434,9 @@ const fakeClient = {
     };
   },
   rpc: async (name, args) => {
+    if (name === 'oferta_free_slot_available') {
+      return { data: mockFreeOfertaAvailable, error: null };
+    }
     if (name === 'increment_oferta_sold') {
       const oferta = (SAMPLE.ofertas || []).find(o => o.id === args.p_oferta_id);
       if (!oferta || oferta.status !== 'published') return { data: null, error: { message: 'oferta_not_found_or_not_published' } };
@@ -2114,6 +2118,50 @@ const fakeClient = {
       assert(links2.length === 1 && links2[0].href.includes('wa.me') && links2[0].href.includes('529813004000'),
         'a clasificado that only chose WhatsApp shows exactly one contact button, to its own per-post number');
       assert(text('modal-body').includes('Centro'), 'the clasificado detail view shows its zone');
+    }
+
+    // Premium free-slot-per-billing-cycle for Ofertas: when the DB (via
+    // oferta_free_slot_available) says a free slot is available this
+    // cycle, submission skips Stripe entirely and inserts the oferta
+    // directly, flagged is_free_slot: true.
+    currentProfile.is_admin = false;
+    {
+      currentBusiness.is_premium = true;
+      mockFreeOfertaAvailable = true;
+      await window.openPost('oferta');
+      await attachOfertaPhoto();
+      doc.getElementById('pf-item').value = 'Oferta Premium gratis';
+      doc.getElementById('pf-priceWas').value = '100';
+      doc.getElementById('pf-priceNow').value = '50';
+      window.pickSlotDay(doc.querySelector('.slot-day:not(.full)'), false);
+      delete lastInsert.ofertas;
+      window.sessionStorage.removeItem('mc_pending_oferta');
+      await window.submitPost('oferta');
+      await new Promise(r => setTimeout(r, 20));
+      assert(!window.sessionStorage.getItem('mc_pending_oferta'), 'a Premium business with a free slot available this cycle never gets sent to Stripe');
+      assert(lastInsert.ofertas && lastInsert.ofertas.title === 'Oferta Premium gratis' && lastInsert.ofertas.is_free_slot === true, 'the oferta is inserted directly, flagged is_free_slot: true');
+      assert(text('toast') === '¡Incluida con tu Premium este ciclo — reservada sin costo! ✓', 'the free-slot success toast fires');
+    }
+
+    // Same Premium business, but the DB says this cycle's free slot is
+    // already used — must fall back to the normal pay-first Stripe flow,
+    // completely unchanged. This is the case that must never regress.
+    {
+      mockFreeOfertaAvailable = false;
+      await window.openPost('oferta');
+      await attachOfertaPhoto();
+      doc.getElementById('pf-item').value = 'Oferta Premium ya usada';
+      doc.getElementById('pf-priceWas').value = '100';
+      doc.getElementById('pf-priceNow').value = '50';
+      window.pickSlotDay(doc.querySelector('.slot-day:not(.full)'), false);
+      delete lastInsert.ofertas;
+      window.sessionStorage.removeItem('mc_pending_oferta');
+      await window.submitPost('oferta');
+      await new Promise(r => setTimeout(r, 20));
+      const pendingFreeRaw = window.sessionStorage.getItem('mc_pending_oferta');
+      assert(!!pendingFreeRaw && JSON.parse(pendingFreeRaw).data.item === 'Oferta Premium ya usada', 'once this cycle\'s free slot is used, a Premium business goes through the normal pay-first Stripe flow, unchanged');
+      assert(!lastInsert.ofertas, 'and no oferta row is inserted yet — it still waits for the Stripe return, exactly as before');
+      currentBusiness.is_premium = false; // restore — the tests below assume a non-Premium biz-1
     }
 
     // Ofertas: submitting a real (non-full) slot should NOT book

@@ -2013,7 +2013,7 @@ const POST_FORMS={
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Los vecinos te contactarán por los medios que elijas.'},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.',showIf:{field:'want_contact',val:'si'}}
   ]},
-  oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez.',fields:[
+  oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez. Premium incluye tu primera oferta de cada ciclo sin costo.',fields:[
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntale a la gente qué incluye esta oferta...'},
     {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload',note:'Usa buena luz y muestra bien lo que ofreces — no podrás editar esta oferta ni pedir un reembolso después de enviarla, así que revisa todo con cuidado antes de continuar.'},
@@ -2084,7 +2084,7 @@ async function openPost(kind){
   if((kind==='producto'||kind==='oferta')&&postBusinessOptions.length>1){
     h+=`<div class="form-row" id="row-post-business">
       <label class="fl">¿Cuál negocio?</label>
-      <div class="seg" id="pf-post-business">${postBusinessOptions.map((b,i)=>`<div class="seg-btn${b.id===selectedPostBusinessId?' on':''}" data-v="${b.id}" onclick="segPick(this);selectedPostBusinessId=this.dataset.v;applyProductoBusinessHints(postBusinessOptions.find(x=>String(x.id)===this.dataset.v));">${e(b.business_name)}</div>`).join('')}</div>
+      <div class="seg" id="pf-post-business">${postBusinessOptions.map((b,i)=>`<div class="seg-btn${b.id===selectedPostBusinessId?' on':''}" data-v="${b.id}" onclick="segPick(this);selectedPostBusinessId=this.dataset.v;const _b=postBusinessOptions.find(x=>String(x.id)===this.dataset.v);if('${kind}'==='producto'){applyProductoBusinessHints(_b);}if('${kind}'==='oferta'){applyOfertaBusinessHints(_b);}">${e(b.business_name)}</div>`).join('')}</div>
     </div>`;
   }
   form.fields.forEach(f=>{
@@ -2108,7 +2108,7 @@ async function openPost(kind){
     if(f.note)h+=`<div class="field-note">${f.note}</div>`;
     h+=`</div>`;
   });
-  h+=`<div class="submit-note">${svgIco('alertas')}${form.note||'Todas las publicaciones se revisan antes de mostrarse a los demás, para mantener MiCampeche libre de spam.'}</div>`;
+  h+=`<div class="submit-note" id="post-submit-note">${svgIco('alertas')}${form.note||'Todas las publicaciones se revisan antes de mostrarse a los demás, para mantener MiCampeche libre de spam.'}</div>`;
   h+=`<button class="submit-btn" id="post-submit-btn" onclick="submitPost('${kind}')"${kind==='oferta'?' disabled style="opacity:.4;cursor:default"':''}>${kind==='oferta'?'Selecciona un día para continuar':'Enviar para revisión'}</button>`;
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
@@ -2124,6 +2124,9 @@ async function openPost(kind){
   applyConditionalRows(form);
   if(kind==='producto'){
     applyProductoBusinessHints(postBusinessOptions.find(b=>String(b.id)===String(selectedPostBusinessId)));
+  }
+  if(kind==='oferta'){
+    applyOfertaBusinessHints(postBusinessOptions.find(b=>String(b.id)===String(selectedPostBusinessId)));
   }
   if(kind==='clasificado'||kind==='avisos'||kind==='perdidos'||kind==='empleos'){
     // Prefill the contact number from the account so a signed-in poster
@@ -2174,6 +2177,22 @@ function applyProductoBusinessHints(biz){
       if(noBtn)segPick(noBtn);
     });
   }
+}
+/* Oferta's equivalent of applyProductoBusinessHints — updates the
+   submit-note to reflect real eligibility for the SELECTED business
+   whenever it changes (initial render and the picker's onclick above).
+   Async because it needs a live DB answer; fires and forgets rather than
+   blocking the click handler, since this is informational text, not a
+   gate on anything. */
+async function applyOfertaBusinessHints(biz){
+  const noteEl=document.getElementById('post-submit-note');
+  if(!noteEl)return;
+  const defaultNote=svgIco('alertas')+POST_FORMS.oferta.note;
+  if(!biz||!biz.is_premium){noteEl.innerHTML=defaultNote;return;}
+  const free=await MC.checkFreeOfertaEligible(biz.id);
+  noteEl.innerHTML=free
+    ? svgIco('alertas')+'Esta oferta va incluida con tu Premium este ciclo — sin costo. La siguiente en este mismo ciclo ya sigue el precio normal ($99 MXN).'
+    : defaultNote;
 }
 
 /* ══════════════ OFERTAS SLOT CALENDAR (business-facing booking picker) ══════════════
@@ -4322,6 +4341,20 @@ async function submitPost(kind){
       closeModal();
       toast('Reservado sin pago (cuenta admin) ✓');
       return;
+    }
+    // Premium businesses get their first oferta of each billing cycle
+    // included at no charge. The cycle is anchored to premium_since, not
+    // the calendar month — see oferta_free_slot_available in Supabase.
+    if(biz.is_premium){
+      const freeAvailable=await MC.checkFreeOfertaEligible(biz.id);
+      if(freeAvailable){
+        const result=await MC.submitOferta(data,selectedSlotDate,false,selectedPostBusinessId,true);
+        if(btn){btn.disabled=false;btn.textContent=originalLabel;}
+        if(result.error){toast(pgErrorToast(result.error,'No se pudo reservar.'));return;}
+        closeModal();
+        toast('¡Incluida con tu Premium este ciclo — reservada sin costo! ✓');
+        return;
+      }
     }
     sessionStorage.setItem('mc_pending_oferta',JSON.stringify({data,slotDs:selectedSlotDate,businessId:selectedPostBusinessId}));
     window.location.href=STRIPE_LINK_OFERTA;

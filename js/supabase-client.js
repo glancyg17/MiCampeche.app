@@ -1059,7 +1059,7 @@ MC.deleteMyPost=async function(table,id){
    Pricing/scheduling ($99/slot, 1/day, 2-week window) is IDENTICAL
    regardless of premium — only the concurrent-slot cap (enforced by a real
    DB trigger, not here) differs by tier. */
-MC.submitOferta=async function(d,slotDs,isFull,businessId){
+MC.submitOferta=async function(d,slotDs,isFull,businessId,isFreeSlot){
   const uid=await MC.ready;
   const biz=businessId?await MC.fetchBusinessById(businessId):await MC.myBusiness();
   if(!biz)return {needsBusiness:true};
@@ -1073,11 +1073,23 @@ MC.submitOferta=async function(d,slotDs,isFull,businessId){
     business_id:biz.id,business_name_snapshot:biz.business_name,seller_phone:biz.phone||null,is_premium:biz.is_premium,
     title:d.item||'Oferta',description:d.desc||null,terms:d.terms||null,image_url:d.photo||null,
     price_was:priceWas,price_now:priceNow,
-    quantity_total:parseInt(d.qty,10)||1,discount_pct:discountPct,submitted_by:uid
+    quantity_total:parseInt(d.qty,10)||1,discount_pct:discountPct,submitted_by:uid,is_free_slot:!!isFreeSlot
   }).select().single();
   if(ofErr)return {error:ofErr};
   const {error:bookErr}=await sb.from('ofertas_bookings').insert({oferta_id:oferta.id,booked_date:slotDs});
   return {error:bookErr,oferta};
+};
+/* Asks the DB for the real, current answer — cycle is anchored to the
+   business's own premium_since, not the calendar month. This is only used
+   to decide whether to skip the Stripe redirect; the insert trigger
+   (enforce_oferta_free_slot, already live) re-checks this itself before
+   ever committing a row, so a stale answer here can't actually grant an
+   extra free slot — worst case it's overly cautious and sends someone to
+   pay who didn't strictly need to. */
+MC.checkFreeOfertaEligible=async function(businessId){
+  const {data,error}=await sb.rpc('oferta_free_slot_available',{p_business_id:businessId});
+  if(error){console.error(error);return false;}
+  return !!data;
 };
 
 /* Real image upload — replaces the Google Form placeholder that never
