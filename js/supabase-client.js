@@ -752,7 +752,8 @@ MC.fetchOfertas=async function(){
       id:r.id,seller:r.business_name_snapshot,tier:r.is_premium?'premium':'free',name:r.title,
       priceWas:Number(r.price_was)||0,priceNow:Number(r.price_now)||0,img:r.image_url||'',
       sold:r.quantity_sold||0,total:r.quantity_total||1,
-      postedDs,phone:r.seller_phone||'',isExample:!!r.is_example
+      postedDs,phone:r.seller_phone||'',isExample:!!r.is_example,
+      desc:r.description||'',terms:r.terms||''
     };
   });
 };

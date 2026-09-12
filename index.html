@@ -214,10 +214,18 @@
         <button class="subtog-btn" data-v="alertas" onclick="setAnunciosMode('alertas')">Alertas</button>
       </div>
       <div id="anuncios-eventos">
-        <div class="chiprow" id="evt-date-chips"></div>
-        <div class="chiprow" id="evt-chips"></div>
         <div class="filter-row">
-          <input class="fi" id="evt-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setEvtColonia(this.value)">
+          <div class="filter-select-wrap">
+            <select class="filter-select" id="evt-date-select" onchange="setEvtDateFilter(this.value)"></select>
+            <svg class="filter-select-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="filter-select-wrap">
+            <select class="filter-select" id="evt-cat-select" onchange="setEvtFilter(this.value)"></select>
+            <svg class="filter-select-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+        </div>
+        <div class="filter-row">
+          <input class="filter-colonia" id="evt-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Colonia" oninput="setEvtColonia(this.value)">
         </div>
         <div class="evt-list" id="evt-list"></div>
       </div>

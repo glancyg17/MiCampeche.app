@@ -1125,8 +1125,10 @@ function setEvtColonia(v){evtColonia=v.trim();renderEventos();}
 let evtDateFilter='all';
 function renderEvtChips(){
   const cats=['all',...new Set(EVENTOS.map(x=>x.cat))];
-  document.getElementById('evt-chips').innerHTML=cats.map(c=>
-    `<button class="chip${c===evtFilter?' on':''}" onclick="setEvtFilter('${c}')">${c==='all'?'Todos':c}</button>`
+  const sel=document.getElementById('evt-cat-select');
+  if(!sel)return;
+  sel.innerHTML=cats.map(c=>
+    `<option value="${c}"${c===evtFilter?' selected':''}>${c==='all'?'Todas las categorías':c}</option>`
   ).join('');
 }
 function setEvtFilter(c){evtFilter=c;renderEvtChips();renderEventos();}
@@ -1137,10 +1139,10 @@ function setEvtFilter(c){evtFilter=c;renderEvtChips();renderEventos();}
    last day has already passed. */
 const EVT_DATE_OPTS=[['all','Todas las fechas'],['hoy','Hoy'],['semana','Esta semana'],['proximamente','Próximamente'],['pasados','Pasados']];
 function renderEvtDateChips(){
-  const el=document.getElementById('evt-date-chips');
+  const el=document.getElementById('evt-date-select');
   if(!el)return;
   el.innerHTML=EVT_DATE_OPTS.map(([v,l])=>
-    `<button class="chip${v===evtDateFilter?' on':''}" onclick="setEvtDateFilter('${v}')">${l}</button>`
+    `<option value="${v}"${v===evtDateFilter?' selected':''}>${l}</option>`
   ).join('');
 }
 function setEvtDateFilter(v){evtDateFilter=v;renderEvtDateChips();renderEventos();}
@@ -1532,7 +1534,7 @@ function mandaditoCardHtml(m,isExample){
   return `
     <div class="prod-wrap"${wrapAttrs}>
       ${isExample?'<span class="prod-badge-example">Ejemplo</span>':''}
-      <div class="prod-card" style="cursor:default">
+      <div class="prod-card" ${isExample?'style="cursor:default"':`onclick="openMandaditoView('${m.id}')"`}>
         <div class="prod-img" style="background-image:url('${m.img}')"></div>
         <div class="prod-body">
           <div class="prod-name">${e(m.name)}</div>
@@ -1540,12 +1542,28 @@ function mandaditoCardHtml(m,isExample){
           ${!isExample&&m.desc?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${e(m.desc)}</div>`:''}
           ${isExample
             ?'<div class="field-note" style="text-align:center;margin-top:8px">Así se ve una tarjeta de mandadito</div>'
-            :(intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`
+            :(intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="event.stopPropagation();logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`
                   :'<div class="field-note">Sin WhatsApp registrado.</div>')}
-          ${isExample?'':`<div style="text-align:center;margin-top:6px"><span style="font-size:11px;color:var(--ink3);text-decoration:underline;cursor:pointer" onclick="openMandaditoReportForm('${m.id}')">Reportar</span></div>`}
+          ${isExample?'':`<div style="text-align:center;margin-top:6px"><span style="font-size:11px;color:var(--ink3);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation();openMandaditoReportForm('${m.id}')">Reportar</span></div>`}
         </div>
       </div>
     </div>`;
+}
+function openMandaditoView(id){
+  const m=MANDADITOS.find(x=>String(x.id)===String(id));
+  if(!m)return;
+  const num=digitsOnly(m.phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const msg=encodeURIComponent(`Hola, vi tu perfil de mandadito en MiCampeche y necesito que muevas algo.`);
+  document.getElementById('modal-title').textContent=m.name;
+  document.getElementById('modal-body').innerHTML=`
+    <div class="pv-hero" style="background-image:url('${e(m.img)}')"></div>
+    ${m.vehicle?`<div style="font-size:13px;color:var(--ink3);margin-top:8px">${e(m.vehicle)}</div>`:''}
+    ${m.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap;margin-top:6px">${e(m.desc)}</div>`:'<div class="field-note" style="margin-top:6px">Este mandadito no dejó más detalles.</div>'}
+    ${intl?`<a class="submit-btn" style="text-decoration:none;text-align:center;margin-top:14px;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`:'<div class="field-note" style="margin-top:14px">Sin WhatsApp registrado.</div>'}
+    <div style="text-align:center;margin-top:10px"><span style="font-size:12px;color:var(--ink3);text-decoration:underline;cursor:pointer" onclick="closeModal();openMandaditoReportForm('${m.id}')">Reportar</span></div>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
 }
 function renderMandaditos(){
   const el=document.getElementById('mandaditos-list');
@@ -1608,58 +1626,57 @@ function renderOfertas(){
   const visible=OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
     .sort((a,b)=>(a.isExample===b.isExample)?0:(a.isExample?1:-1));
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
-  el.innerHTML=visible.map((o,i)=>{
+  el.innerHTML=visible.map((o)=>{
     const soldOut=o.sold>=o.total;
-    const isFeatured=i===0;
     const pct=Math.min(100,Math.round((o.sold/o.total)*100));
     const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
     const num=digitsOnly(o.phone);
     const intl=num?(num.length===10?'52'+num:num):'';
     const msg=encodeURIComponent(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
-    return `
-    <div class="of-card${soldOut?' sold-out':''}${isFeatured?' of-featured':''}" ${admRm('ofertas',o.id,o.name)}>
-      ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
-      ${isFeatured?`
-      <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
-      <div class="of-hero-overlay">
-        <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-        <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-        <div class="of-price-row">
-          <span class="of-price-now">$${o.priceNow}</span>
-          <span class="of-price-was">$${o.priceWas}</span>
-          <span class="of-pct">-${discountPct}%</span>
-        </div>
-      </div>
-      `:`
-      <div class="of-top">
-        <div class="of-img" style="background-image:url('${o.img}')"></div>
-        <div class="of-body">
-          <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-          <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-          <div class="of-price-row">
-            <span class="of-price-now">$${o.priceNow}</span>
-            <span class="of-price-was">$${o.priceWas}</span>
-            <span class="of-pct">-${discountPct}%</span>
-          </div>
-        </div>
-      </div>
-      `}
+    const claimBtn=soldOut
+      ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
+      : intl
+        ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Contactar</a>`
+        : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
+    const bottomHtml=`
       <div class="of-bottom">
         <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
         <div class="of-claim-row">
           <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
-          ${soldOut
-            ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
-            : intl
-              ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">Contactar</a>`
-              : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`
-          }
+          ${claimBtn}
+        </div>
+      </div>`;
+    return `
+    <div class="of-card${soldOut?' sold-out':''}" onclick="toggleOfertaFlip(this)" ${admRm('ofertas',o.id,o.name)}>
+      <div class="of-flip-inner">
+        <div class="of-flip-front">
+          ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
+          <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
+          <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
+          <div class="of-hero-overlay">
+            <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
+            <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+            <div class="of-price-row">
+              <span class="of-price-now">$${o.priceNow}</span>
+              <span class="of-price-was">$${o.priceWas}</span>
+              <span class="of-pct">-${discountPct}%</span>
+            </div>
+          </div>
+          ${bottomHtml}
+        </div>
+        <div class="of-flip-back">
+          <div class="of-back-seller">${e(o.seller)}</div>
+          <div class="of-back-title">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+          ${o.desc?`<div class="of-back-text">${e(o.desc)}</div>`:'<div class="of-back-text" style="color:var(--ink3)">Sin descripción adicional.</div>'}
+          ${o.terms?`<div class="of-back-section-lbl">Condiciones</div><div class="of-back-text">${e(o.terms)}</div>`:''}
+          ${bottomHtml}
         </div>
       </div>
     </div>
   `;}).join('');
   wireAdminRemove(el);
 }
+function toggleOfertaFlip(el){el.classList.toggle('flipped');}
 
 let empColonia='';
 function setEmpColonia(v){empColonia=v.trim();renderEmpleos();}
