@@ -646,7 +646,7 @@ MC.fetchTienda=async function(){
   if(clas.error)console.error(clas.error);
   const negocios=(prod.data||[]).map(r=>({
     id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
-    seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,discountActive:!!r.discount_active,discountPrice:r.discount_price_text||(r.discount_price_mxn!=null?fmtMXN(r.discount_price_mxn):''),colonia:r.colonia,sellerType:'negocio',
+    seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,discountActive:!!r.discount_active,discountPrice:r.discount_price_text||(r.discount_price_mxn!=null?fmtMXN(r.discount_price_mxn):''),colonia:r.colonia,sellerType:'negocio',isExample:!!r.is_example,
     desc:r.description||'',condition:r.item_condition||'nuevo',availability:r.availability||'ahora',leadTime:r.lead_time||'',
     fulfillment:r.fulfillment||'',phone:r.seller_phone||'',contactMethods:r.contact_methods||[]
   }));
@@ -752,7 +752,7 @@ MC.fetchOfertas=async function(){
       id:r.id,seller:r.business_name_snapshot,tier:r.is_premium?'premium':'free',name:r.title,
       priceWas:Number(r.price_was)||0,priceNow:Number(r.price_now)||0,img:r.image_url||'',
       sold:r.quantity_sold||0,total:r.quantity_total||1,
-      postedDs,phone:r.seller_phone||''
+      postedDs,phone:r.seller_phone||'',isExample:!!r.is_example
     };
   });
 };
@@ -883,7 +883,7 @@ MC.fetchReportes=async function(){
       // net of my own vote, same "base count + 1 if me" convention as confirms
       resolveVotes:iVotedResolved?Math.max(0,resolveTotal-1):resolveTotal,
       time:relTimeEs(r.created_at),img:r.image_url||'',
-      iConfirmedReal:iConfirmed,iVotedResolvedReal:iVotedResolved};
+      iConfirmedReal:iConfirmed,iVotedResolvedReal:iVotedResolved,isExample:!!r.is_example};
   });
 };
 
@@ -894,7 +894,7 @@ MC.fetchAvisos=async function(){
   return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',img:r.image_url||'',colonia:r.colonia||'',
     author:r.anonymous?'Vecino anónimo':((r.profiles&&r.profiles.display_name)||'Vecino'),
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[],
-    time:relTimeEs(r.created_at)}));
+    time:relTimeEs(r.created_at),isExample:!!r.is_example}));
 };
 
 /* ══════════════ SUBMIT: writes real rows, always as status='pending' by table default ══════════════ */

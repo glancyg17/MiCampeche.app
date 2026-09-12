@@ -413,6 +413,8 @@ svg{display:block}
 
 /* ═══ TIENDA (Productos, inside Anuncios) ═══ */
 .tienda-grid{padding:0 18px 24px;display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.destacados-hdr{padding:14px 18px 8px;font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em}
+.example-pill{display:inline-block;font-size:9px;font-weight:700;color:var(--ink3);background:var(--paper2);border:1px solid var(--line2);border-radius:99px;padding:2px 7px;text-transform:uppercase;letter-spacing:.03em;margin-left:6px;vertical-align:middle}
 .prod-card{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--surface);cursor:pointer;box-shadow:var(--sh1)}
 .prod-img{width:100%;aspect-ratio:1;background-size:cover;background-position:center;background-color:var(--paper2)}
 .prod-body{padding:11px 12px 13px}

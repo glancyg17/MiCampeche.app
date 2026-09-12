@@ -649,6 +649,7 @@ const fakeClient = {
   assert(/\d{1,2}:\d{2}\s*(a\.m\.|p\.m\.)/.test(wxb) && /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/.test(wxb), 'the weather modal shows a real clock time and a month — the moment it was opened');
   window.closeWeatherLightbox();
   assert(text('mkt-grid') && text('mkt-grid').includes('Producto test'), 'Tienda/Mercado rendered real productos row');
+  assert(text('destacados-grid') && text('destacados-grid').includes('Producto test'), 'a Destacado product also appears in the rotating Destacados strip at the top of Mercado');
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test'), 'Clasificados rendered the real fetched row');
   assert(!text('clas-grid').includes('Ricardo T.'), 'Clasificados no longer shows the poster name — personal listings are name-free now');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');

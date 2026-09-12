@@ -1301,6 +1301,7 @@ function setTiendaMode(mode){
   document.getElementById('tienda-fab').style.display=mode==='mandaditos'?'none':'flex';
   document.getElementById('tienda-fab').onclick=function(){openPost(mode==='mercado'?'producto':'clasificado');};
   if(mode==='mandaditos')refreshMandaditoTabCta();
+  if(mode==='mercado')startDestacadosRotation();else stopDestacadosRotation();
   if(curScreen==='tienda'){maybeShowTipGate(mode);trackPage();}
 }
 
@@ -1318,7 +1319,7 @@ function prodCardHtml(x){
       <div class="prod-card" onclick="openProdView('${x.sellerType}','${e(String(x.id))}')">
         <div class="prod-img" style="background-image:url('${x.img}')"></div>
         <div class="prod-body">
-          <div class="prod-name">${e(x.name)}</div>
+          <div class="prod-name">${e(x.name)}${x.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
           <div class="prod-price">${x.discountActive&&x.discountPrice?`<span class="prod-price-was">${e(x.price)}</span>${e(x.discountPrice)}`:e(x.price)}</div>
           ${x.sellerType==='negocio'?`<div class="prod-seller">${e(x.seller)}</div>`:''}
           ${tags.length?`<div class="prod-tags">${tags.join('')}</div>`:''}
@@ -1401,6 +1402,56 @@ function renderMercado(){
   }
   el.innerHTML=list.map(prodCardHtml).join('');
   wireAdminRemove(el);
+}
+
+/* ══════════════ RENDER: DESTACADOS (rotating cross-business promo strip) ══════════════
+   Premium businesses can flag up to 2 products each as Destacado/Descuento
+   (see enforce_producto_promo_cap — that per-business cap is unchanged).
+   With more than one Premium business now live, the eligible pool across
+   ALL of them can exceed the 2 slots this strip shows at once, so when it
+   does, it rotates through the pool 2 at a time on a timer instead of
+   raising any cap. Reuses prodCardHtml exactly — same look, same tap-
+   through, same admin remove — this is not a new card type. */
+let destacadosRotationTimer=null;
+let destacadosRotationIndex=0;
+function eligibleDestacados(){
+  return TIENDA.filter(x=>x.sellerType==='negocio'&&(x.featured||x.discountActive))
+    .sort((a,b)=>String(a.id).localeCompare(String(b.id))); // stable order across re-renders/rotations
+}
+function renderDestacadosCarousel(){
+  const wrap=document.getElementById('destacados-wrap');
+  if(!wrap)return;
+  const pool=eligibleDestacados();
+  if(!pool.length){
+    wrap.style.display='none';
+    if(destacadosRotationTimer){clearInterval(destacadosRotationTimer);destacadosRotationTimer=null;}
+    return;
+  }
+  wrap.style.display='block';
+  const showN=Math.min(2,pool.length);
+  const start=destacadosRotationIndex%pool.length;
+  const slice=[];
+  for(let i=0;i<showN;i++)slice.push(pool[(start+i)%pool.length]);
+  const grid=document.getElementById('destacados-grid');
+  grid.innerHTML=slice.map(prodCardHtml).join('');
+  wireAdminRemove(grid);
+}
+/* Timer only runs while Mercado is the visible sub-tab (see setTiendaMode
+   below), and only when there are actually more than 2 eligible items to
+   rotate through — 2 or fewer just render once and sit still. */
+function startDestacadosRotation(){
+  stopDestacadosRotation();
+  renderDestacadosCarousel();
+  if(eligibleDestacados().length>2){
+    destacadosRotationTimer=setInterval(()=>{
+      const pool=eligibleDestacados();
+      destacadosRotationIndex=(destacadosRotationIndex+2)%(pool.length||1);
+      renderDestacadosCarousel();
+    },7000);
+  }
+}
+function stopDestacadosRotation(){
+  if(destacadosRotationTimer){clearInterval(destacadosRotationTimer);destacadosRotationTimer=null;}
 }
 
 let clasFilter='all';
@@ -1549,7 +1600,13 @@ async function submitMandaditoReport(mandaditoId){
    never showed up" gap. */
 function renderOfertas(){
   const el=document.getElementById('of-list');
-  const visible=OFERTAS.filter(o=>ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
+  // Example ofertas are exempt from the normal 7-day lifespan (so they
+  // actually persist, per how they're meant to be used) and are always
+  // sorted after every real oferta — a real business's real deal claims
+  // the hero-banner spot (i===0 below) whenever at least one real oferta
+  // exists; an example one only lands there if there are zero real ones.
+  const visible=OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
+    .sort((a,b)=>(a.isExample===b.isExample)?0:(a.isExample?1:-1));
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
   el.innerHTML=visible.map((o,i)=>{
     const soldOut=o.sold>=o.total;
@@ -1566,7 +1623,7 @@ function renderOfertas(){
       <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
       <div class="of-hero-overlay">
         <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-        <div class="of-name">${e(o.name)}</div>
+        <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
         <div class="of-price-row">
           <span class="of-price-now">$${o.priceNow}</span>
           <span class="of-price-was">$${o.priceWas}</span>
@@ -1578,7 +1635,7 @@ function renderOfertas(){
         <div class="of-img" style="background-image:url('${o.img}')"></div>
         <div class="of-body">
           <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-          <div class="of-name">${e(o.name)}</div>
+          <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
           <div class="of-price-row">
             <span class="of-price-now">$${o.priceNow}</span>
             <span class="of-price-was">$${o.priceWas}</span>
@@ -1705,7 +1762,7 @@ function renderReportes(){
         <div class="rep-img" style="${x.img?`background-image:url('${x.img}')`:''}">${!x.img?svgIco('pin'):''}</div>
         <div class="rep-body">
           <span class="rep-cat">${e(x.cat)}</span>
-          <div class="rep-title">${e(x.title)}</div>
+          <div class="rep-title">${e(x.title)}${x.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
           <div class="rep-loc">${e(x.loc)}</div>
         </div>
       </div>
@@ -1777,7 +1834,7 @@ function renderAvisos(){
       <div class="av-main">
         ${a.img?`<div class="av-img" style="background-image:url('${e(a.img)}')"></div>`:''}
         <div class="av-main-body">
-          <div class="av-title">${e(a.title)}</div>
+          <div class="av-title">${e(a.title)}${a.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
           <div class="av-desc">${e(a.desc)}</div>
         </div>
       </div>
@@ -4434,7 +4491,7 @@ async function refreshContent(){
   lastFetchedAccount=await MC.currentAccount();
   renderInicio();
   renderNoticias();
-  renderMktChips();renderMercado();renderClasChips();renderClasificados();renderOfertas();renderMandaditos();
+  renderMktChips();renderMercado();renderDestacadosCarousel();renderClasChips();renderClasificados();renderOfertas();renderMandaditos();
   renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
   renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
   refreshPendingBadge();

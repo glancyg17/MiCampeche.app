@@ -158,6 +158,10 @@
         <button class="subtog-btn" data-v="mandaditos" onclick="setTiendaMode('mandaditos')">Mandaditos</button>
       </div>
       <div id="tienda-mercado">
+        <div id="destacados-wrap" style="display:none">
+          <div class="destacados-hdr">Destacados</div>
+          <div class="tienda-grid" id="destacados-grid"></div>
+        </div>
         <div class="filter-row">
           <div class="filter-select-wrap">
             <select class="filter-select" id="mkt-cat-select" onchange="setMktFilter(this.value)"></select>
