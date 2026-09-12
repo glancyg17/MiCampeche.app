@@ -4353,6 +4353,7 @@ async function submitPost(kind){
         if(result.error){toast(pgErrorToast(result.error,'No se pudo reservar.'));return;}
         closeModal();
         toast('¡Incluida con tu Premium este ciclo — reservada sin costo! ✓');
+        refreshOfertaPostCta();
         return;
       }
     }
@@ -4479,6 +4480,7 @@ async function checkPaymentReturn(){
       return;
     }
     toast('¡Pago recibido y espacio reservado! En revisión antes de publicarse ✓');
+    refreshOfertaPostCta();
   } else if(paid==='premium'){
     toast('¡Pago recibido! Activaremos tu cuenta Premium en breve.');
   } else if(paid==='evento_feature'){
@@ -4528,6 +4530,28 @@ async function checkPaymentReturn(){
   }
 }
 
+/* The Comercio-page "¿Tienes un negocio? Publica una oferta" button
+   previews what will actually happen for the account's PRIMARY published
+   business specifically — same business openPost('oferta') defaults to.
+   If someone owns more than one business and picks a different one
+   inside the form itself, applyOfertaBusinessHints (already live) shows
+   the correct real-time answer for whichever one they actually select —
+   this button is just an accurate preview of the default path, not a
+   full multi-business summary. Fire-and-forget: this only updates a
+   label, nothing waits on it. */
+async function refreshOfertaPostCta(){
+  const btn=document.getElementById('of-hdr-post-btn');
+  if(!btn)return;
+  const defaultLabel='¿Tienes un negocio? Publica una oferta';
+  const acct=lastFetchedAccount||await MC.currentAccount();
+  const owned=(acct&&acct.businesses)||[];
+  const published=owned.filter(b=>b.status==='published');
+  const biz=published.find(b=>b.is_primary)||published[0];
+  if(!biz||!biz.is_premium){btn.textContent=defaultLabel;return;}
+  const free=await MC.checkFreeOfertaEligible(biz.id);
+  btn.textContent=free?'Publica tu oferta gratis':'Publica tu oferta — $99';
+}
+
 /* Data reload + re-render only — deliberately does NOT touch which
    sub-tab mode is active (Mercado vs Clasificados, etc.), so calling this
    again later (pull-to-refresh) can't silently kick someone back to a
@@ -4541,6 +4565,7 @@ async function refreshContent(){
   lastFetchedAccount=await MC.currentAccount();
   renderInicio();
   renderNoticias();
+  refreshOfertaPostCta();
   renderMktChips();renderMercado();renderDestacadosCarousel();renderClasChips();renderClasificados();renderOfertas();renderMandaditos();
   renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
   renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
