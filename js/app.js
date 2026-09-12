@@ -1650,16 +1650,18 @@ function renderOfertas(){
     <div class="of-card${soldOut?' sold-out':''}" onclick="toggleOfertaFlip(this)" ${admRm('ofertas',o.id,o.name)}>
       <div class="of-flip-inner">
         <div class="of-flip-front">
-          ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
-          <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
-          <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
-          <div class="of-hero-overlay">
-            <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-            <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-            <div class="of-price-row">
-              <span class="of-price-now">$${o.priceNow}</span>
-              <span class="of-price-was">$${o.priceWas}</span>
-              <span class="of-pct">-${discountPct}%</span>
+          <div class="of-hero-wrap">
+            ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
+            <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
+            <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
+            <div class="of-hero-overlay">
+              <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
+              <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+              <div class="of-price-row">
+                <span class="of-price-now">$${o.priceNow}</span>
+                <span class="of-price-was">$${o.priceWas}</span>
+                <span class="of-pct">-${discountPct}%</span>
+              </div>
             </div>
           </div>
           ${bottomHtml}
