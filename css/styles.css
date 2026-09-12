@@ -421,6 +421,7 @@ svg{display:block}
 .prod-seller{font-size:10.5px;color:var(--ink3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .prod-badge{position:absolute;margin:9px;font-size:9px;font-weight:700;background:var(--night);color:#fff;padding:4px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;z-index:2}
 .prod-badge-discount{position:absolute;margin:9px;font-size:9px;font-weight:700;background:var(--signal);color:#fff;padding:4px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;z-index:2}
+.prod-badge-example{position:absolute;margin:9px;font-size:9px;font-weight:700;background:var(--ink3);color:#fff;padding:4px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;z-index:2}
 .prod-price-was{font-size:12px;color:var(--ink3);text-decoration:line-through;margin-right:6px}
 .prod-wrap{position:relative}
 .prod-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}

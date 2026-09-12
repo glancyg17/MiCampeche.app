@@ -1845,13 +1845,12 @@ const fakeClient = {
       assert(text('modal-title') === 'Registrarme como mandadito', 'openMandaditoSignup() opens the mandadito registration form');
       assert(!doc.getElementById('pf-display_name') && !doc.getElementById('pf-phone'), 'the form has no name/phone fields — those come from the account');
       doc.getElementById('pf-vehicle_type').value = 'Motocicleta';
-      doc.getElementById('pf-zona').value = 'San Román';
       delete lastInsert.mandaditos;
       await window.submitPost('mandadito');
       await new Promise(r => setTimeout(r, 20));
       assert(text('modal-title') === 'Un paso más: WhatsApp', 'a successful mandadito registration lands on the WhatsApp identity-check step, not a plain success toast');
       const md = lastInsert.mandaditos;
-      assert(!!md && md.display_name === 'Ricardo Martín' && md.phone === '+529811234567' && md.vehicle_type === 'Motocicleta' && md.zona === 'San Román' && md.submitted_by === 'uid-1', 'the row snapshots the account identity and carries the form fields');
+      assert(!!md && md.display_name === 'Ricardo Martín' && md.phone === '+529811234567' && md.vehicle_type === 'Motocicleta' && md.submitted_by === 'uid-1', 'the row snapshots the account identity and carries the form fields');
       window.runWhatsAppStepContinue();
       await new Promise(r => setTimeout(r, 20));
       assert(text('toast') === '¡Registro enviado! Confirma por WhatsApp para que lo revisemos.', 'completing the WhatsApp step shows the real confirmation and closes the modal');

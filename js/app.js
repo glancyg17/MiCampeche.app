@@ -1464,29 +1464,45 @@ function renderMandaditoTabCta(){
       <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>`;
 }
-function renderMandaditos(){
-  const el=document.getElementById('mandaditos-list');
-  if(!MANDADITOS.length){el.innerHTML=emptyState('tienda','Nadie registrado todavía','Sé el primero en registrarte como mandadito.');return;}
-  el.innerHTML=MANDADITOS.map(m=>{
-    const num=digitsOnly(m.phone);
-    const intl=num?(num.length===10?'52'+num:num):'';
-    const msg=encodeURIComponent(`Hola, vi tu perfil de mandadito en MiCampeche y necesito que muevas algo.`);
-    return `
-    <div class="prod-wrap" ${admRm('mandaditos',m.id,m.name)}>
+/* Two static example cards so the grid never looks like a broken empty
+   list while real signups are still growing. Clearly labeled "Ejemplo",
+   no working WhatsApp button (nothing real to contact), no admin
+   long-press wiring (not a real row). This is a plain array, not tied to
+   any threshold — delete entries here whenever you want fewer/none. */
+const MANDADITO_EXAMPLES=[
+  {name:'Ejemplo: Juan Canul',vehicle:'Motocicleta',img:'/assets/images/Mandadito-Ejemplo-1.png'},
+  {name:'Ejemplo: María Chan',vehicle:'Bicicleta',img:'/assets/images/Mandadito-Ejemplo-2.png'}
+];
+function mandaditoCardHtml(m,isExample){
+  const num=isExample?'':digitsOnly(m.phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const msg=encodeURIComponent(`Hola, vi tu perfil de mandadito en MiCampeche y necesito que muevas algo.`);
+  const wrapAttrs=isExample?'':' '+admRm('mandaditos',m.id,m.name);
+  return `
+    <div class="prod-wrap"${wrapAttrs}>
+      ${isExample?'<span class="prod-badge-example">Ejemplo</span>':''}
       <div class="prod-card" style="cursor:default">
         <div class="prod-img" style="background-image:url('${m.img}')"></div>
         <div class="prod-body">
           <div class="prod-name">${e(m.name)}</div>
           ${m.vehicle?`<div class="prod-seller">${e(m.vehicle)}</div>`:''}
-          ${m.zona?`<div class="prod-seller">${e(m.zona)}</div>`:''}
-          ${m.desc?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${e(m.desc)}</div>`:''}
-          ${intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`
-                :`<div class="field-note">Sin WhatsApp registrado.</div>`}
-          <button class="menu-item" style="margin-top:6px;justify-content:center;font-size:12px;padding:7px;border:1px solid var(--line2)" onclick="openMandaditoReportForm('${m.id}')">Reportar</button>
+          ${!isExample&&m.desc?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${e(m.desc)}</div>`:''}
+          ${isExample
+            ?'<div class="field-note" style="text-align:center;margin-top:8px">Así se ve una tarjeta de mandadito</div>'
+            :(intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`
+                  :'<div class="field-note">Sin WhatsApp registrado.</div>')}
+          ${isExample?'':`<div style="text-align:center;margin-top:6px"><span style="font-size:11px;color:var(--ink3);text-decoration:underline;cursor:pointer" onclick="openMandaditoReportForm('${m.id}')">Reportar</span></div>`}
         </div>
       </div>
-    </div>
-  `;}).join('')+`<div class="su-note">MiCampeche solo conecta — el trato, el precio y el pago quedan entre ustedes.</div>`;
+    </div>`;
+}
+function renderMandaditos(){
+  const el=document.getElementById('mandaditos-list');
+  if(!MANDADITOS.length&&!MANDADITO_EXAMPLES.length){el.innerHTML=emptyState('tienda','Nadie registrado todavía','Sé el primero en registrarte como mandadito.');return;}
+  el.innerHTML=`<div class="tienda-grid">`
+    +MANDADITOS.map(m=>mandaditoCardHtml(m,false)).join('')
+    +MANDADITO_EXAMPLES.map(m=>mandaditoCardHtml(m,true)).join('')
+    +`</div><div class="su-note">MiCampeche solo conecta — el trato, el precio y el pago quedan entre ustedes.</div>`;
   wireAdminRemove(el);
 }
 
@@ -1878,10 +1894,9 @@ const POST_FORMS={
     {k:'photo',lbl:'Fotos del artículo',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
   ]},
-  mandadito:{title:'Registrarme como mandadito',note:'Revisamos cada registro — incluida una confirmación rápida por WhatsApp — antes de aparecer en el directorio.',fields:[
+  mandadito:{title:'Registrarme como mandadito',note:'Revisamos cada registro antes de que aparezcas en el directorio. Al enviar este formulario te pediremos, por WhatsApp, una foto de tu identificación, una selfie, la placa de tu vehículo y tu licencia vigente — ten esas fotos a la mano.',fields:[
     {k:'vehicle_type',lbl:'¿Cómo te mueves?',type:'select',opts:['Motocicleta','Bicicleta','A pie','Auto']},
-    {k:'zona',lbl:'Zona que cubres',type:'text',ph:'Ej. Centro, San Román, Lerma...'},
-    {k:'photo',lbl:'Tu foto',type:'imgupload'},
+    {k:'photo',lbl:'Tu foto',type:'imgupload',note:'Que se vea tu cara centrada y de frente, de los hombros hacia arriba, con buena luz — así se ve bien en tu tarjeta aunque la recortemos.'},
     {k:'desc',lbl:'Cuéntale a la gente sobre ti (opcional)',type:'textarea',ph:'Cuánto tiempo llevas haciendo mandados, qué tipo de cosas puedes mover...'}
   ]},
   perdidos:{title:'Reportar perdido o encontrado',fields:[
@@ -4288,8 +4303,11 @@ async function submitPost(kind){
     const result=await MC.submitMandadito(data);
     if(btn){btn.disabled=false;btn.textContent=originalLabel;}
     if(result&&result.error){toast(pgErrorToast(result.error,'No se pudo enviar tu registro.'));return;}
-    const msg='Hola, acabo de registrarme como mandadito en MiCampeche. Mi nombre es '+acct.displayName+'.';
-    openWhatsAppStep(msg,'Para confirmar que realmente eres tú, envíanos por este WhatsApp una foto de tu identificación, una selfie, la placa de tu vehículo y tu licencia vigente. Revisamos todo a mano antes de que tu perfil aparezca en el directorio — mientras tanto tu registro queda en revisión.',()=>{
+    // The checklist now lives inside the prefilled WhatsApp message itself
+    // (not just explained in-app above), so the person can attach the
+    // actual photos to this exact message before they hit send.
+    const msg='Hola, acabo de registrarme como mandadito en MiCampeche. Mi nombre es '+acct.displayName+'.\n\nAdjunto aquí:\n1) Foto de mi identificación\n2) Una selfie\n3) Foto de la placa de mi vehículo\n4) Mi licencia vigente';
+    openWhatsAppStep(msg,'Para confirmar que realmente eres tú necesitamos, por este WhatsApp, una foto de tu identificación, una selfie, la placa de tu vehículo y tu licencia vigente. El mensaje que se abrirá ya trae esta lista — puedes adjuntar las fotos ahí mismo antes de enviarlo. Revisamos todo a mano antes de que tu perfil aparezca en el directorio; mientras tanto tu registro queda en revisión.',()=>{
       toast('¡Registro enviado! Confirma por WhatsApp para que lo revisemos.');
       closeModal();
     });

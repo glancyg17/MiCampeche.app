@@ -665,7 +665,7 @@ MC.fetchMandaditos=async function(){
   if(error){console.error(error);return [];}
   return data.map(r=>({
     id:r.id,name:r.display_name,phone:r.phone,vehicle:r.vehicle_type||'',
-    zona:r.zona||'',desc:r.description||'',img:r.image_url||''
+    desc:r.description||'',img:r.image_url||''
   }));
 };
 
@@ -953,7 +953,7 @@ const CONTENT_PAYLOAD={
   }),
   mandaditos:(d)=>({
     display_name:d.display_name,phone:d.phone||null,vehicle_type:d.vehicle_type||null,
-    zona:d.zona||null,description:d.desc||null,image_url:d.photo||null
+    description:d.desc||null,image_url:d.photo||null
   })
 };
 
