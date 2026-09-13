@@ -755,7 +755,7 @@ MC.fetchOfertas=async function(){
       postedDs,phone:r.seller_phone||'',isExample:!!r.is_example,
       desc:r.description||'',terms:r.terms||''
     };
-  });
+  }).filter(o=>o.postedDs<=TODAY_DS); // approved doesn't mean live yet — a future booked_date means its turn hasn't come
 };
 /* The account-page "Ofertas activas" pill's data source — every one of
    this account's own ofertas that's live and not yet sold out. Scoped by
@@ -766,13 +766,43 @@ MC.fetchOfertas=async function(){
 MC.fetchMyActiveOfertas=async function(businessId){
   const uid=await MC.ready;
   if(!uid)return [];
-  let q=sb.from('ofertas').select('*').eq('submitted_by',uid).eq('status','published');
+  let q=sb.from('ofertas').select('*, ofertas_bookings(booked_date)').eq('submitted_by',uid).eq('status','published');
   if(businessId)q=q.eq('business_id',businessId);
   const {data,error}=await q;
   if(error){console.error(error);return [];}
   return (data||[])
-    .filter(r=>(r.quantity_sold||0)<r.quantity_total)
-    .map(r=>({id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,sold:r.quantity_sold||0,total:r.quantity_total}));
+    .map(r=>{
+      const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
+      const postedDs=booking?booking.booked_date:dToDs(new Date(r.created_at));
+      return {id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,sold:r.quantity_sold||0,total:r.quantity_total,postedDs};
+    })
+    // approved-but-future ones aren't "active" yet — they show under the
+    // Pendientes tab instead (see fetchMyPendingOfertas)
+    .filter(r=>(r.sold<r.total)&&(r.postedDs<=TODAY_DS));
+};
+/* Everything that ISN'T currently live and confirmable: still awaiting
+   moderation, approved but scheduled for a future date (hasn't had its
+   turn yet), or rejected — with whatever reason the admin left, visible
+   here for the first time. Feeds the new "Pendientes" tab in the Ofertas
+   activas modal. */
+MC.fetchMyPendingOfertas=async function(businessId){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  let q=sb.from('ofertas').select('*, ofertas_bookings(booked_date)').eq('submitted_by',uid).in('status',['pending','rejected','published']);
+  if(businessId)q=q.eq('business_id',businessId);
+  const {data,error}=await q.order('created_at',{ascending:false});
+  if(error){console.error(error);return [];}
+  return (data||[])
+    .map(r=>{
+      const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
+      return {
+        id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,
+        status:r.status,rejectionReason:r.rejection_reason||null,postedDs:booking?booking.booked_date:null
+      };
+    })
+    // a 'published' row only belongs here if its turn hasn't come yet —
+    // once postedDs<=today it's live and shows in fetchMyActiveOfertas instead
+    .filter(r=>r.status!=='published'||(r.postedDs&&r.postedDs>TODAY_DS));
 };
 /* The business's own "+1 pago confirmado" action — thin wrapper around the
    RPC, which does its own ownership check and bounds check server-side.

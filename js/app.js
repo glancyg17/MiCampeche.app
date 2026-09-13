@@ -2875,20 +2875,51 @@ async function cancelBusinessPremiumUpgrade(businessId){
    checks server-side; there's no undo by design, which is why Step2 has
    its own confirm screen. */
 let myActiveOfertasList=[];
+let myPendingOfertasList=[];
+let myOfertasTab='activas';
 async function openMyActiveOfertas(businessId,backKey){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'bizProfile');
+  myOfertasTab='activas';
   document.getElementById('modal-title').textContent='Ofertas activas';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
-  myActiveOfertasList=await MC.fetchMyActiveOfertas(businessId);
+  const [active,pending]=await Promise.all([MC.fetchMyActiveOfertas(businessId),MC.fetchMyPendingOfertas(businessId)]);
+  myActiveOfertasList=active;
+  myPendingOfertasList=pending;
   renderMyActiveOfertas();
 }
+function setMyOfertasTab(tab){myOfertasTab=tab;renderMyActiveOfertas();}
 function renderMyActiveOfertas(){
-  if(!myActiveOfertasList.length){
-    document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No tienes ofertas activas ahora mismo.</div></div>`;
+  const tabsHtml=`<div style="display:flex;gap:8px;margin-bottom:14px">
+    <button class="chip${myOfertasTab==='activas'?' on':''}" onclick="setMyOfertasTab('activas')">Activas (${myActiveOfertasList.length})</button>
+    <button class="chip${myOfertasTab==='pendientes'?' on':''}" onclick="setMyOfertasTab('pendientes')">Pendientes (${myPendingOfertasList.length})</button>
+  </div>`;
+  if(myOfertasTab==='pendientes'){
+    if(!myPendingOfertasList.length){
+      document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No tienes ofertas pendientes.</div></div>`;
+      return;
+    }
+    document.getElementById('modal-body').innerHTML=tabsHtml+myPendingOfertasList.map(o=>{
+      const statusLbl=o.status==='pending'?'En revisión':o.status==='rejected'?'No aprobada':'Programada';
+      const statusColor=o.status==='rejected'?'var(--signal)':'var(--ink3)';
+      const subLine=o.status==='pending'?'Aún la estamos revisando antes de publicarla.'
+        :o.status==='rejected'?(o.rejectionReason?e(o.rejectionReason):'No pasó la revisión — no se especificó un motivo.')
+        :`Sale al público el ${dsToLongEs(o.postedDs)}.`;
+      return `
+      <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(o.businessName)}</div>
+        <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(o.name)}</div>
+        <div style="font-size:11px;font-weight:700;color:${statusColor};text-transform:uppercase;letter-spacing:.03em;margin-top:6px">${statusLbl}</div>
+        <div style="color:var(--ink3);font-size:12.5px;margin-top:2px;line-height:1.4">${subLine}</div>
+      </div>`;
+    }).join('');
     return;
   }
-  document.getElementById('modal-body').innerHTML=myActiveOfertasList.map(o=>`
+  if(!myActiveOfertasList.length){
+    document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No tienes ofertas activas ahora mismo.</div></div>`;
+    return;
+  }
+  document.getElementById('modal-body').innerHTML=tabsHtml+myActiveOfertasList.map(o=>`
     <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(o.businessName)}</div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(o.name)}</div>

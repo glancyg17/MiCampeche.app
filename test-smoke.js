@@ -148,6 +148,16 @@ const SAMPLE = {
     // Owned by someone else — fetchMyActiveOfertas (scoped by submitted_by)
     // must never surface this one for the uid-1 test session.
     { id: 'o2', business_id: 'biz-9', business_name_snapshot: 'Negocio Ajeno', seller_phone: '', title: 'Oferta de otra persona', price_was: 80, price_now: 40, quantity_total: 3, quantity_sold: 0, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] },
+    // Approved but scheduled for a future date — its turn hasn't come yet,
+    // so it must be excluded from the public feed AND fetchMyActiveOfertas,
+    // and instead show up under the new Pendientes tab as "Programada".
+    { id: 'o3', business_id: 'biz-1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta programada', price_was: 150, price_now: 90, quantity_total: 5, quantity_sold: 0, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(3) }] },
+    // Rejected with a real admin-typed reason — must surface that exact
+    // reason under Pendientes, the first real visibility Ofertas has ever
+    // had into its own moderation status.
+    { id: 'o4', business_id: 'biz-1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta rechazada', price_was: 150, price_now: 90, quantity_total: 5, quantity_sold: 0, is_premium: false, image_url: '', status: 'rejected', rejection_reason: 'La imagen no muestra el producto real', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    // Still awaiting moderation entirely.
+    { id: 'o5', business_id: 'biz-1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta en revisión', price_was: 150, price_now: 90, quantity_total: 5, quantity_sold: 0, is_premium: false, image_url: '', status: 'pending', submitted_by: 'uid-1', created_at: NOW.toISOString() },
   ],
   ofertas_bookings: [{ booked_date: ds(1) }, { booked_date: ds(2) }],
   // Mandaditos directory (Step 1/3). md1 is owned by a DIFFERENT account
@@ -658,6 +668,9 @@ const fakeClient = {
   assert(!text('clas-grid').includes('Ricardo T.'), 'Clasificados no longer shows the poster name — personal listings are name-free now');
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');
   assert(text('of-list').includes('wa.me/529812003000') && text('of-list').includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
+  // o3 is status:'published' but booked for 3 days from now — approved
+  // doesn't mean live yet, so it must never appear in the public feed.
+  assert(!text('of-list').includes('Oferta programada'), 'an approved oferta scheduled for a future date is excluded from the public feed until its turn comes');
   // Mandaditos directory: a published profile shows up with a working
   // WhatsApp contact link — a directory, no task/job state.
   assert(text('mandaditos-list') && text('mandaditos-list').includes('Mandadito Test') && text('mandaditos-list').includes('Motocicleta'), 'a published mandadito renders in the directory list');
@@ -1345,6 +1358,19 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Ofertas activas' && text('modal-body').includes('Negocio Oferta') && text('modal-body').includes('2 de 5 vendidos'), 'openMyActiveOfertas(businessId) lists this business\'s own live, not-sold-out oferta with the real counts');
     assert(!text('modal-body').includes('Oferta de otra persona'), 'fetchMyActiveOfertas() is scoped by submitted_by + business_id — another account\'s oferta (o2) never appears');
+    assert(!text('modal-body').includes('Oferta programada'), 'the future-scheduled oferta (o3) does not show under Activas either — it belongs on Pendientes');
+    assert(text('modal-body').includes('Activas (1)') && text('modal-body').includes('Pendientes (3)'), 'the tab labels show the real counts — 1 live oferta, 3 not-yet-live (scheduled, rejected, pending)');
+
+    // The new Pendientes tab: everything not currently live — the real
+    // fix for Ofertas having had zero visibility into its own moderation
+    // status. Covers all three non-live shapes in one fixture set: a
+    // future-scheduled approval (o3), a rejection with a real admin-typed
+    // reason (o4), and a still-under-review submission (o5).
+    window.setMyOfertasTab('pendientes');
+    assert(text('modal-body').includes('Oferta programada') && text('modal-body').includes('Programada'), 'an approved-but-future oferta shows under Pendientes labeled "Programada"');
+    assert(text('modal-body').includes('Oferta rechazada') && text('modal-body').includes('No aprobada') && text('modal-body').includes('La imagen no muestra el producto real'), 'a rejected oferta shows under Pendientes labeled "No aprobada" with the real admin-typed reason');
+    assert(text('modal-body').includes('Oferta en revisión') && text('modal-body').includes('En revisión'), 'a still-pending oferta shows under Pendientes labeled "En revisión"');
+    window.setMyOfertasTab('activas'); // restore for the confirm-sale flow below, which expects the Activas tab
 
     // Two-step confirm: quantity_sold 2 -> 3 through the real RPC.
     window.confirmOfertaSaleStep1('o1');
@@ -2576,7 +2602,7 @@ const fakeClient = {
     await window.openPending();
     window.setPendingTab('cancellations');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (27)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
+    assert(text('modal-title') === 'Pendiente (30)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
     assert(text('modal-body').includes('Cancelaciones (2)'), 'the Cancelaciones tab chip carries the real unresolved count');
     const crBody = text('modal-body');
     assert(crBody.includes('Negocio Cerrado') && crBody.includes('Negocio eliminado'), 'a business_removed reminder shows its business name and the Spanish reason label');
@@ -2602,7 +2628,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (27)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test, and the one mandaditos row (md1) added for the Mandaditos directory tests) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (30)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test, the one mandaditos row (md1) added for the Mandaditos directory tests, and the three ofertas rows (o3/o4/o5 — scheduled/rejected/pending) added for the Ofertas Pendientes-tab tests — the mock\'s bare status=pending filter is unfiltered by design, so every ofertas fixture row counts here regardless of its actual status) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ══════════════ Reject-reason requirement: checks the actual row's
     //    submitted_by, not a hardcoded table name — the old check keyed
@@ -2732,7 +2758,7 @@ const fakeClient = {
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
     window.renderPendingQueue(); // reject auto-advanced into the next item's detail; re-render the list to check the count
-    assert(text('modal-title') === 'Pendiente (26)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (29)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real
