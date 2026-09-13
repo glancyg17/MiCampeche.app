@@ -3014,7 +3014,6 @@ function renderBusinessProfile(biz){
           <span class="menu-item-lbl">Mis productos en Tienda</span>
           <span class="menu-item-sub">Edita o revisa el estado de lo publicado</span>
         </span>
-        <span class="menu-count">${n}</span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:'';})()}
