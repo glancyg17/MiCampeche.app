@@ -462,6 +462,24 @@ MC.fetchPendingQueue=async function(){
    the same calendar day (published or still pending), so the reviewer can
    eyeball whether the submission duplicates something already in the
    system. Admin "read all" RLS covers reading non-published rows. */
+/* Duplicate-spotting aid for business moderation: any other business
+   (any status — pending, published, even rejected) sharing this one's
+   phone number or an overlapping name, so a second account registering
+   an already-listed business doesn't sail through review unnoticed. An
+   exact phone match is the strongest signal here — two genuinely
+   different real businesses essentially never share one. */
+MC.fetchSimilarBusinesses=async function(name,phone,excludeId){
+  const cleanName=(name||'').replace(/[%_,()]/g,'').trim();
+  const filters=[];
+  if(phone)filters.push(`phone.eq.${phone}`);
+  if(cleanName)filters.push(`business_name.ilike.%${cleanName}%`);
+  if(!filters.length)return [];
+  let q=sb.from('businesses').select('id,business_name,phone,address,status').or(filters.join(','));
+  if(excludeId)q=q.neq('id',excludeId);
+  const {data,error}=await q;
+  if(error){console.error(error);return [];}
+  return data||[];
+};
 MC.fetchEventosOnDate=async function(ds,excludeId){
   if(!ds)return [];
   const {data,error}=await sb.from('eventos')

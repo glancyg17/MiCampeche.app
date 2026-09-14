@@ -3935,6 +3935,42 @@ async function fillEventDuplicateCheck(raw){
   box.innerHTML=renderEventDuplicateCheck(raw,others);
 }
 
+/* Same idea as renderEventDuplicateCheck, for businesses: phone match is
+   the strong signal (border/header turn signal-colored), name overlap is
+   the softer one (still listed, not specially colored). */
+function renderBusinessDuplicateCheck(raw,others){
+  const head=`<div class="fl">Otros negocios parecidos</div>`;
+  if(!others.length){
+    return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px">${head}
+      <div style="font-size:13px;color:var(--palm);margin-top:6px">Ninguno — no parece un duplicado.</div></div>`;
+  }
+  const anySamePhone=others.some(o=>o.phone===raw.phone);
+  const statusLbl={published:'Publicado',pending:'Pendiente',rejected:'Rechazado'};
+  const rows=others.map(o=>{
+    const samePhone=o.phone===raw.phone;
+    return `
+    <div style="padding:8px 0;border-top:1px solid var(--line)${samePhone?';border-left:3px solid var(--signal);padding-left:8px':''}">
+      <div style="font-size:13px"><b>${e(o.business_name)}</b>
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${o.status==='published'?'var(--gulf)':'var(--wall-dk)'}"> ${statusLbl[o.status]||o.status}</span>
+        ${samePhone?'<span style="font-size:10px;font-weight:700;color:var(--signal)"> · MISMO TELÉFONO</span>':''}
+      </div>
+      ${o.address?`<div style="font-size:11.5px;color:var(--ink3);margin-top:1px">${e(o.address)}</div>`:''}
+    </div>`;
+  }).join('');
+  return `<div style="border:1.5px solid ${anySamePhone?'var(--signal)':'var(--line2)'};border-radius:var(--rs);padding:12px 14px">${head}
+    <div style="font-size:11.5px;color:var(--ink3);margin:4px 0 2px">${others.length} coincidencia${others.length===1?'':'s'}${anySamePhone?' · revisa los marcados "mismo teléfono"':''}</div>
+    ${rows}</div>`;
+}
+async function fillBusinessDuplicateCheck(raw){
+  let box=document.getElementById('biz-dup-check');
+  if(!box)return;
+  box.innerHTML=`<div style="font-size:12px;color:var(--ink3)">Buscando negocios parecidos…</div>`;
+  const others=await MC.fetchSimilarBusinesses(raw.business_name,raw.phone,raw.id);
+  box=document.getElementById('biz-dup-check');
+  if(!box)return;
+  box.innerHTML=renderBusinessDuplicateCheck(raw,others);
+}
+
 function openModerationDetail(table,id){
   const item=moderationQueue.find(i=>i.table===table&&i.id===id);
   if(!item)return;
@@ -3945,6 +3981,7 @@ function openModerationDetail(table,id){
     <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Enviado por ${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
     ${isNoticia?renderNoticiaModerationFields(item.raw):renderModerationDetailFields(table,item.raw)}
     ${table==='eventos'?`<div id="evt-dup-check" style="margin:14px 0"></div>`:''}
+    ${table==='businesses'?`<div id="biz-dup-check" style="margin:14px 0"></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="submit-btn" style="margin-top:0;flex:1" onclick="${isNoticia?`approveNoticia('${id}')`:`moderateItem('${table}','${id}','published')`}">Aprobar</button>
       <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="openRejectReasonPrompt('${table}','${id}')">Rechazar</button>
@@ -3952,6 +3989,7 @@ function openModerationDetail(table,id){
     <button class="menu-item" style="margin-top:10px;justify-content:center" onclick="mcModalBack('pendingList')">${svgIco('checkBadge')}<span class="menu-item-lbl">Volver a la lista</span></button>
   `;
   if(table==='eventos')fillEventDuplicateCheck(item.raw);
+  if(table==='businesses')fillBusinessDuplicateCheck(item.raw);
 }
 
 /* Noticias-specific moderation view: image, source, a clickable link to the
