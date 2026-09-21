@@ -1270,7 +1270,7 @@ function openEvento(id){
   if(x.price)rows.push(['Precio',x.price]);
   const num=digitsOnly(x.phone);
   const intl=num?(num.length===10?'52'+num:num):'';
-  const waMsg=encodeURIComponent(`Hola, vi el evento "${x.name}" en MiCampeche y quiero más información.`);
+  const waMsg=contactMsgParam(`Hola, vi el evento "${x.name}" en MiCampeche y quiero más información.`);
   let links='';
   const site=/^https?:\/\//i.test(x.website||'')?x.website:(x.website?'https://'+x.website:'');
   if(site){
@@ -1280,12 +1280,12 @@ function openEvento(id){
     </a>`;
   }
   if(intl){
-    links+=`<a class="detail-link" href="https://wa.me/${intl}?text=${waMsg}" target="_blank" rel="noopener">
-      <div><div class="detail-link-lbl">Contacto del organizador</div><div class="detail-link-name">WhatsApp ${e(x.phone)}</div></div>
+    links+=`<a class="detail-link" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('https://wa.me/${intl}?text=${waMsg}')">
+      <div><div class="detail-link-lbl">Contacto del organizador</div><div class="detail-link-name">WhatsApp</div></div>
       ${svgIco('message','detail-arr')}
     </a>
-    <a class="detail-link" href="tel:+${intl}">
-      <div><div class="detail-link-lbl">Contacto del organizador</div><div class="detail-link-name">Llamar ${e(x.phone)}</div></div>
+    <a class="detail-link" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('tel:+${intl}')">
+      <div><div class="detail-link-lbl">Contacto del organizador</div><div class="detail-link-name">Llamar</div></div>
       ${svgIco('phone','detail-arr')}
     </a>`;
   }
@@ -1370,12 +1370,12 @@ function openProdView(sellerType,id){
   const intl=num?(num.length===10?'52'+num:num):'';
   const methods=Array.isArray(x.contactMethods)?x.contactMethods:[];
   const noun=sellerType==='negocio'?'producto':'anuncio';
-  const msg=encodeURIComponent(`Hola, vi tu ${noun} "${x.name}" en MiCampeche y me interesa.`);
+  const msg=contactMsgParam(`Hola, vi tu ${noun} "${x.name}" en MiCampeche y me interesa.`);
   let cta='';
   if(intl&&methods.length){
-    if(methods.includes('whatsapp'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">Contactar por WhatsApp</a>`;
-    if(methods.includes('llamada'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center;background:var(--paper2);color:var(--ink)" href="tel:+${intl}">Llamar</a>`;
-    if(methods.includes('sms'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center;background:var(--paper2);color:var(--ink)" href="sms:+${intl}">Enviar mensaje</a>`;
+    if(methods.includes('whatsapp'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">Contactar por WhatsApp</a>`;
+    if(methods.includes('llamada'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center;background:var(--paper2);color:var(--ink)" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('tel:+${intl}')">Llamar</a>`;
+    if(methods.includes('sms'))cta+=`<a class="submit-btn" style="text-decoration:none;text-align:center;background:var(--paper2);color:var(--ink)" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('sms:+${intl}')">Enviar mensaje</a>`;
   }else{
     cta=`<div class="field-note">Este vendedor no dejó datos de contacto.</div>`;
   }
@@ -1565,7 +1565,7 @@ function mandaditoCardHtml(m,isExample){
           ${!isExample&&m.desc?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${e(m.desc)}</div>`:''}
           ${isExample
             ?'<div class="field-note" style="text-align:center;margin-top:8px">Así se ve una tarjeta de mandadito</div>'
-            :(intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="event.stopPropagation();logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`
+            :(intl?`<a class="submit-btn" style="margin-top:8px;padding:9px;font-size:13px;text-decoration:none;text-align:center;display:block" href="javascript:void(0)" onclick="event.stopPropagation();event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}').then(ok=>{if(ok)logMandaditoContact('${m.id}')})">Contactar por WhatsApp</a>`
                   :'<div class="field-note">Sin WhatsApp registrado.</div>')}
           ${isExample?'':`<div style="text-align:center;margin-top:6px"><span style="font-size:11px;color:var(--ink3);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation();openMandaditoReportForm('${m.id}')">Reportar</span></div>`}
         </div>
@@ -1583,7 +1583,7 @@ function openMandaditoView(id){
     <div class="pv-hero" style="background-image:url('${e(m.img)}')"></div>
     ${m.vehicle?`<div style="font-size:13px;color:var(--ink3);margin-top:8px">${e(m.vehicle)}</div>`:''}
     ${m.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap;margin-top:6px">${e(m.desc)}</div>`:'<div class="field-note" style="margin-top:6px">Este mandadito no dejó más detalles.</div>'}
-    ${intl?`<a class="submit-btn" style="text-decoration:none;text-align:center;margin-top:14px;display:block" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="logMandaditoContact('${m.id}')">Contactar por WhatsApp</a>`:'<div class="field-note" style="margin-top:14px">Sin WhatsApp registrado.</div>'}
+    ${intl?`<a class="submit-btn" style="text-decoration:none;text-align:center;margin-top:14px;display:block" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}').then(ok=>{if(ok)logMandaditoContact('${m.id}')})">Contactar por WhatsApp</a>`:'<div class="field-note" style="margin-top:14px">Sin WhatsApp registrado.</div>'}
     <div style="text-align:center;margin-top:10px"><span style="font-size:12px;color:var(--ink3);text-decoration:underline;cursor:pointer" onclick="closeModal();openMandaditoReportForm('${m.id}')">Reportar</span></div>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -1655,11 +1655,11 @@ function renderOfertas(){
     const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
     const num=digitsOnly(o.phone);
     const intl=num?(num.length===10?'52'+num:num):'';
-    const msg=encodeURIComponent(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
+    const msg=contactMsgParam(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
     const claimBtn=soldOut
       ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
       : intl
-        ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Contactar</a>`
+        ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="javascript:void(0)" onclick="event.stopPropagation();event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">Contactar</a>`
         : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
     const bottomHtml=`
       <div class="of-bottom">
@@ -2527,12 +2527,12 @@ function contactCtaButtons(phone,methods,messageText){
   const intl=num?(num.length===10?'52'+num:num):'';
   const ms=Array.isArray(methods)?methods:[];
   if(!intl||!ms.length)return '';
-  const msg=encodeURIComponent(messageText||'Hola, te contacto desde MiCampeche.');
+  const msg=contactMsgParam(messageText||'Hola, te contacto desde MiCampeche.');
   const secondary='style="background:var(--paper2);color:var(--ink)"';
   let h='';
-  if(ms.includes('whatsapp'))h+=`<a class="av-contact-btn" href="https://wa.me/${intl}?text=${msg}" target="_blank" rel="noopener">${svgIco('message')}WhatsApp</a>`;
-  if(ms.includes('llamada'))h+=`<a class="av-contact-btn" ${secondary} href="tel:+${intl}">${svgIco('phone')}Llamar</a>`;
-  if(ms.includes('sms'))h+=`<a class="av-contact-btn" ${secondary} href="sms:+${intl}">${svgIco('message')}SMS</a>`;
+  if(ms.includes('whatsapp'))h+=`<a class="av-contact-btn" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">${svgIco('message')}WhatsApp</a>`;
+  if(ms.includes('llamada'))h+=`<a class="av-contact-btn" ${secondary} href="javascript:void(0)" onclick="event.preventDefault();guardedContact('tel:+${intl}')">${svgIco('phone')}Llamar</a>`;
+  if(ms.includes('sms'))h+=`<a class="av-contact-btn" ${secondary} href="javascript:void(0)" onclick="event.preventDefault();guardedContact('sms:+${intl}')">${svgIco('message')}SMS</a>`;
   return h;
 }
 /* Full contact block for a card: the method buttons when the poster set
@@ -2541,7 +2541,7 @@ function contactCtaButtons(phone,methods,messageText){
 function contactCtaRow(x,messageText){
   const btns=contactCtaButtons(x.contactPhone,x.contactMethods,messageText);
   if(btns)return `<div class="contact-cta-row">${btns}</div>`;
-  if(x.contact)return `<div class="contact-cta-row"><a class="av-contact-btn" href="${telHref(x.contact)}">${svgIco('phone')}Llamar</a></div>`;
+  if(x.contact)return `<div class="contact-cta-row"><a class="av-contact-btn" href="javascript:void(0)" onclick="event.preventDefault();guardedContact('${telHref(x.contact)}')">${svgIco('phone')}Llamar</a></div>`;
   return '';
 }
 
@@ -4184,6 +4184,30 @@ function runWriteGate(acct,kindForSignin){
   if(acct.phoneVerificationStatus!=='verified'){openVerificationGate(acct);return false;}
   return true;
 }
+/* Gates any contact/interaction link (WhatsApp, tel:, sms:) behind the
+   same signed-in + phone-verified requirement writes already use, reusing
+   runWriteGate's existing sign-in-gate / verification-gate modals — no new
+   UI. Deliberately uses location.href for every scheme (not window.open),
+   because window.open() called after an `await` (i.e. after the account
+   check) can get blocked as a popup by strict mobile browsers (iOS Safari
+   in particular) since the await breaks the synchronous user-gesture
+   chain — location.href navigation doesn't have that restriction, and on
+   mobile a wa.me link hands off to the WhatsApp app either way. Returns
+   true if it actually navigated, false if it was blocked by the gate, so
+   callers that need a side-effect only on real contact (e.g. logging a
+   mandadito contact) can chain off the result. */
+async function guardedContact(url){
+  const acct=await MC.currentAccount();
+  if(!runWriteGate(acct,null))return false;
+  location.href=url;
+  return true;
+}
+/* encodeURIComponent leaves ' unescaped, and these URLs now sit inside a
+   single-quoted JS string in an onclick attribute (they used to sit in an
+   href, where a ' was harmless). Message text includes user-typed names and
+   titles, so escape it too — otherwise "Pizza d'Italia" breaks the button
+   and a crafted title could run script. */
+function contactMsgParam(text){return encodeURIComponent(text).replace(/'/g,'%27');}
 function openVerificationGate(acct){
   const rejected=acct.phoneVerificationStatus==='rejected';
   const waMsg='Hola, mi cuenta en MiCampeche está en revisión. Mi nombre es '+(acct.displayName||'')+' y mi número registrado es: '+(acct.phone||'');

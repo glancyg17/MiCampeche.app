@@ -2131,19 +2131,55 @@ const fakeClient = {
         && text('modal-body').includes("url('https://example.com/p1-a.jpg')") && text('modal-body').includes("url('https://example.com/p1-b.jpg')"),
         'a product with 2 image_urls shows the swipeable multi-image gallery, in order');
       const links = [...doc.querySelectorAll('#modal-body a')];
-      const waLink = links.find(a => a.href.includes('wa.me'));
-      assert(!!waLink && waLink.href.includes('529811002000') && waLink.href.includes(encodeURIComponent('Producto test')),
-        'the detail view has a WhatsApp link to the snapshotted seller number with a pre-filled message');
-      assert(links.some(a => a.href.startsWith('tel:+52')), 'a call link is present since "llamada" was one of the seller\'s methods');
-      assert(!links.some(a => a.href.startsWith('sms:')), 'no SMS link, because the seller did not select "mensaje de texto"');
+      // Contact buttons are gated (guardedContact), so the real URL lives in
+      // the onclick, not the href — see the gate tests just below.
+      const oc = a => a.getAttribute('onclick') || '';
+      const waLink = links.find(a => oc(a).includes('wa.me'));
+      assert(!!waLink && oc(waLink).includes('529811002000') && oc(waLink).includes(encodeURIComponent('Producto test')),
+        'the detail view has a WhatsApp button to the snapshotted seller number with a pre-filled message');
+      assert(links.some(a => oc(a).includes("guardedContact('tel:+52")), 'a call button is present since "llamada" was one of the seller\'s methods');
+      assert(!links.some(a => oc(a).includes('sms:')), 'no SMS button, because the seller did not select "mensaje de texto"');
+      assert(links.filter(a => /guardedContact/.test(oc(a))).every(a => a.getAttribute('href') === 'javascript:void(0)'),
+        'no contact button exposes the seller\'s number in its href — it only exists inside the gated onclick');
 
       window.openProdView('personal', 'c1');
       assert(text('modal-body').includes('pv-hero') && !text('modal-body').includes('pv-gallery'),
         'a clasificado with a single image_urls entry shows the plain hero, not the gallery');
       const links2 = [...doc.querySelectorAll('#modal-body a')];
-      assert(links2.length === 1 && links2[0].href.includes('wa.me') && links2[0].href.includes('529813004000'),
+      assert(links2.length === 1 && (links2[0].getAttribute('onclick') || '').includes('wa.me') && (links2[0].getAttribute('onclick') || '').includes('529813004000'),
         'a clasificado that only chose WhatsApp shows exactly one contact button, to its own per-post number');
       assert(text('modal-body').includes('Centro'), 'the clasificado detail view shows its zone');
+
+      // ── Contact buttons run through the same signed-in + verified gate as
+      //    writes. Navigation is a hash-only URL because jsdom can't follow
+      //    a real wa.me/tel:/sms: redirect. ──
+      const savedSession = currentSession, savedStatus = currentProfile.phone_verification_status;
+      window.location.hash = '';
+      currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+      const guestOk = await window.guardedContact('#gc-test');
+      assert(guestOk === false && text('modal-title') === 'Inicia sesión para continuar' && window.location.hash !== '#gc-test',
+        'a guest clicking a contact button gets the sign-in gate and is NOT sent to the contact link');
+      currentSession = savedSession;
+      currentProfile.phone_verification_status = 'pending';
+      const pendingOk = await window.guardedContact('#gc-test');
+      assert(pendingOk === false && text('modal-title') === 'Tu cuenta está en revisión' && window.location.hash !== '#gc-test',
+        'a signed-in but not-yet-verified account gets the "en revisión" gate and is NOT sent to the contact link');
+      currentProfile.phone_verification_status = 'verified';
+      const verifiedOk = await window.guardedContact('#gc-test');
+      assert(verifiedOk === true && window.location.hash === '#gc-test',
+        'a signed-in, verified account is sent through to the contact link');
+      currentSession = savedSession; currentProfile.phone_verification_status = savedStatus; window.location.hash = '';
+
+      // The URL sits in a single-quoted JS string inside onclick, so an
+      // apostrophe in a user-typed title must be escaped or it breaks the
+      // button (and could inject script).
+      const apoBtns = window.contactCtaButtons('9811234567', ['whatsapp', 'llamada', 'sms'], `Hola, vi tu aviso "Pizza d'Italia" en MiCampeche.`);
+      const apoHost = doc.createElement('div'); apoHost.innerHTML = apoBtns;
+      const apoOnclicks = [...apoHost.querySelectorAll('a')].map(a => a.getAttribute('onclick'));
+      let apoParses = apoOnclicks.length === 3;
+      try { apoOnclicks.forEach(src => new window.Function('event', src)); } catch (_) { apoParses = false; }
+      assert(apoParses && apoOnclicks[0].includes('d%27Italia'),
+        'a user-typed apostrophe in a title is escaped, so every contact button\'s onclick is still valid JS');
     }
 
     // Premium free-slot-per-billing-cycle for Ofertas: when the DB (via
