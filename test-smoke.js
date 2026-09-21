@@ -267,6 +267,9 @@ let mockFreeOfertaAvailable = false;
 Object.assign(forcedErrors, { updateUser: null, signIn: null });
 
 const lastInsert = {};
+const lastRpc = {};    // { [rpc name]: args of the most recent call }
+const lastSelect = {}; // { [table]: the select() string of the most recent generic-table read }
+const fakeDisplayNames = { 'uid-1': 'Vecina Test' }; // what the display_names RPC can resolve
 const lastUpdate = {};
 const lastDelete = {}; // { [table]: id } — id captured from the .eq('id', id) call
 
@@ -431,7 +434,7 @@ const fakeClient = {
       };
     }
     return {
-      select: (..._a) => makeChain(() => ({ data: SAMPLE[table] || [], error: null })),
+      select: (..._a) => { lastSelect[table] = _a[0]; return makeChain(() => ({ data: SAMPLE[table] || [], error: null })); },
       insert: (row) => { lastInsert[table] = row; return makeChain(() => forcedErrors.insert[table]
         ? { data: null, error: forcedErrors.insert[table] }
         : { data: [{ ...row, id: 'new-' + Math.random().toString(36).slice(2) }], error: null }); },
@@ -444,6 +447,15 @@ const fakeClient = {
     };
   },
   rpc: async (name, args) => {
+    lastRpc[name] = args;
+    // profiles is no longer world-readable: guests get author names and the
+    // duplicate-phone answer ONLY through these two SECURITY DEFINER RPCs.
+    if (name === 'display_names') {
+      return { data: (args.p_ids || []).filter(id => fakeDisplayNames[id]).map(id => ({ id, display_name: fakeDisplayNames[id] })), error: null };
+    }
+    if (name === 'phone_already_verified') {
+      return { data: fakePhoneAlreadyVerified, error: null };
+    }
     if (name === 'oferta_free_slot_available') {
       return { data: mockFreeOfertaAvailable, error: null };
     }
@@ -712,7 +724,14 @@ const fakeClient = {
   assert(jobDetail.includes('Turno de tarde, de 2pm a 10pm'), 'the detail view shows the real description — previously fetched by nothing and shown nowhere');
   window.closeModal();
   assert(text('rep-list') && text('rep-list').includes('Bache test') && text('rep-list').includes('confirmaron'), 'Reportes rendered with real confirm count wired in');
-  assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with joined author name');
+  assert(text('av-list') && text('av-list').includes('Aviso test') && text('av-list').includes('Vecina Test'), 'Avisos rendered real row with its author name');
+  // profiles is not world-readable any more (phone / admin / ban flags live on
+  // that row), so the public feeds must NOT embed it — names come from the
+  // display_names RPC instead, only for authors actually on screen.
+  assert(!!lastSelect.avisos && !/profiles/.test(lastSelect.avisos) && !!lastSelect.clasificados && !/profiles/.test(lastSelect.clasificados),
+    'the public Avisos and Clasificados feeds no longer embed profiles — a guest cannot read that table');
+  assert(!!lastRpc.display_names && lastRpc.display_names.p_ids.length === 1 && lastRpc.display_names.p_ids[0] === 'uid-1',
+    'author names are resolved through the display_names RPC, deduplicated to the authors on screen');
   assert(text('av-list').includes('av-img') && text('av-list').includes("background-image:url('https://example.com/aviso-photo.jpg')"), 'a fetched aviso with an image_url renders the .av-img thumbnail (avisos.image_url is a new column, not previously fetched/rendered at all)');
 
   // ── Reportes "ya no está": social-proof resolution. An open report shows
@@ -984,6 +1003,7 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('toast') === 'Ese número ya está verificado en otra cuenta — usa uno diferente', 'signing up with an already-verified phone number is blocked proactively, with a clear reason');
     assert(!lastUpdate.profiles || lastUpdate.profiles.phone !== '+529810000000', 'the blocked signup never actually reached Supabase with this number');
+    assert(!!lastRpc.phone_already_verified && lastRpc.phone_already_verified.p_phone === '+529810000000', 'the duplicate-phone check goes through the phone_already_verified RPC (a yes/no answer) with the normalized number, not a read of other people\'s profile rows');
     fakePhoneAlreadyVerified = false;
 
     // ── The real production bug: MC.signUp()'s profile-update call had

@@ -222,9 +222,27 @@ MC.updateMyAccount=async function(d){
    blocks a real signup — the database constraint still protects the
    actual guarantee either way. */
 MC.isPhoneAlreadyVerified=async function(phone){
-  const {data,error}=await sb.from('profiles').select('id').eq('phone',phone).eq('phone_verification_status','verified').limit(1);
+  // profiles is no longer readable across accounts (phone numbers and the
+  // admin/ban flags live on that row), so this asks a SECURITY DEFINER RPC
+  // that answers only yes/no instead of querying the table directly.
+  const {data,error}=await sb.rpc('phone_already_verified',{p_phone:phone});
   if(error){console.error('Phone uniqueness check failed:',error);return false;}
-  return !!(data&&data.length);
+  return !!data;
+};
+
+/* Author names for the public feeds (Avisos, Clasificados). profiles is not
+   world-readable any more, so a guest can't embed profiles(display_name);
+   this asks a SECURITY DEFINER RPC that returns ONLY id → display_name.
+   Fails open ({}): a name-lookup problem must never hide a feed — the cards
+   just fall back to "Vecino". The RPC caps a call at 200 ids; feeds are 60. */
+MC.fetchDisplayNames=async function(ids){
+  const uniq=[...new Set((ids||[]).filter(Boolean))];
+  if(!uniq.length)return {};
+  const {data,error}=await sb.rpc('display_names',{p_ids:uniq});
+  if(error){console.error('display_names failed:',error);return {};}
+  const map={};
+  (data||[]).forEach(r=>{map[r.id]=r.display_name;});
+  return map;
 };
 
 MC.fetchPendingPhoneVerifications=async function(){
@@ -746,7 +764,7 @@ MC.fetchEventos=async function(){
 MC.fetchTienda=async function(){
   const [prod,clas]=await Promise.all([
     sb.from('productos').select('*').eq('status','published').order('created_at',{ascending:false}).limit(60),
-    sb.from('clasificados').select('*, profiles(display_name)').eq('status','published').order('created_at',{ascending:false}).limit(60)
+    sb.from('clasificados').select('*').eq('status','published').order('created_at',{ascending:false}).limit(60)
   ]);
   if(prod.error)console.error(prod.error);
   if(clas.error)console.error(clas.error);
@@ -758,7 +776,8 @@ MC.fetchTienda=async function(){
   }));
   const personales=(clas.data||[]).map(r=>({
     id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
-    seller:(r.profiles&&r.profiles.display_name)||'Vecino',img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:false,colonia:r.colonia,sellerType:'personal',
+    seller:'Vecino', // personal listings are name-free in the UI (seller is only ever rendered for sellerType 'negocio'), so no author lookup at all
+    img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:false,colonia:r.colonia,sellerType:'personal',
     desc:r.description||'',condition:r.item_condition||'nuevo',availability:'ahora',leadTime:'',
     fulfillment:r.fulfillment||'',zone:r.zone||'',phone:r.contact_phone||'',contactMethods:r.contact_methods||[]
   }));
@@ -1025,11 +1044,13 @@ MC.fetchReportes=async function(){
 };
 
 MC.fetchAvisos=async function(){
-  const {data,error}=await sb.from('avisos').select('*, profiles(display_name)')
+  const {data,error}=await sb.from('avisos').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(60);
   if(error){console.error(error);return [];}
+  // anonymous avisos never show a name, so don't even look theirs up
+  const names=await MC.fetchDisplayNames(data.filter(r=>!r.anonymous).map(r=>r.submitted_by));
   return data.map(r=>({id:r.id,cat:r.category||'Otro',title:r.title,desc:r.description||'',img:r.image_url||'',colonia:r.colonia||'',
-    author:r.anonymous?'Vecino anónimo':((r.profiles&&r.profiles.display_name)||'Vecino'),
+    author:r.anonymous?'Vecino anónimo':(names[r.submitted_by]||'Vecino'),
     contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[],
     time:relTimeEs(r.created_at),isExample:!!r.is_example}));
 };
