@@ -607,6 +607,94 @@ MC.fetchMyPosts=async function(){
   return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
 };
 
+/* ── ADMIN: Usuarios ──
+   Admin-only, app-layer siblings of the "my own posts" fetchers above — new
+   functions rather than a parameter on the existing ones, so there's zero
+   risk of changing behaviour for regular account owners. RLS (admin read
+   all on every content table, "businesses admin all") is what actually
+   permits these; they're only ever called from screens reachable by an
+   isAdmin-gated menu entry, same convention as every other admin fetch in
+   this file. */
+
+/* Every profile, each with its owned businesses attached, for the Usuarios
+   list + its search/filter. Two plain queries, joined client-side — real
+   user/business counts are small at this stage; revisit with a server-side
+   search RPC only if that stops being true. */
+MC.adminFetchAllUsers=async function(){
+  const [profilesRes,bizRes]=await Promise.all([
+    sb.from('profiles').select('id,display_name,phone,phone_verification_status,banned,is_admin,created_at'),
+    sb.from('businesses').select('id,profile_id,business_name,status,is_premium,is_primary')
+  ]);
+  if(profilesRes.error){console.error(profilesRes.error);return [];}
+  if(bizRes.error)console.error(bizRes.error); // still show the users; only the business columns/filters would be incomplete
+  const bizByProfile={};
+  (bizRes.data||[]).forEach(b=>{(bizByProfile[b.profile_id]=bizByProfile[b.profile_id]||[]).push(b);});
+  return (profilesRes.data||[]).map(p=>({
+    id:p.id,displayName:p.display_name,phone:p.phone,
+    phoneVerificationStatus:p.phone_verification_status,banned:p.banned,isAdmin:p.is_admin,
+    createdAt:p.created_at,
+    businesses:bizByProfile[p.id]||[]
+  }));
+};
+
+/* One profile + its businesses, for the user detail page. */
+MC.adminFetchUserDetail=async function(userId){
+  const [{data:profile,error},{data:businesses,error:bizError}]=await Promise.all([
+    sb.from('profiles').select('id,display_name,phone,phone_verification_status,phone_verification_reason,banned,is_admin,created_at').eq('id',userId).single(),
+    sb.from('businesses').select('id,business_name,status,is_premium,is_primary,created_at').eq('profile_id',userId)
+  ]);
+  if(error){console.error(error);return null;}
+  if(bizError)console.error(bizError);
+  return {...profile,businesses:businesses||[]};
+};
+
+/* Every personal (non-business) publication for one user, across every
+   status — shaped exactly like MC.fetchMyPosts()'s own output
+   (table,label,id,title,status,rejectionReason,createdAt,raw) so the
+   existing myPostBucket()/postStatusBadge()/MY_POSTS_TABS helpers work
+   unmodified. Deliberately excludes 'productos' (business-scoped — that
+   lives on the business page instead, via adminFetchBusinessPosts). */
+MC.adminFetchUserPosts=async function(userId){
+  const tables=MY_POST_TABLES.filter(t=>t.table!=='productos');
+  const results=await Promise.all(tables.map(async ({table,label,titleField,ownerField})=>{
+    const {data,error}=await sb.from(table).select('*').eq(ownerField,userId).order('created_at',{ascending:false});
+    if(error){console.error(error);return [];}
+    return (data||[]).map(r=>({
+      table,label,id:r.id,title:r[titleField]||'(sin título)',
+      status:r.status||'pending',rejectionReason:r.rejection_reason||null,
+      createdAt:r.created_at,raw:r
+    }));
+  }));
+  return results.flat().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+};
+
+/* A business's own Productos + Ofertas, across every status — same shape as
+   above, for the business detail page's grid. Scoped by business_id only
+   (not by who submitted it), since this is "this business's publications,"
+   not "this user's." */
+MC.adminFetchBusinessPosts=async function(businessId){
+  const [prodRes,ofRes]=await Promise.all([
+    sb.from('productos').select('*').eq('business_id',businessId).order('created_at',{ascending:false}),
+    sb.from('ofertas').select('*, ofertas_bookings(booked_date)').eq('business_id',businessId).order('created_at',{ascending:false})
+  ]);
+  if(prodRes.error)console.error(prodRes.error);
+  if(ofRes.error)console.error(ofRes.error);
+  const prod=(prodRes.data||[]).map(r=>({table:'productos',label:'Producto (Tienda)',id:r.id,title:r.title||'(sin título)',status:r.status||'pending',rejectionReason:r.rejection_reason||null,createdAt:r.created_at,raw:r}));
+  const of=(ofRes.data||[]).map(r=>({table:'ofertas',label:'Oferta',id:r.id,title:r.title||'(sin título)',status:r.status||'pending',rejectionReason:r.rejection_reason||null,createdAt:r.created_at,raw:r}));
+  return [...prod,...of].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+};
+
+/* Admin-only write: the exact same flag the founder flips by hand today
+   (see openPremiumPrompt's comment in app.js) — just from the app instead
+   of Supabase Studio. RLS's "businesses admin all" policy permits it; the
+   pre-existing triggers (premium_since sync, downgrade-cleanup, downgrade
+   cancellation-reminder) fire automatically, unchanged. Note that an
+   RLS-filtered or trigger-reverted update reports NO error and just
+   changes nothing — callers must re-read the row to know what happened. */
+MC.adminSetBusinessPremium=async function(businessId,value){
+  return sb.from('businesses').update({is_premium:!!value}).eq('id',businessId);
+};
+
 /* Fallback thumbnail when a noticia has no real thumbnail_url — keyed on
    source_name exactly as the sync-noticias-tribuna / sync-noticias-central
    Edge Functions set it (confirmed live: 'Tribuna Campeche' / 'Central de

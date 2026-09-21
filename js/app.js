@@ -2769,6 +2769,14 @@ function renderAccountSignedIn(acct){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:''}
+    ${acct.isAdmin?`<button class="menu-item" onclick="openAdminUsers()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">Usuarios</span>
+        <span class="menu-item-sub">Buscar cuentas y sus negocios</span>
+      </span>
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>`:''}
     ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
@@ -2987,6 +2995,324 @@ async function openAdditionalBusinessForm(){
   document.getElementById('modal-title').textContent='Agregar otro negocio';
 }
 
+/* Status label + colour for a business — shared by the owner's own business
+   profile and the admin Usuarios screens so they can never drift apart. */
+function businessStatusInfo(biz){
+  return {
+    lbl:biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio verificado',
+    color:biz.status==='published'?'var(--gulf)':'var(--wall-dk)'
+  };
+}
+
+/* ══════════════ ADMIN: Usuarios ══════════════
+   Founder-only directory: searchable list of every account → one account's
+   detail page (its businesses + its personal publications) → one business's
+   detail page (its Productos + Ofertas, and the Premium switch). Only
+   reachable from the isAdmin-gated account-menu entry, so — like
+   openPending() — nothing in here re-checks isAdmin; RLS is the real gate.
+   Read-only apart from the Premium switch. Pushes onto the same modal view
+   stack as everything else, so ✕ / back / hardware-back walk back out
+   business → user → list → account. */
+let adminUsersList=[];
+let adminUsersSearch='';
+let adminUsersFilter='all'; // 'all' | 'negocio' | 'premium'
+let adminViewingUserId=null;
+let adminUserDetail=null;
+let adminUserPosts=[];
+let adminViewingBusinessId=null;
+let adminBizDetail=null;
+let adminBizOwner=null;
+let adminBizPosts=[];
+let adminBizSaving=false;
+let adminPostsSource=[]; // whichever list the visible "Publicaciones" grid is showing — the user's, or the business's
+let adminPostsTab='pending';
+// Set at render time so the "Enviar mensaje" onclick never has to carry a
+// free-text name through a quoted JS-string argument (a stray ' would break
+// it — same reasoning as contactMsgParam / confirmDiscardMyPost).
+let adminMsgTarget={phone:null,name:''};
+const ADMIN_LOADING='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
+const ADMIN_ARROW='<svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+function adminSectionLabel(txt){
+  return `<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">${txt}</div>`;
+}
+
+/* ── 1. The list ── */
+async function openAdminUsers(){
+  mcModalPushView('account');
+  adminUsersSearch='';
+  adminUsersFilter='all';
+  document.getElementById('modal-title').textContent='Usuarios';
+  document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
+  document.getElementById('modal-bg').classList.add('on');
+  adminUsersList=await MC.adminFetchAllUsers();
+  renderAdminUsersList();
+}
+function adminUsersFiltered(){
+  const q=adminUsersSearch.trim().toLowerCase();
+  // Only treat the query as a phone number when it LOOKS like one — otherwise
+  // a name search containing a stray digit ("Local 2") would match any phone
+  // containing that digit, and an empty digit string would match everyone.
+  const qDigits=/^[\d\s+()-]+$/.test(q)?digitsOnly(q):'';
+  return adminUsersList.filter(u=>{
+    if(adminUsersFilter==='negocio'&&!u.businesses.length)return false;
+    if(adminUsersFilter==='premium'&&!u.businesses.some(b=>b.is_premium))return false;
+    if(!q)return true;
+    if((u.displayName||'').toLowerCase().includes(q))return true;
+    if(qDigits&&digitsOnly(u.phone).includes(qDigits))return true;
+    return u.businesses.some(b=>(b.business_name||'').toLowerCase().includes(q));
+  }).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0)); // newest accounts first
+}
+function renderAdminUsersList(){
+  const chip=(v,l)=>`<button class="chip${adminUsersFilter===v?' on':''}" onclick="setAdminUsersFilter('${v}')">${l}</button>`;
+  document.getElementById('modal-title').textContent='Usuarios';
+  document.getElementById('modal-body').innerHTML=`
+    <input class="fi" id="admin-users-search" type="search" autocomplete="off" placeholder="Buscar por nombre, teléfono o negocio" value="${e(adminUsersSearch)}" oninput="setAdminUsersSearch(this.value)" style="margin-bottom:10px">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${chip('all','Todos')}${chip('negocio','Con negocio')}${chip('premium','Premium')}</div>
+    <div id="admin-users-results"></div>`;
+  renderAdminUsersResults();
+}
+// Only the results box is redrawn while typing — rebuilding the whole body
+// would replace the <input> itself and drop focus on every keystroke.
+function renderAdminUsersResults(){
+  const box=document.getElementById('admin-users-results');
+  if(!box)return;
+  if(!adminUsersList.length){box.innerHTML='<div style="text-align:center;padding:30px 10px;color:var(--ink3)">No se pudo cargar la lista de usuarios.</div>';return;}
+  const rows=adminUsersFiltered();
+  if(!rows.length){box.innerHTML='<div style="text-align:center;padding:30px 10px;color:var(--ink3)">Sin resultados.</div>';return;}
+  box.innerHTML=`<div style="color:var(--ink3);font-size:12px;margin-bottom:8px">${rows.length===adminUsersList.length?rows.length+' usuarios':rows.length+' de '+adminUsersList.length+' usuarios'}</div>`
+    +rows.map(u=>{
+      const n=u.businesses.length;
+      const premium=u.businesses.some(b=>b.is_premium);
+      return `<button class="menu-item" onclick="openAdminUserView('${e(String(u.id))}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+        <span class="menu-item-txt">
+          <span class="menu-item-lbl">${e(u.displayName||'Sin nombre')}${u.isAdmin?' · Admin':''}</span>
+          <span class="menu-item-sub">${e(u.phone||'Sin teléfono')} · ${n?(n===1?'1 negocio':n+' negocios'):'Sin negocio'}</span>
+        </span>
+        ${u.banned?'<span class="menu-badge on">Bloqueada</span>':''}
+        ${premium?'<span class="menu-badge on" style="background:var(--gulf)">Premium</span>':''}
+        ${ADMIN_ARROW}
+      </button>`;
+    }).join('');
+}
+function setAdminUsersSearch(v){adminUsersSearch=String(v||'');renderAdminUsersResults();}
+function setAdminUsersFilter(v){adminUsersFilter=v;renderAdminUsersList();}
+// Backing into the list re-fetches quietly: a Premium switch on a business
+// page (two levels down) changes the Premium badge shown on these rows.
+function restoreAdminUsersList(){
+  adminViewingUserId=null;
+  adminViewingBusinessId=null;
+  renderAdminUsersList();
+  MC.adminFetchAllUsers().then(list=>{
+    if(!list.length)return;
+    adminUsersList=list;
+    renderAdminUsersResults();
+  });
+}
+
+/* ── 2. One account ── */
+async function openAdminUserView(userId){
+  mcModalPushView('adminUsers',restoreAdminUsersList);
+  adminViewingUserId=userId;
+  adminUserDetail=null;
+  adminUserPosts=[];
+  adminPostsTab='pending';
+  document.getElementById('modal-title').textContent='Usuario';
+  document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
+  document.getElementById('modal-bg').classList.add('on');
+  const [detail,posts]=await Promise.all([MC.adminFetchUserDetail(userId),MC.adminFetchUserPosts(userId)]);
+  if(adminViewingUserId!==userId)return; // backed out / opened a different user before this landed
+  if(!detail){toast('No se pudo cargar el usuario.');mcModalBack();return;}
+  adminUserDetail=detail;
+  adminUserPosts=posts;
+  renderAdminUserView(detail);
+}
+function renderAdminUserView(d){
+  adminPostsSource=adminUserPosts;
+  adminMsgTarget={phone:d.phone,name:d.display_name};
+  const pvs=d.phone_verification_status;
+  const pvHtml=pvs==='verified'?'<span style="color:var(--gulf)">✓ Teléfono verificado</span>'
+    :pvs==='rejected'?'<span style="color:var(--signal)">Teléfono no verificado</span>'
+    :'<span style="color:var(--wall-dk)">Teléfono en revisión</span>';
+  const joined=d.created_at?new Date(d.created_at).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}):'';
+  const bizs=[...(d.businesses||[])].sort((a,b)=>(b.is_primary?1:0)-(a.is_primary?1:0)||new Date(a.created_at||0)-new Date(b.created_at||0));
+  const bizHtml=bizs.length?bizs.map(b=>{
+    const s=businessStatusInfo(b);
+    return `<button class="menu-item" onclick="openAdminBusinessView('${e(String(b.id))}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">${e(b.business_name)}${b.is_primary?' · Principal':''}</span>
+        <span class="menu-item-sub" style="color:${s.color}">${s.lbl}</span>
+      </span>
+      ${ADMIN_ARROW}
+    </button>`;
+  }).join(''):'<div style="color:var(--ink3);font-size:13px">Sin negocios registrados.</div>';
+  document.getElementById('modal-title').textContent='Usuario';
+  document.getElementById('modal-body').innerHTML=`<div id="admin-user-view">
+    <div style="font-weight:800;font-size:19px;line-height:1.25">${e(d.display_name||'Sin nombre')}${d.is_admin?' <span style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">· Admin</span>':''}</div>
+    <div style="color:var(--ink3);font-size:13.5px;margin-top:3px">${e(d.phone||'Sin teléfono')}</div>
+    <div style="font-size:12.5px;font-weight:600;margin-top:6px">${pvHtml}</div>
+    ${(pvs==='rejected'&&d.phone_verification_reason)?`<div style="color:var(--ink3);font-size:12.5px;margin-top:3px">${e(d.phone_verification_reason)}</div>`:''}
+    ${d.banned?'<div style="margin-top:10px;padding:9px 12px;border-radius:var(--rs);background:var(--signal);color:#fff;font-size:12.5px;font-weight:700">Cuenta bloqueada</div>':''}
+    ${joined?`<div style="color:var(--ink3);font-size:12px;margin-top:6px">Se unió el ${joined}</div>`:''}
+    ${adminSectionLabel('Sus negocios'+(bizs.length?' ('+bizs.length+')':''))}
+    ${bizHtml}
+    <div id="admin-posts-section">${adminPostsSectionHtml()}</div>
+    <button class="menu-item" onclick="adminMessageUser(adminMsgTarget.phone,adminMsgTarget.name)" style="border:1.5px solid var(--line2);margin-top:18px;margin-bottom:4px">
+      <span class="menu-item-ico">${svgIco('message')}</span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">Enviar mensaje</span>
+        <span class="menu-item-sub">${d.phone?'Abre WhatsApp con su número':'Sin teléfono registrado'}</span>
+      </span>
+      ${ADMIN_ARROW}
+    </button>
+    <!-- delete user: pending confirmation on hard-vs-soft-delete semantics -->
+  </div>`;
+  document.getElementById('modal-bg').classList.add('on');
+}
+// Backing into the user page from a business page re-reads the account
+// quietly — the business rows here show Premium/verified status, which the
+// Premium switch one level down may have just changed. Posts aren't
+// affected by it, so they're kept as-is.
+function restoreAdminUserView(){
+  adminViewingBusinessId=null;
+  if(adminUserDetail)renderAdminUserView(adminUserDetail);
+  refreshAdminUserView();
+}
+async function refreshAdminUserView(){
+  const id=adminViewingUserId;
+  if(!id)return;
+  const detail=await MC.adminFetchUserDetail(id);
+  if(!detail||adminViewingUserId!==id||!document.getElementById('admin-user-view'))return; // failed, or the screen moved on meanwhile
+  adminUserDetail=detail;
+  renderAdminUserView(detail);
+}
+
+/* Shared "Publicaciones" block — a 2-column grid of compact read-only cards
+   (no edit/discard: this is an admin looking at someone else's content),
+   bucketed with the very same myPostBucket()/MY_POSTS_TABS/postStatusBadge()
+   the owner's own "Mis publicaciones" screen uses. Lives in its own
+   container so switching tabs redraws just this block and doesn't throw the
+   admin back to the top of a long page. */
+function adminPostsSectionHtml(){
+  const src=adminPostsSource;
+  const head=adminSectionLabel('Publicaciones'+(src.length?' ('+src.length+')':''));
+  if(!src.length)return head+'<div style="color:var(--ink3);font-size:13px">Sin publicaciones.</div>';
+  const buckets={pending:[],active:[],finished:[]};
+  src.forEach(p=>buckets[myPostBucket(p)].push(p));
+  const tabs=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">${MY_POSTS_TABS.map(([v,l])=>
+    `<button class="chip${v===adminPostsTab?' on':''}" onclick="setAdminPostsTab('${v}')">${l} (${buckets[v].length})</button>`).join('')}</div>`;
+  const list=buckets[adminPostsTab];
+  const emptyMsgs={pending:'Nada en revisión.',active:'Nada activo.',finished:'Nada finalizado.'};
+  if(!list.length)return head+tabs+`<div style="color:var(--ink3);font-size:13px">${emptyMsgs[adminPostsTab]}</div>`;
+  return head+tabs+`<div class="tienda-grid" style="padding:0">${list.map(p=>`
+    <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:10px 11px;min-width:0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;flex-wrap:wrap">
+        <span style="font-size:10.5px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(p.label)}</span>
+        ${postStatusBadge(p.status,myPostBucket(p))}
+      </div>
+      <div style="font-weight:700;font-size:13.5px;margin-top:4px;line-height:1.3;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${e(p.title)}</div>
+      <div style="color:var(--ink3);font-size:11.5px;margin-top:3px">${relTimeEs(p.createdAt)}</div>
+      ${(p.status==='rejected'&&p.rejectionReason)?`<div style="color:var(--signal);font-size:11.5px;margin-top:4px;line-height:1.3;overflow-wrap:anywhere">${e(p.rejectionReason)}</div>`:''}
+    </div>`).join('')}</div>`;
+}
+function setAdminPostsTab(tab){
+  adminPostsTab=tab;
+  const box=document.getElementById('admin-posts-section');
+  if(box)box.innerHTML=adminPostsSectionHtml();
+}
+
+/* Opens WhatsApp to an account/business. No sign-in/verified gate here (that
+   is guardedContact's job for residents) — this screen is already admin-only.
+   Phone normalisation matches contactCtaButtons: a bare 10-digit number is
+   a Mexican one. */
+function adminMessageUser(phone,name){
+  const num=digitsOnly(phone);
+  if(!num){toast('No hay teléfono registrado para enviar mensaje');return;}
+  const intl=num.length===10?'52'+num:num;
+  const msg=encodeURIComponent(`Hola${name?' '+name:''}, te escribimos de MiCampeche.`);
+  location.href='https://wa.me/'+intl+'?text='+msg;
+}
+
+/* ── 3. One business ── */
+async function openAdminBusinessView(businessId){
+  mcModalPushView('adminUserView',restoreAdminUserView);
+  adminViewingBusinessId=businessId;
+  adminBizDetail=null;
+  adminBizOwner=null;
+  adminBizPosts=[];
+  adminBizSaving=false;
+  adminPostsTab='pending';
+  document.getElementById('modal-title').textContent='Negocio';
+  document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
+  document.getElementById('modal-bg').classList.add('on');
+  const [biz,posts]=await Promise.all([MC.fetchBusinessById(businessId),MC.adminFetchBusinessPosts(businessId)]);
+  if(adminViewingBusinessId!==businessId)return; // backed out before this landed
+  if(!biz){toast('No se pudo cargar el negocio.');mcModalBack();return;}
+  // Normally reached from the owner's user page, whose detail is already in
+  // hand; fall back to a lookup so this page never depends on that.
+  let owner=(adminUserDetail&&adminUserDetail.id===biz.profile_id)?adminUserDetail:null;
+  if(!owner)owner=await MC.adminFetchUserDetail(biz.profile_id);
+  if(adminViewingBusinessId!==businessId)return;
+  adminBizDetail=biz;
+  adminBizOwner=owner;
+  adminBizPosts=posts;
+  renderAdminBusinessView(biz);
+}
+function renderAdminBusinessView(biz){
+  adminPostsSource=adminBizPosts;
+  const owner=adminBizOwner;
+  // The business's own number if it has one, otherwise the owning account's.
+  const useBizPhone=!!digitsOnly(biz.phone);
+  const msgPhone=useBizPhone?biz.phone:(owner&&owner.phone)||null;
+  adminMsgTarget={phone:msgPhone,name:useBizPhone?biz.business_name:(owner&&owner.display_name)||biz.business_name};
+  const s=businessStatusInfo(biz);
+  const tier=(premium,label)=>{
+    const on=!!biz.is_premium===premium;
+    return `<button class="chip${on?' on':''}" data-tier="${premium?'premium':'basico'}"${on?' disabled style="cursor:default"':''} onclick="adminSetBusinessType(${premium})">${label}</button>`;
+  };
+  const since=(biz.is_premium&&biz.premium_since)?new Date(biz.premium_since).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}):'';
+  document.getElementById('modal-title').textContent='Negocio';
+  document.getElementById('modal-body').innerHTML=`<div id="admin-business-view">
+    <div style="font-size:11px;font-weight:700;color:${s.color};text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${s.lbl}</div>
+    <div style="font-weight:800;font-size:19px;line-height:1.25">${e(biz.business_name)}${biz.is_primary?' <span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">· Principal</span>':''}</div>
+    ${owner?`<div style="color:var(--ink3);font-size:13px;margin-top:3px">Cuenta de ${e(owner.display_name||'Sin nombre')}</div>`:''}
+    ${(biz.status==='rejected'&&biz.rejection_reason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(biz.rejection_reason)}</div>`:''}
+    ${adminSectionLabel('Cambiar tipo de cuenta')}
+    <div style="display:flex;gap:8px">${tier(false,'Básico')}${tier(true,'Premium')}</div>
+    <div style="color:var(--ink3);font-size:12px;margin-top:8px;line-height:1.5">${since?'Premium desde el '+since+'. ':''}Pasar a Básico quita los Destacados y Descuentos del negocio y crea un recordatorio de cancelación en Pendiente.</div>
+    <div id="admin-posts-section">${adminPostsSectionHtml()}</div>
+    <button class="menu-item" onclick="adminMessageUser(adminMsgTarget.phone,adminMsgTarget.name)" style="border:1.5px solid var(--line2);margin-top:18px;margin-bottom:4px">
+      <span class="menu-item-ico">${svgIco('message')}</span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">Enviar mensaje</span>
+        <span class="menu-item-sub">${msgPhone?(useBizPhone?'Abre WhatsApp con el número del negocio':'Abre WhatsApp con el número de su dueño'):'Sin teléfono registrado'}</span>
+      </span>
+      ${ADMIN_ARROW}
+    </button>
+    <!-- delete business: pending confirmation on hard-vs-soft-delete semantics -->
+  </div>`;
+  document.getElementById('modal-bg').classList.add('on');
+}
+/* The switch itself. Never flips the label optimistically: it re-reads the
+   row after the update and shows whatever the database actually says. That
+   matters because an update blocked by RLS, or quietly reverted by a
+   trigger, reports NO error and simply changes nothing. */
+async function adminSetBusinessType(makePremium){
+  const id=adminViewingBusinessId;
+  if(!id||!adminBizDetail||adminBizSaving||!!adminBizDetail.is_premium===!!makePremium)return;
+  adminBizSaving=true;
+  document.querySelectorAll('#admin-business-view [data-tier]').forEach(b=>{b.disabled=true;});
+  const {error}=await MC.adminSetBusinessPremium(id,makePremium);
+  const fresh=await MC.fetchBusinessById(id);
+  adminBizSaving=false;
+  if(adminViewingBusinessId!==id)return; // navigated away mid-save; the write itself already happened
+  if(fresh)adminBizDetail=fresh;
+  renderAdminBusinessView(adminBizDetail);
+  if(error){toast(pgErrorToast(error,'No se pudo cambiar el tipo de cuenta.'));return;}
+  if(fresh&&!!fresh.is_premium===!!makePremium)toast(makePremium?'Negocio ahora es Premium ✓':'Negocio ahora es Básico ✓');
+  else toast('El cambio no se aplicó — revisa los permisos.');
+}
+
 /* Business profile — a sub-view of "Tu cuenta" (direct, for a single
    business) or of "Mis negocios" (for 2+). One tap opens the full
    business record; the edit action reuses the verification form and
@@ -3012,8 +3338,7 @@ async function openBusinessProfile(id){
 function renderBusinessProfile(biz){
   if(!biz)return;
   const isAdmin=!!(lastFetchedAccount&&lastFetchedAccount.isAdmin);
-  const statusLbl=biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio verificado';
-  const statusColor=biz.status==='published'?'var(--gulf)':'var(--wall-dk)';
+  const {lbl:statusLbl,color:statusColor}=businessStatusInfo(biz);
   document.getElementById('modal-title').textContent='Mi negocio';
   document.getElementById('modal-body').innerHTML=`
     <div style="font-size:11px;font-weight:700;color:${statusColor};text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${statusLbl}</div>

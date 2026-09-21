@@ -2169,6 +2169,12 @@ const fakeClient = {
       assert(verifiedOk === true && window.location.hash === '#gc-test',
         'a signed-in, verified account is sent through to the contact link');
       currentSession = savedSession; currentProfile.phone_verification_status = savedStatus; window.location.hash = '';
+      // A hash change fires an async popstate, which the app's hardware-back
+      // handler treats as a real back press and would use to peel whatever
+      // modal layer is open at that moment — let those land now, not in the
+      // middle of the next test.
+      await new Promise(r => setTimeout(r, 30));
+      window.closeModal();
 
       // The URL sits in a single-quoted JS string inside onclick, so an
       // apostrophe in a user-typed title must be escaped or it breaks the
@@ -2180,6 +2186,115 @@ const fakeClient = {
       try { apoOnclicks.forEach(src => new window.Function('event', src)); } catch (_) { apoParses = false; }
       assert(apoParses && apoOnclicks[0].includes('d%27Italia'),
         'a user-typed apostrophe in a title is escaped, so every contact button\'s onclick is still valid JS');
+    }
+
+    // ── Admin "Usuarios": list/search/filter → user page → business page,
+    //    plus the Premium switch. Runs against a self-contained fixture and
+    //    restores every piece of shared state it touches. ──
+    {
+      const saved = { biz: currentBusiness, extra: extraBusinesses, status: currentProfile.phone_verification_status, admin: currentProfile.is_admin, phone: currentProfile.phone, name: currentProfile.display_name };
+      currentProfile.display_name = 'Vecino Test'; // earlier tests rename the shared profile; pin the name this block asserts on
+      currentBusiness = { id: 'biz-1', profile_id: 'uid-1', business_name: "Taquería d'Ana", status: 'published', is_premium: false, is_primary: true, phone: '981 777 8888', created_at: NOW.toISOString() };
+      extraBusinesses = [];
+      // the fake's profiles.select only returns a row for created_at-selecting queries while pending
+      currentProfile.phone_verification_status = 'pending';
+      currentProfile.is_admin = true;
+      SAMPLE.productos.push({ id: 'p-adm', business_id: 'biz-1', submitted_by: 'uid-1', title: 'Taco de prueba', status: 'pending', created_at: NOW.toISOString() });
+      const settle = () => new Promise(r => setTimeout(r, 25));
+
+      // menu entry: admin-only
+      await window.openAccount();
+      assert(text('modal-body').includes('Buscar cuentas y sus negocios'), 'an admin sees the Usuarios entry in the account menu');
+      currentProfile.is_admin = false;
+      await window.openAccount();
+      assert(!text('modal-body').includes('Buscar cuentas y sus negocios') && !text('modal-body').includes('openAdminUsers'), 'a non-admin account does not get the Usuarios entry at all');
+      currentProfile.is_admin = true;
+      await window.openAccount();
+
+      // list + search + filters
+      await window.openAdminUsers();
+      assert(text('modal-title') === 'Usuarios' && text('modal-body').includes('Vecino Test') && text('modal-body').includes('1 negocio'), 'Usuarios lists every account with its business count');
+      window.setAdminUsersSearch('vecino');
+      assert(text('admin-users-results').includes('Vecino Test'), 'search matches a display name (case-insensitive)');
+      window.setAdminUsersSearch('9811234567');
+      assert(text('admin-users-results').includes('Vecino Test'), 'search matches a phone number by its digits, ignoring +52/spacing');
+      window.setAdminUsersSearch('Ana');
+      assert(text('admin-users-results').includes('Vecino Test'), 'search matches one of the account\'s business names');
+      window.setAdminUsersSearch('zzz');
+      assert(text('admin-users-results').includes('Sin resultados'), 'a query that matches nothing shows the empty state');
+      window.setAdminUsersSearch('Local 2');
+      assert(text('admin-users-results').includes('Sin resultados'), 'a name-style query containing a digit is not treated as a phone search');
+      window.setAdminUsersSearch('');
+      window.setAdminUsersFilter('premium');
+      assert(text('admin-users-results').includes('Sin resultados'), 'the Premium filter hides an account whose only business is not Premium');
+      window.setAdminUsersFilter('negocio');
+      assert(text('admin-users-results').includes('Vecino Test'), 'the "Con negocio" filter keeps an account that has a business');
+      window.setAdminUsersSearch('vecino');
+      window.setAdminUsersFilter('all');
+      assert(doc.getElementById('admin-users-search').value === 'vecino', 'switching filters keeps the typed search text');
+
+      // user page
+      currentProfile.banned = true;
+      await window.openAdminUsers();
+      assert(text('admin-users-results').includes('Bloqueada'), 'a banned account is flagged on its list row');
+      assert(doc.getElementById('admin-users-search').value === '', 'opening Usuarios fresh starts with an empty search (the earlier query does not linger)');
+      window.setAdminUsersSearch('vecino'); // typed again — this is the text back-navigation must preserve
+      await window.openAdminUserView('uid-1');
+      assert(text('modal-title') === 'Usuario' && text('modal-body').includes('Vecino Test') && text('modal-body').includes('Cuenta bloqueada'), 'the user page shows the name and a clear "Cuenta bloqueada" indicator');
+      assert(text('modal-body').includes('Sus negocios') && text('modal-body').includes("Taquería d'Ana") && text('modal-body').includes('Negocio verificado'), 'the user page lists their businesses with the shared status label');
+      delete currentProfile.banned;
+      assert(doc.querySelectorAll('#admin-posts-section .tienda-grid').length === 1, 'personal publications render as a grid, not the owner\'s list rows');
+      assert(text('admin-posts-section').includes('Mi reporte pendiente') && text('admin-posts-section').includes('La descripción no es clara'), 'the Pendiente tab shows real pending + rejected posts, including the rejection reason');
+      window.setAdminPostsTab('active');
+      assert(text('admin-posts-section').includes('Mi evento activo') && text('admin-posts-section').includes('Mi aviso publicado'), 'the Activo tab shows published posts');
+      window.setAdminPostsTab('finished');
+      assert(text('admin-posts-section').includes('Mi evento finalizado'), 'the Finalizado tab shows the past event');
+      let sawProducto = false;
+      ['pending', 'active', 'finished'].forEach(t => { window.setAdminPostsTab(t); if (text('admin-posts-section').includes('Taco de prueba') || text('admin-posts-section').includes('Producto (Tienda)')) sawProducto = true; });
+      assert(!sawProducto, 'Productos never appear in a user\'s personal-publications grid (they belong to the business page)');
+      assert(!text('admin-user-view').includes('adminDeleteUser') && text('admin-user-view').includes('delete user: pending confirmation'), 'no delete control yet — only the placeholder anchor comment');
+      window.adminMessageUser('', 'Vecino');
+      assert(text('toast') === 'No hay teléfono registrado para enviar mensaje', 'messaging an account with no phone explains why nothing opened');
+
+      // business page + Premium switch
+      await window.openAdminBusinessView('biz-1');
+      assert(text('modal-title') === 'Negocio' && text('modal-body').includes("Taquería d'Ana") && text('modal-body').includes('Cuenta de Vecino Test'), 'the business page shows the business and its owner');
+      assert(text('admin-posts-section').includes('Taco de prueba') && text('admin-posts-section').includes('Oferta rechazada') && text('admin-posts-section').includes('Oferta en revisión'), 'the business grid mixes its Productos and Ofertas (pending tab)');
+      window.setAdminPostsTab('active');
+      assert(text('admin-posts-section').includes('Oferta test') && !text('admin-posts-section').includes('Oferta de otra persona'), 'the Activo tab shows the business\'s own live ofertas only');
+      const tierBtn = t => doc.querySelector('#admin-business-view [data-tier="' + t + '"]');
+      assert(tierBtn('basico').disabled === true && tierBtn('premium').disabled === false, 'the button matching the current tier (Básico) is disabled');
+
+      // an update the DB silently ignores (RLS / trigger revert) must NOT flip the label
+      const realFrom = fakeClient.from;
+      fakeClient.from = function (t) { const c = realFrom.call(fakeClient, t); return t === 'businesses' ? { ...c, update: () => makeChain(() => ({ data: [], error: null })) } : c; };
+      await window.adminSetBusinessType(true);
+      fakeClient.from = realFrom;
+      assert(currentBusiness.is_premium === false && tierBtn('basico').disabled === true && text('toast').includes('no se aplicó'), 'a silently-ignored update leaves the label on Básico and says so, instead of optimistically flipping');
+
+      await window.adminSetBusinessType(true);
+      assert(lastUpdate.businesses && lastUpdate.businesses.is_premium === true && currentBusiness.is_premium === true, 'the Premium button really writes is_premium:true');
+      assert(tierBtn('premium').disabled === true && tierBtn('basico').disabled === false && text('admin-business-view').includes('Negocio Premium'), 'after the re-fetch the screen shows Premium and swaps which button is disabled');
+      assert(text('toast') === 'Negocio ahora es Premium ✓', 'a confirmation toast fires on a real change');
+      await window.adminSetBusinessType(false);
+      assert(currentBusiness.is_premium === false && tierBtn('basico').disabled === true, 'switching back to Básico works the same way');
+      await window.adminSetBusinessType(true);
+
+      // back-navigation: business → user page → list → account
+      window.mcModalBack(); await settle();
+      assert(text('modal-title') === 'Usuario' && text('modal-body').includes('Sus negocios'), 'back from the business page returns to the user page');
+      assert(text('admin-user-view').includes('Negocio Premium'), 'the user page reflects the Premium change made one level down (re-read on the way back)');
+      window.mcModalBack(); await settle();
+      assert(text('modal-title') === 'Usuarios' && doc.getElementById('admin-users-search').value === 'vecino', 'back from the user page returns to the list with the search text intact');
+      assert(text('admin-users-results').includes('Premium'), 'the list row picks up the new Premium badge');
+      window.mcModalBack(); await settle();
+      assert(text('modal-body').includes('Buscar cuentas y sus negocios'), 'back from the list returns to the account menu');
+
+      // restore shared fixtures
+      window.closeModal();
+      SAMPLE.productos = SAMPLE.productos.filter(p => p.id !== 'p-adm');
+      currentBusiness = saved.biz; extraBusinesses = saved.extra;
+      currentProfile.phone_verification_status = saved.status; currentProfile.is_admin = saved.admin; currentProfile.phone = saved.phone; currentProfile.display_name = saved.name;
     }
 
     // Premium free-slot-per-billing-cycle for Ofertas: when the DB (via
