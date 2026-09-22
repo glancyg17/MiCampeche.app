@@ -75,6 +75,10 @@ function makeChain(getResult, onEq) {
               // and the nudge filters out already-resolved rows.
               if (f === 'contacted_by') rows = rows.filter(r => r && r[f] === v);
               if (f === 'resolved') rows = rows.filter(r => r && !!r.resolved === !!v);
+              // MC.fetchMyUndismissedMessages() is scoped by profile_id — real
+              // per-account scoping, so one account's admin_messages never
+              // leak into another's popup queue.
+              if (f === 'profile_id') rows = rows.filter(r => r && r[f] === v);
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
             nullFields.forEach(f => { rows = rows.filter(r => r && r[f] == null); });
@@ -230,6 +234,17 @@ const SAMPLE = {
     { id: 'cr1', business_id: 'biz-old-1', business_name: 'Negocio Cerrado', reason: 'business_removed', resolved_at: null, created_at: NOW.toISOString() },
     { id: 'cr2', business_id: 'biz-2', business_name: 'Taco Loco 2', reason: 'premium_downgraded', resolved_at: null, created_at: NOW.toISOString() },
     { id: 'cr3', business_id: 'biz-old-2', business_name: 'Ya resuelto', reason: 'business_removed', resolved_at: NOW.toISOString(), created_at: NOW.toISOString() },
+  ],
+  // Admin in-app messages (replaces the old WhatsApp hand-off). am1/am2 are
+  // uid-1's own, undismissed, oldest first — the queue order the popup must
+  // follow. am3 is uid-1's but already dismissed, and am4 belongs to a
+  // different profile entirely — MC.fetchMyUndismissedMessages' owner+
+  // dismissed_at filtering must exclude both.
+  admin_messages: [
+    { id: 'am1', profile_id: 'uid-1', message: 'Primer aviso de prueba', sent_by: 'admin-uid', dismissed_at: null, created_at: new Date(NOW.getTime() - 2 * 60000).toISOString() },
+    { id: 'am2', profile_id: 'uid-1', message: 'Segundo aviso de prueba', sent_by: 'admin-uid', dismissed_at: null, created_at: NOW.toISOString() },
+    { id: 'am3', profile_id: 'uid-1', message: 'Ya lo vi', sent_by: 'admin-uid', dismissed_at: NOW.toISOString(), created_at: NOW.toISOString() },
+    { id: 'am4', profile_id: 'uid-other', message: 'No es para ti', sent_by: 'admin-uid', dismissed_at: null, created_at: NOW.toISOString() },
   ],
 };
 
@@ -501,6 +516,15 @@ const fakeClient = {
     if (name === 'reject_password_reset') {
       const req = fakePasswordResetRequests.find(r => r.id === args.p_request_id);
       if (req) req.status = 'rejected';
+      return { data: null, error: null };
+    }
+    if (name === 'dismiss_admin_message') {
+      // Mirrors the real SECURITY DEFINER RPC's ownership check
+      // (auth.uid()=profile_id): only the message's own owner can dismiss
+      // it, and only once — no client-side trust.
+      const callerUid = currentSession && currentSession.user ? currentSession.user.id : null;
+      const m = (SAMPLE.admin_messages || []).find(r => r.id === args.target_id && r.profile_id === callerUid && !r.dismissed_at);
+      if (m) m.dismissed_at = new Date().toISOString();
       return { data: null, error: null };
     }
     if (name === 'complete_password_reset') {
@@ -2273,12 +2297,49 @@ const fakeClient = {
       ['pending', 'active', 'finished'].forEach(t => { window.setAdminPostsTab(t); if (text('admin-posts-section').includes('Taco de prueba') || text('admin-posts-section').includes('Producto (Tienda)')) sawProducto = true; });
       assert(!sawProducto, 'Productos never appear in a user\'s personal-publications grid (they belong to the business page)');
       assert(!text('admin-user-view').includes('adminDeleteUser') && text('admin-user-view').includes('delete user: pending confirmation'), 'no delete control yet — only the placeholder anchor comment');
-      window.adminMessageUser('', 'Vecino');
-      assert(text('toast') === 'No hay teléfono registrado para enviar mensaje', 'messaging an account with no phone explains why nothing opened');
+      // "Enviar mensaje" no longer hands off to WhatsApp — it's a real
+      // in-app message. Guard: no profileId at all (e.g. the business-page
+      // owner lookup failed) never opens the compose screen.
+      window.openAdminMessageCompose(null, 'Vecino');
+      assert(text('toast') === 'No se pudo identificar la cuenta.' && text('modal-title') !== 'Enviar mensaje', 'messaging with no resolvable profileId explains why and never opens compose');
+
+      // Real compose flow, from the user page currently open (adminMsgTarget
+      // was set by renderAdminUserView to this account's real profileId).
+      assert(text('admin-user-view').includes('Aparece como ventana emergente en su cuenta'), 'the button\'s own sub-label describes the new in-app behavior, not WhatsApp');
+      window.openAdminMessageCompose('uid-1', 'Vecino Test');
+      assert(text('modal-title') === 'Enviar mensaje' && text('modal-body').includes('Vecino Test') && text('modal-body').includes('la próxima vez que'), 'compose opens with the recipient\'s real name in the explainer copy');
+
+      // empty message is rejected client-side, before ever touching Supabase
+      delete lastInsert.admin_messages;
+      doc.getElementById('admin-msg-compose').value = '   ';
+      await window.submitAdminMessage('uid-1');
+      assert(text('toast') === 'Escribe un mensaje primero' && !lastInsert.admin_messages, 'submitting a blank/whitespace-only message is blocked, not silently sent as empty');
+
+      // a real failure (RLS, network, …) leaves the compose screen up and
+      // re-enables the button rather than pretending it worked
+      forcedErrors.insert.admin_messages = { message: 'simulated insert failure' };
+      doc.getElementById('admin-msg-compose').value = 'Este no debería llegar';
+      await window.submitAdminMessage('uid-1');
+      assert(text('modal-title') === 'Enviar mensaje' && doc.getElementById('admin-msg-send-btn').disabled === false && doc.getElementById('admin-msg-send-btn').textContent === 'Enviar', 'a failed send leaves the compose screen open with the button usable again, not stuck on "Enviando…"');
+      delete forcedErrors.insert.admin_messages;
+
+      // the real successful send
+      doc.getElementById('admin-msg-compose').value = '  Recuerda actualizar tu foto de perfil  ';
+      await window.submitAdminMessage('uid-1');
+      assert(lastInsert.admin_messages && lastInsert.admin_messages.profile_id === 'uid-1' && lastInsert.admin_messages.message === 'Recuerda actualizar tu foto de perfil', 'the real, trimmed message text is sent targeted at the real recipient profile_id — not the sender\'s');
+      assert(lastInsert.admin_messages.sent_by === 'uid-1', 'sent_by records who actually sent it (the signed-in admin), a real audit trail rather than an always-null column');
+      assert(text('modal-title') === 'Usuario' && text('toast') === 'Mensaje enviado ✓', 'a successful send returns to the page it was opened from and confirms');
 
       // business page + Premium switch
       await window.openAdminBusinessView('biz-1');
       assert(text('modal-title') === 'Negocio' && text('modal-body').includes("Taquería d'Ana") && text('modal-body').includes('Cuenta de Vecino Test'), 'the business page shows the business and its owner');
+      // "Cuenta de Vecino Test" above proves `owner` really resolved to
+      // uid-1's real profile — adminMsgTarget's profileId is built from
+      // that exact same `owner` variable, so a message from this page
+      // targets the business's OWNER, not the business row's own id.
+      assert(text('admin-business-view').includes('Aparece como ventana emergente en la cuenta de su dueño') && !text('admin-business-view').includes('WhatsApp'), 'the business page\'s message button also describes the new in-app behavior, scoped to the owner, with no WhatsApp mention left');
+      const bizMsgBtn = [...doc.querySelectorAll('#admin-business-view .menu-item')].find(b => (b.getAttribute('onclick') || '').includes('openAdminMessageCompose'));
+      assert(!!bizMsgBtn && bizMsgBtn.getAttribute('onclick') === 'openAdminMessageCompose(adminMsgTarget.profileId,adminMsgTarget.name)', 'the button is wired to the new compose function via adminMsgTarget, not the old adminMessageUser(phone,…)');
       assert(text('admin-posts-section').includes('Taco de prueba') && text('admin-posts-section').includes('Oferta rechazada') && text('admin-posts-section').includes('Oferta en revisión'), 'the business grid mixes its Productos and Ofertas (pending tab)');
       window.setAdminPostsTab('active');
       assert(text('admin-posts-section').includes('Oferta test') && !text('admin-posts-section').includes('Oferta de otra persona'), 'the Activo tab shows the business\'s own live ofertas only');
@@ -2315,6 +2376,70 @@ const fakeClient = {
       SAMPLE.productos = SAMPLE.productos.filter(p => p.id !== 'p-adm');
       currentBusiness = saved.biz; extraBusinesses = saved.extra;
       currentProfile.phone_verification_status = saved.status; currentProfile.is_admin = saved.admin; currentProfile.phone = saved.phone; currentProfile.display_name = saved.name;
+    }
+
+    // ── Admin in-app messages (replaces the WhatsApp hand-off): the
+    //    recipient's popup, real queuing when more than one is pending, and
+    //    dismissal that actually writes dismissed_at server-side (via the
+    //    RPC) rather than just hiding it client-side. ──
+    {
+      const settle = () => new Promise(r => setTimeout(r, 20));
+      const nudgeOpen = () => doc.getElementById('modal-bg').classList.contains('on');
+
+      window.closeModal();
+      await window.maybeShowUndismissedMessages();
+      await settle();
+      assert(nudgeOpen() && text('modal-title') === 'Mensaje de MiCampeche' && text('modal-body').includes('Primer aviso de prueba'), 'the oldest undismissed message shows first, real text and all');
+      assert(!text('modal-body').includes('Segundo aviso de prueba'), 'only one message shows at a time — the second is queued, not shown alongside the first');
+      assert(!text('modal-body').includes('No es para ti'), 'am4 (a different profile\'s message) never surfaces for this account — real per-profile scoping, not just an unfiltered dump');
+
+      // dismissing the first must actually write dismissed_at server-side,
+      // not just hide it in the client array
+      assert(SAMPLE.admin_messages.find(m => m.id === 'am1').dismissed_at === null, 'sanity check: am1 genuinely starts undismissed in the fixture');
+      await window.dismissAdminMessagePopup('am1');
+      await settle();
+      assert(!!SAMPLE.admin_messages.find(m => m.id === 'am1').dismissed_at, '"Entendido" really calls the RPC and sets dismissed_at — not just a client-side hide');
+
+      // the second message queues up right after, not both shown at once
+      assert(nudgeOpen() && text('modal-body').includes('Segundo aviso de prueba') && !text('modal-body').includes('Primer aviso de prueba'), 'the second undismissed message shows next, automatically, once the first is dismissed');
+
+      await window.dismissAdminMessagePopup('am2');
+      await settle();
+      assert(!nudgeOpen(), 'once every message is dismissed, the modal closes itself — nothing left to show');
+      assert(!!SAMPLE.admin_messages.find(m => m.id === 'am2').dismissed_at, 'the second dismissal is real too');
+
+      // with nothing left undismissed for this account, opening the app
+      // shows nothing at all (am3 was already dismissed, am4 isn't ours)
+      window.closeModal();
+      await window.maybeShowUndismissedMessages();
+      await settle();
+      assert(!nudgeOpen(), 'nothing pops up once the real queue is genuinely empty');
+
+      // guard: never stomp on an already-open modal
+      SAMPLE.admin_messages.push({ id: 'am5', profile_id: 'uid-1', message: 'No debería aparecer aún', sent_by: 'admin-uid', dismissed_at: null, created_at: NOW.toISOString() });
+      doc.getElementById('modal-bg').classList.add('on');
+      doc.getElementById('modal-title').textContent = 'Otra cosa';
+      await window.maybeShowUndismissedMessages();
+      await settle();
+      assert(text('modal-title') === 'Otra cosa', 'a real undismissed message never interrupts whatever modal is already open');
+
+      // closing via ✕/backdrop (closeModal — not dismissAdminMessagePopup) is
+      // deliberately NOT special-cased: the message stays undismissed and
+      // resurfaces next time, the safer default per the spec.
+      window.closeModal();
+      await window.maybeShowUndismissedMessages();
+      await settle();
+      assert(nudgeOpen() && text('modal-body').includes('No debería aparecer aún'), 'am5 shows once nothing else is blocking it');
+      window.closeModal(); // simulates ✕ / backdrop, not "Entendido"
+      assert(SAMPLE.admin_messages.find(m => m.id === 'am5').dismissed_at === null, 'closing without tapping Entendido leaves dismissed_at untouched server-side');
+      await window.maybeShowUndismissedMessages();
+      await settle();
+      assert(nudgeOpen() && text('modal-body').includes('No debería aparecer aún'), 'so it genuinely resurfaces next time, rather than being silently lost');
+
+      // cleanup
+      await window.dismissAdminMessagePopup('am5');
+      SAMPLE.admin_messages = SAMPLE.admin_messages.filter(m => m.id !== 'am5');
+      window.closeModal();
     }
 
     // ── Push notifications: client-side subscribe/unsubscribe + the

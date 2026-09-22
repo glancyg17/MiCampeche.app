@@ -713,6 +713,34 @@ MC.adminSetBusinessPremium=async function(businessId,value){
   return sb.from('businesses').update({is_premium:!!value}).eq('id',businessId);
 };
 
+/* Admin-only. A real in-app message to a specific profile — the recipient
+   sees it as a popup next time they open the app (a live DB trigger also
+   sends a push, if they have one set up; nothing here needs to touch
+   that). sent_by is nullable and unused by that trigger, but the column
+   exists for a real audit trail, so it's worth actually populating rather
+   than leaving it permanently null. */
+MC.sendAdminMessage=async function(profileId,message){
+  const uid=await MC.ready;
+  return sb.from('admin_messages').insert({profile_id:profileId,message,sent_by:uid||null});
+};
+
+/* The signed-in account's own undismissed messages, oldest first — so
+   they're shown to the recipient in the order they were sent. */
+MC.fetchMyUndismissedMessages=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const {data,error}=await sb.from('admin_messages').select('*').eq('profile_id',uid).is('dismissed_at',null).order('created_at',{ascending:true});
+  if(error){console.error(error);return [];}
+  return data||[];
+};
+
+/* Thin wrapper around the RPC, which does its own ownership check
+   server-side (auth.uid()=profile_id) and silently no-ops otherwise — no
+   client-side trust here at all. */
+MC.dismissAdminMessage=async function(id){
+  return sb.rpc('dismiss_admin_message',{target_id:id});
+};
+
 /* ── PUSH NOTIFICATIONS ──
    The send side (push_subscriptions table + RLS, the send-push Edge
    Function, and the DB triggers that fire it on new Pendiente items) is

@@ -3217,7 +3217,7 @@ async function openAdminUserView(userId){
 }
 function renderAdminUserView(d){
   adminPostsSource=adminUserPosts;
-  adminMsgTarget={phone:d.phone,name:d.display_name};
+  adminMsgTarget={profileId:d.id,name:d.display_name};
   const pvs=d.phone_verification_status;
   const pvHtml=pvs==='verified'?'<span style="color:var(--gulf)">✓ Teléfono verificado</span>'
     :pvs==='rejected'?'<span style="color:var(--signal)">Teléfono no verificado</span>'
@@ -3246,11 +3246,11 @@ function renderAdminUserView(d){
     ${adminSectionLabel('Sus negocios'+(bizs.length?' ('+bizs.length+')':''))}
     ${bizHtml}
     <div id="admin-posts-section">${adminPostsSectionHtml()}</div>
-    <button class="menu-item" onclick="adminMessageUser(adminMsgTarget.phone,adminMsgTarget.name)" style="border:1.5px solid var(--line2);margin-top:18px;margin-bottom:4px">
+    <button class="menu-item" onclick="openAdminMessageCompose(adminMsgTarget.profileId,adminMsgTarget.name)" style="border:1.5px solid var(--line2);margin-top:18px;margin-bottom:4px">
       <span class="menu-item-ico">${svgIco('message')}</span>
       <span class="menu-item-txt">
         <span class="menu-item-lbl">Enviar mensaje</span>
-        <span class="menu-item-sub">${d.phone?'Abre WhatsApp con su número':'Sin teléfono registrado'}</span>
+        <span class="menu-item-sub">Aparece como ventana emergente en su cuenta</span>
       </span>
       ${ADMIN_ARROW}
     </button>
@@ -3310,16 +3310,31 @@ function setAdminPostsTab(tab){
   if(box)box.innerHTML=adminPostsSectionHtml();
 }
 
-/* Opens WhatsApp to an account/business. No sign-in/verified gate here (that
-   is guardedContact's job for residents) — this screen is already admin-only.
-   Phone normalisation matches contactCtaButtons: a bare 10-digit number is
-   a Mexican one. */
-function adminMessageUser(phone,name){
-  const num=digitsOnly(phone);
-  if(!num){toast('No hay teléfono registrado para enviar mensaje');return;}
-  const intl=num.length===10?'52'+num:num;
-  const msg=encodeURIComponent(`Hola${name?' '+name:''}, te escribimos de MiCampeche.`);
-  location.href='https://wa.me/'+intl+'?text='+msg;
+/* A real in-app message to a specific account, instead of a WhatsApp
+   hand-off — the recipient sees it as a popup next time they open the app
+   (see maybeShowUndismissedMessages), and a live DB trigger sends a real
+   push too, if they have one set up. No sign-in/verified gate here (that
+   is guardedContact's job for residents) — this screen is already
+   admin-only. */
+function openAdminMessageCompose(profileId,name){
+  if(!profileId){toast('No se pudo identificar la cuenta.');return;}
+  mcModalPushView('adminMsgCompose'); // falls back to a DOM snapshot of whatever's open now (the user or business page) — no live-refresh needed for this
+  document.getElementById('modal-title').textContent='Enviar mensaje';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">Aparecerá como una ventana emergente la próxima vez que ${e(name||'esta persona')} abra la app.</div>
+    <textarea class="ft" id="admin-msg-compose" placeholder="Escribe tu mensaje…"></textarea>
+    <button class="submit-btn" id="admin-msg-send-btn" onclick="submitAdminMessage('${profileId}')">Enviar</button>
+  `;
+}
+async function submitAdminMessage(profileId){
+  const btn=document.getElementById('admin-msg-send-btn');
+  const msg=document.getElementById('admin-msg-compose').value.trim();
+  if(!msg){toast('Escribe un mensaje primero');return;}
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {error}=await MC.sendAdminMessage(profileId,msg);
+  if(error){toast(pgErrorToast(error,'No se pudo enviar.'));if(btn){btn.disabled=false;btn.textContent='Enviar';}return;}
+  mcModalBack();
+  toast('Mensaje enviado ✓');
 }
 
 /* ── 3. One business ── */
@@ -3350,10 +3365,9 @@ async function openAdminBusinessView(businessId){
 function renderAdminBusinessView(biz){
   adminPostsSource=adminBizPosts;
   const owner=adminBizOwner;
-  // The business's own number if it has one, otherwise the owning account's.
-  const useBizPhone=!!digitsOnly(biz.phone);
-  const msgPhone=useBizPhone?biz.phone:(owner&&owner.phone)||null;
-  adminMsgTarget={phone:msgPhone,name:useBizPhone?biz.business_name:(owner&&owner.display_name)||biz.business_name};
+  // An in-app message always targets the owning profile — there's no
+  // "business's own number" concept for it the way WhatsApp had.
+  adminMsgTarget={profileId:owner&&owner.id,name:(owner&&owner.display_name)||biz.business_name};
   const s=businessStatusInfo(biz);
   const tier=(premium,label)=>{
     const on=!!biz.is_premium===premium;
@@ -3370,11 +3384,11 @@ function renderAdminBusinessView(biz){
     <div style="display:flex;gap:8px">${tier(false,'Básico')}${tier(true,'Premium')}</div>
     <div style="color:var(--ink3);font-size:12px;margin-top:8px;line-height:1.5">${since?'Premium desde el '+since+'. ':''}Pasar a Básico quita los Destacados y Descuentos del negocio y crea un recordatorio de cancelación en Pendiente.</div>
     <div id="admin-posts-section">${adminPostsSectionHtml()}</div>
-    <button class="menu-item" onclick="adminMessageUser(adminMsgTarget.phone,adminMsgTarget.name)" style="border:1.5px solid var(--line2);margin-top:18px;margin-bottom:4px">
+    <button class="menu-item" onclick="openAdminMessageCompose(adminMsgTarget.profileId,adminMsgTarget.name)" style="border:1.5px solid var(--line2);margin-top:18px;margin-bottom:4px">
       <span class="menu-item-ico">${svgIco('message')}</span>
       <span class="menu-item-txt">
         <span class="menu-item-lbl">Enviar mensaje</span>
-        <span class="menu-item-sub">${msgPhone?(useBizPhone?'Abre WhatsApp con el número del negocio':'Abre WhatsApp con el número de su dueño'):'Sin teléfono registrado'}</span>
+        <span class="menu-item-sub">${owner?'Aparece como ventana emergente en la cuenta de su dueño':'No se pudo identificar al dueño'}</span>
       </span>
       ${ADMIN_ARROW}
     </button>
@@ -5172,6 +5186,39 @@ async function submitMandaditoProblem(contactId,mandaditoId){
   toast('Gracias — lo revisaremos');
 }
 
+/* Real in-app messages from the admin (see openAdminMessageCompose) —
+   shown one at a time on app-open, same two guard checks and shared modal
+   as the Mandadito review nudge just above. Closing via ✕/backdrop instead
+   of "Entendido" is deliberately NOT special-cased: the message just stays
+   undismissed and pops up again next time, which is the safer default
+   (resurfacing beats silently losing it). */
+let pendingAdminMessages=[];
+async function maybeShowUndismissedMessages(){
+  if(document.getElementById('modal-bg').classList.contains('on'))return;
+  if(document.getElementById('install-gate').classList.contains('on'))return;
+  const uid=await MC.ready;
+  if(!uid)return;
+  pendingAdminMessages=await MC.fetchMyUndismissedMessages();
+  if(pendingAdminMessages.length)renderNextAdminMessage();
+}
+function renderNextAdminMessage(){
+  if(!pendingAdminMessages.length){closeModal();return;}
+  const m=pendingAdminMessages[0];
+  document.getElementById('modal-title').textContent='Mensaje de MiCampeche';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="text-align:center;padding:10px 4px">
+      <div style="font-size:14.5px;line-height:1.5;white-space:pre-wrap;margin-bottom:18px">${e(m.message)}</div>
+      <button class="submit-btn" onclick="dismissAdminMessagePopup('${m.id}')">Entendido</button>
+    </div>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+async function dismissAdminMessagePopup(id){
+  await MC.dismissAdminMessage(id);
+  pendingAdminMessages=pendingAdminMessages.filter(m=>m.id!==id);
+  renderNextAdminMessage();
+}
+
 /* Phone verifications are the time-sensitive queue item now — until the
    founder clears one, that person can't post or interact at all. A quiet
    toast on app-open (admin only) so it isn't sitting unseen behind the
@@ -5204,6 +5251,7 @@ async function init(){
   await checkPaymentReturn();
   nudgeAdminVerifications();
   maybeShowMandaditoReviewNudge();
+  maybeShowUndismissedMessages();
   setTiendaMode('mercado');
   setAnunciosMode('eventos');
   setReportarMode('avisos');
