@@ -1,4 +1,4 @@
--- PROPOSAL — NOT APPLIED. Supabase project fszvefihkjrqkxysencc.
+-- APPLIED 2026-09-21 as migration "profiles_privacy_step1_display_names_and_phone_check" (Supabase project fszvefihkjrqkxysencc).
 -- Step 1 of 2: purely additive; safe to run at any time, changes no existing behaviour.
 --
 -- Why: public.profiles is readable by everyone (policy "profiles are viewable
