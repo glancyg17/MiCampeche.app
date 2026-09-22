@@ -125,8 +125,107 @@ const STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE='https://buy.stripe.com/9B6fZiceJ1698
 const BUSINESS_PREMIUM_UPGRADE_FEE_MXN=499;
 const STRIPE_LINK_MANDADITO_BOOST='https://buy.stripe.com/6oU14o1A59CFgUGeiX4F205?locale=es-419';
 const MANDADITO_BOOST_FEE_MXN=99;
-function openMenu(){document.getElementById('menu-bg').classList.add('on');}
+function openMenu(){menuOpenSection=null;renderMenuBody();document.getElementById('menu-bg').classList.add('on');}
 function closeMenu(){document.getElementById('menu-bg').classList.remove('on');}
+
+/* ══════════════ BURGER MENU: single-open accordion ══════════════
+   One parent section open at a time (Cuenta/Comercio/Anuncios/Vecinos),
+   collapsed by default every time the menu is (re)opened — see openMenu()
+   above, which resets menuOpenSection before rendering, matching how the
+   old flat menu had no persistent state either. */
+let menuOpenSection=null;
+function toggleMenuSection(key){
+  menuOpenSection=(menuOpenSection===key)?null:key;
+  renderMenuBody();
+}
+async function renderMenuBody(){
+  const acct=await MC.currentAccount();
+  const parent=(key,ico,bg,lbl,sub,children)=>`
+    <button class="menu-item" onclick="toggleMenuSection('${key}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <span class="menu-item-ico" style="background:${bg}">${ico}</span>
+      <span class="menu-item-txt"><span class="menu-item-lbl">${lbl}</span><span class="menu-item-sub">${sub}</span></span>
+      <svg class="ico menu-item-arr${menuOpenSection===key?' open':''}" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+    <div class="menu-submenu${menuOpenSection===key?' open':''}">${children}</div>
+  `;
+  const child=(onclick,lbl)=>`<button class="menu-item menu-item-child" onclick="${onclick}"><span class="menu-item-txt"><span class="menu-item-lbl">${lbl}</span></span></button>`;
+  const leaf=(ico,bg,lbl,sub,onclick)=>`
+    <button class="menu-item" onclick="${onclick}" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <span class="menu-item-ico" style="background:${bg}">${ico}</span>
+      <span class="menu-item-txt"><span class="menu-item-lbl">${lbl}</span><span class="menu-item-sub">${sub}</span></span>
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+  `;
+
+  // "Negocio(s)" deliberately isn't a flat openMyBusinesses() call: that
+  // screen (and its "Mis negocios (N)" title) assumes it's only ever
+  // reached the way the old account view reached it — never with zero or
+  // exactly one non-Premium business — and renders a genuinely blank
+  // screen otherwise (an empty .map().join('') with neither of its own
+  // fallback messages matching). This mirrors renderAccountSignedIn's own
+  // real branch exactly, just relocated, so a guest or a business-less
+  // account lands on a real screen instead of a dead end. A signed-out
+  // tap still works: openPost('negocio_verificar') has its own runWriteGate
+  // and redirects to sign-in, the same as every other write action.
+  const biz=acct.business,bizList=acct.businesses||[];
+  const negocioChild=(bizList.length>1||(biz&&biz.is_primary&&biz.is_premium))
+    ?child(`closeMenu();openMyBusinesses()`,'Negocio(s)')
+    :biz
+      ?child(`closeMenu();openBusinessProfile('${biz.id}')`,'Mi negocio')
+      :child(`closeMenu();editingBusinessId=null;openPost('negocio_verificar')`,'Verificar mi negocio');
+
+  const cuentaChildren=[
+    child(`closeMenu();openAccount()`,'Perfil'),
+    negocioChild,
+    child(`closeMenu();openMyPosts()`,'Publicaciones'),
+    child(`closeMenu();openPreferences()`,'Preferencias'),
+    // Unlike every other row here, this deliberately DOES close the menu
+    // first too (the prompt's original draft left it open, layered under
+    // the chooser modal — but .menu-bg's z-index:240 sits above
+    // .modal-bg's z-index:200, so the chooser would actually render
+    // invisible, hidden behind the still-open menu's dark backdrop).
+    acct.isAdmin?child(`closeMenu();openAdminChooser()`,'Admin'):'',
+    acct.signedIn?child(`closeMenu();doSignOut()`,'Cerrar sesión'):child(`closeMenu();openAccount()`,'Entrar')
+  ].join('');
+
+  document.getElementById('menu-body').innerHTML=
+    parent('cuenta',svgIco('account'),'var(--night)','Cuenta','Perfil, negocio y publicaciones',cuentaChildren)
+    + leaf(svgIco('news'),'var(--gulf)','Noticias','Lo último de Campeche',`closeMenu();nav('noticias')`)
+    + parent('comercio',svgIco('tienda'),'var(--palm)','Comercio','Mercado, clasificados y mandaditos',[
+        child(`closeMenu();nav('tienda');setTiendaMode('mercado')`,'Mercado'),
+        child(`closeMenu();nav('tienda');setTiendaMode('clasificados')`,'Clasificados'),
+        child(`closeMenu();nav('tienda');setTiendaMode('mandaditos')`,'Mandaditos')
+      ].join(''))
+    + parent('anuncios',svgIco('eventos'),'var(--wall-dk)','Anuncios','Eventos, empleos y alertas',[
+        child(`closeMenu();nav('anuncios');setAnunciosMode('eventos')`,'Eventos'),
+        child(`closeMenu();nav('anuncios');setAnunciosMode('empleos')`,'Empleos'),
+        child(`closeMenu();nav('anuncios');setAnunciosMode('alertas')`,'Alertas')
+      ].join(''))
+    + parent('vecinos',svgIco('reportar'),'var(--signal)','Vecinos','Avisos, reportes y perdidos',[
+        child(`closeMenu();nav('reportar');setReportarMode('avisos')`,'Avisos'),
+        child(`closeMenu();nav('reportar');setReportarMode('reportes')`,'Reportes'),
+        child(`closeMenu();nav('reportar');setReportarMode('perdidos')`,'Perdidos')
+      ].join(''))
+    + leaf(svgIco('bus'),'var(--gulf)',"Transporte (Ko'ox)",'Rutas, tarifas y apps en tiempo real','goToKoox()')
+    + leaf('<svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>','var(--signal)','Contacto','Escríbenos por correo','contactUs()')
+    + leaf('<svg class="ico" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>','var(--ink3)','Aviso de privacidad y Términos','Cómo tratamos tus datos',`closeMenu();nav('privacidad')`);
+}
+/* The one leaf that isn't a nested accordion level — Admin opens a small
+   two-option chooser modal instead. Both options close the menu again
+   (harmless — openAdminChooser's own caller already did) and the chooser
+   modal itself, before opening the real admin screen. */
+function openAdminChooser(){
+  document.getElementById('modal-title').textContent='Admin';
+  document.getElementById('modal-body').innerHTML=`
+    <button class="menu-item" onclick="closeMenu();closeModal();openAdminUsers()" style="border:1.5px solid var(--line2);margin-bottom:8px">
+      <span class="menu-item-txt"><span class="menu-item-lbl">Usuarios</span><span class="menu-item-sub">Buscar cuentas y sus negocios</span></span>
+    </button>
+    <button class="menu-item" onclick="closeMenu();closeModal();openPending()" style="border:1.5px solid var(--line2)">
+      <span class="menu-item-txt"><span class="menu-item-lbl">Pendiente</span></span>
+    </button>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
 function goToServicios(){closeMenu();nav('servicios');}
 function goToKoox(){closeMenu();nav('koox');}
 function openMandaditoSignup(){closeMenu();editingBusinessId=null;nav('tienda');setTiendaMode('mandaditos');openPost('mandadito');}

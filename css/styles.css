@@ -584,9 +584,19 @@ svg{display:block}
 .menu-item-txt{flex:1;min-width:0}
 .menu-item-lbl{display:block;font-size:14px;font-weight:700;color:var(--ink)}
 .menu-item-sub{display:block;font-size:11.5px;color:var(--ink3);margin-top:1px}
-.menu-item-arr{width:15px;height:15px;color:var(--ink3);flex-shrink:0}
+.menu-item-arr{width:15px;height:15px;color:var(--ink3);flex-shrink:0;transition:transform .25s ease}
+.menu-item-arr.open{transform:rotate(90deg)}
 .menu-badge{display:none;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--signal);color:#fff;font-size:11.5px;font-weight:700;align-items:center;justify-content:center;line-height:1;flex-shrink:0}
 .menu-badge.on{display:flex}
+/* Accordion: collapsed to 0 height by default, expands on .open — same
+   .25s ease timing the drawer's own slide-in already uses. max-height
+   (not height) since the content's real height varies and isn't known
+   up front; the cap just needs to comfortably clear the tallest submenu
+   (3 child rows). */
+.menu-submenu{max-height:0;overflow:hidden;transition:max-height .25s ease}
+.menu-submenu.open{max-height:220px}
+.menu-item-child{padding-left:58px;margin-bottom:2px}
+.menu-item-child .menu-item-lbl{font-size:13px;font-weight:600;color:var(--ink2)}
 .menu-count{display:flex;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--paper2);color:var(--ink3);font-size:11.5px;font-weight:700;align-items:center;justify-content:center;line-height:1;flex-shrink:0;border:1.5px solid var(--line2)}
 
 /* ═══ WEATHER LIGHTBOX ═══ */

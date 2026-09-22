@@ -873,7 +873,7 @@ const fakeClient = {
     // those two keys again.
     await window.refreshPendingBadge();
     const realBadgeText = text('bn-perfil-badge');
-    assert(!!realBadgeText && realBadgeText === text('menu-account-badge'), 'as admin, the Perfil tab badge shows the same real pending count as the burger\'s "Mi cuenta" row');
+    assert(!!realBadgeText, 'as admin, the Perfil tab shows a real, non-empty pending count');
     window.nav('reportar'); // any real tab switch — the same rebuild that used to wipe the badge before this was fixed
     assert(text('bn-perfil-badge') === realBadgeText && doc.getElementById('bn-perfil-badge').classList.contains('on'), 'the admin pending badge also survives a tab switch, not wiped by every renderBottomNav() rebuild');
     window.nav('inicio');
@@ -937,18 +937,133 @@ const fakeClient = {
   window.mcGoBack();
   assert(doc.getElementById('scr-inicio').classList.contains('on'), 'mcGoBack() from Términos y Condiciones returns to Inicio');
 
-  // The hamburger menu's new entry — jsdom (runScripts:'outside-only')
-  // can't fire its compound inline onclick (closeMenu();nav('privacidad')),
-  // same limitation documented elsewhere in this suite for other inline
-  // handlers, so this checks the real wiring is present rather than
-  // simulating a click; nav('privacidad') itself is already proven above.
-  const menuPrivacyBtn = [...doc.querySelectorAll('#menu-drawer .menu-item')].find(b => (b.getAttribute('onclick') || '').includes("nav('privacidad')"));
-  assert(!!menuPrivacyBtn && menuPrivacyBtn.textContent.includes('Aviso de privacidad y Términos'), 'the hamburger menu has a new "Aviso de privacidad y Términos" entry wired to nav(\'privacidad\')');
+  // ── Burger menu: single-open accordion (Cuenta/Noticias/Comercio/
+  //    Anuncios/Vecinos/Transporte/Contacto/Aviso de privacidad), replacing
+  //    the old flat 6-item list. #menu-body is empty until openMenu()/
+  //    toggleMenuSection() render into it, so every lookup below opens the
+  //    menu (or toggles a section) explicitly first — never relying on
+  //    incidental state left over from an earlier, unrelated test. jsdom
+  //    (runScripts:'outside-only') can't fire a real click's inline
+  //    onclick, so expand/collapse is driven through toggleMenuSection()
+  //    directly — the exact function the real onclick calls, genuine
+  //    coverage of the real code path, not a simulated click. ──
+  {
+    const settle = () => new Promise(r => setTimeout(r, 20));
+    const topBtns = () => [...doc.querySelectorAll('#menu-body > .menu-item')];
+    const topBtn = (lbl) => topBtns().find(b => { const l = b.querySelector('.menu-item-lbl'); return l && l.textContent === lbl; });
+    const submenuOf = (lbl) => { const b = topBtn(lbl); return b ? b.nextElementSibling : null; };
+    const childLbls = (submenu) => submenu ? [...submenu.querySelectorAll('.menu-item-lbl')].map(e => e.textContent) : [];
+    const openMenuSettled = async () => { window.openMenu(); await settle(); };
+    const toggle = async (key) => { window.toggleMenuSection(key); await settle(); };
+
+    await openMenuSettled();
+    const top = topBtns();
+    assert(top.length === 8, `the menu has exactly 8 top-level rows (got ${top.length})`);
+    const topLabels = top.map(b => (b.querySelector('.menu-item-lbl') || {}).textContent);
+    assert(JSON.stringify(topLabels) === JSON.stringify(['Cuenta', 'Noticias', 'Comercio', 'Anuncios', 'Vecinos', "Transporte (Ko'ox)", 'Contacto', 'Aviso de privacidad y Términos']),
+      `the 8 rows are in the agreed order (got: ${topLabels.join(' | ')})`);
+    assert(![...doc.querySelectorAll('.menu-submenu')].some(s => s.classList.contains('open')) && ![...doc.querySelectorAll('.menu-item-arr')].some(a => a.classList.contains('open')),
+      'every submenu — and every chevron — starts collapsed');
+
+    const menuPrivacyBtn = topBtn('Aviso de privacidad y Términos');
+    assert(!!menuPrivacyBtn && (menuPrivacyBtn.getAttribute('onclick') || '').includes("nav('privacidad')"), 'the "Aviso de privacidad y Términos" row is wired to nav(\'privacidad\')');
+    const menuKooxBtn = topBtn("Transporte (Ko'ox)");
+    assert(!!menuKooxBtn && (menuKooxBtn.getAttribute('onclick') || '') === 'goToKoox()', 'the "Transporte (Ko\'ox)" row is wired to goToKoox()');
+
+    // Comercio expands to its own 3 real children…
+    await toggle('comercio');
+    assert(submenuOf('Comercio').classList.contains('open'), 'tapping Comercio expands its own submenu');
+    assert(JSON.stringify(childLbls(submenuOf('Comercio'))) === JSON.stringify(['Mercado', 'Clasificados', 'Mandaditos']), 'Comercio expands to Mercado/Clasificados/Mandaditos');
+
+    // …opening Anuncios collapses Comercio — only one section open at a time…
+    await toggle('anuncios');
+    assert(!submenuOf('Comercio').classList.contains('open') && submenuOf('Anuncios').classList.contains('open'), 'opening Anuncios collapses Comercio (single-open-at-a-time)');
+    assert(JSON.stringify(childLbls(submenuOf('Anuncios'))) === JSON.stringify(['Eventos', 'Empleos', 'Alertas']), 'Anuncios expands to Eventos/Empleos/Alertas');
+
+    // …tapping the OPEN section again collapses it…
+    await toggle('anuncios');
+    assert(!submenuOf('Anuncios').classList.contains('open'), 'tapping an already-open section collapses it instead of leaving it open');
+
+    // …and Vecinos has its own real children too.
+    await toggle('vecinos');
+    assert(JSON.stringify(childLbls(submenuOf('Vecinos'))) === JSON.stringify(['Avisos', 'Reportes', 'Perdidos']), 'Vecinos expands to Avisos/Reportes/Perdidos');
+    await toggle('vecinos');
+
+    // A child's onclick really closes the menu AND navigates — checked
+    // against the exact string, then executed for real (same jsdom
+    // inline-onclick limitation as elsewhere in this file).
+    await toggle('comercio');
+    const mandaditosChild = [...submenuOf('Comercio').querySelectorAll('.menu-item-child')].find(b => b.textContent.includes('Mandaditos'));
+    assert(!!mandaditosChild && mandaditosChild.getAttribute('onclick') === "closeMenu();nav('tienda');setTiendaMode('mandaditos')", 'the Mandaditos child closes the menu, switches to Comercio, and sets the Mandaditos sub-tab — all three, not just the nav');
+    window.closeMenu(); window.nav('tienda'); window.setTiendaMode('mandaditos');
+    assert(!doc.getElementById('menu-bg').classList.contains('on') && doc.getElementById('scr-tienda').classList.contains('on'), 'executing it really closes the menu and lands on Comercio');
+    window.nav('inicio');
+
+    // ── "Negocio(s)" is deliberately not a flat openMyBusinesses() call —
+    //    it mirrors renderAccountSignedIn's real 3-way branch (multi/
+    //    Premium-primary vs. exactly one vs. none), since openMyBusinesses()
+    //    itself renders a genuinely blank screen for zero businesses. Needs
+    //    a real signed-in session — MC.currentAccount() never even queries
+    //    businesses for an anonymous one, so this exercises that for real
+    //    rather than just coincidentally hitting the same "no business"
+    //    branch a guest would also hit. ──
+    const savedSessionBiz = currentSession;
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    const savedBiz = currentBusiness, savedExtra = extraBusinesses;
+    currentBusiness = null; extraBusinesses = [];
+    await openMenuSettled(); await toggle('cuenta');
+    let negocioChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent.includes('Negocio') || b.textContent.includes('negocio'));
+    assert(!!negocioChild && negocioChild.textContent === 'Verificar mi negocio' && negocioChild.getAttribute('onclick').includes("openPost('negocio_verificar')"), 'signed in, zero businesses: the row reads "Verificar mi negocio" and opens the verification form directly, not a blank list');
+
+    currentBusiness = { id: 'biz-menu-1', profile_id: 'uid-1', business_name: 'Negocio Único', is_primary: true, is_premium: false, status: 'published' };
+    await openMenuSettled(); await toggle('cuenta');
+    negocioChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent.includes('negocio') || b.textContent.includes('Negocio'));
+    assert(!!negocioChild && negocioChild.textContent === 'Mi negocio' && negocioChild.getAttribute('onclick') === "closeMenu();openBusinessProfile('biz-menu-1')", 'exactly one non-Premium business: the row reads "Mi negocio" and opens that business\'s own profile directly');
+
+    extraBusinesses = [{ id: 'biz-menu-2', profile_id: 'uid-1', business_name: 'Negocio Dos', is_primary: false, is_premium: false, status: 'published' }];
+    await openMenuSettled(); await toggle('cuenta');
+    negocioChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent === 'Negocio(s)');
+    assert(!!negocioChild && negocioChild.getAttribute('onclick') === 'closeMenu();openMyBusinesses()', 'two or more businesses: the row reads "Negocio(s)" and opens the real list');
+    currentBusiness = savedBiz; extraBusinesses = savedExtra;
+    currentSession = savedSessionBiz; // back to anonymous for the "signed out" Cuenta check below
+
+    // ── Admin gating on Cuenta, and the Admin leaf's own chooser (not
+    //    another accordion level). ──
+    await openMenuSettled(); await toggle('cuenta');
+    let cuentaLbls = childLbls(submenuOf('Cuenta'));
+    assert(!cuentaLbls.includes('Admin'), 'a non-admin account gets no Admin row in Cuenta at all');
+    assert(cuentaLbls.includes('Entrar') && !cuentaLbls.includes('Cerrar sesión'), 'signed out, Cuenta\'s last row reads "Entrar"');
+
+    const savedSession3 = currentSession, savedAdmin3 = currentProfile.is_admin;
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    currentProfile.is_admin = true;
+    await openMenuSettled(); await toggle('cuenta');
+    cuentaLbls = childLbls(submenuOf('Cuenta'));
+    assert(cuentaLbls.includes('Admin'), 'an admin account gets the Admin row');
+    assert(cuentaLbls.includes('Cerrar sesión') && !cuentaLbls.includes('Entrar'), 'signed in, the same row now reads "Cerrar sesión"');
+
+    const adminChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent === 'Admin');
+    assert(!!adminChild && adminChild.getAttribute('onclick') === 'closeMenu();openAdminChooser()',
+      'Admin closes the menu itself before opening the chooser — .menu-bg (z-index 240) would otherwise render above .modal-bg (z-index 200) and hide it entirely');
+    window.closeMenu(); window.openAdminChooser();
+    assert(doc.getElementById('modal-title').textContent === 'Admin' && text('modal-body').includes('Usuarios') && text('modal-body').includes('Pendiente'), 'Admin opens a small two-option chooser, not another accordion level');
+    assert(!!doc.querySelectorAll('#modal-body .menu-item')[0].getAttribute('onclick').includes('openAdminUsers()'), 'the chooser\'s first button really opens Usuarios');
+    assert(!!doc.querySelectorAll('#modal-body .menu-item')[1].getAttribute('onclick').includes('openPending()'), 'the second really opens Pendiente');
+    window.closeModal();
+
+    // Cerrar sesión really signs out.
+    await openMenuSettled(); await toggle('cuenta');
+    const signOutChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent === 'Cerrar sesión');
+    assert(!!signOutChild && signOutChild.getAttribute('onclick') === 'closeMenu();doSignOut()', 'Cerrar sesión is wired to the real sign-out function');
+    await window.doSignOut();
+    assert(text('toast') === 'Sesión cerrada ✓', 'and it genuinely signs out, not just closes the menu');
+
+    currentSession = savedSession3; currentProfile.is_admin = savedAdmin3;
+    window.closeMenu();
+  }
 
   // ── Transporte (Ko'ox): a static reference screen reached from the
   //    hamburger menu — no live data, links out to the real apps. ──
-  const menuKooxBtn = [...doc.querySelectorAll('#menu-drawer .menu-item')].find(b => (b.getAttribute('onclick') || '').includes('goToKoox()'));
-  assert(!!menuKooxBtn && menuKooxBtn.textContent.includes("Transporte (Ko'ox)"), 'the hamburger menu has a "Transporte (Ko\'ox)" entry wired to goToKoox()');
   window.goToKoox();
   assert(doc.getElementById('scr-koox').classList.contains('on'), 'goToKoox() shows the scr-koox screen');
   assert(text('scr-koox').includes('Qué es Ko\'ox') && text('scr-koox').includes('ARTEC'), 'the screen renders its real explanatory content, not a placeholder');
