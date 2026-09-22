@@ -4,7 +4,7 @@
 // network. This avoids silently serving stale content the way a
 // cache-everything strategy would.
 // Bump CACHE_NAME whenever app-shell files change so old caches get cleared.
-const CACHE_NAME = 'micampeche-shell-v124';
+const CACHE_NAME = 'micampeche-shell-v125';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -56,4 +56,37 @@ self.addEventListener('fetch', (event) => {
   }
   // Everything else (product photos, external links, API calls once a real
   // backend exists): let the browser handle it normally, network-first.
+});
+
+// ── Push notifications ──
+// The send side (edge function + DB triggers) already exists in Supabase;
+// this is just the receiving end. A malformed or missing payload still
+// shows a generic notification rather than silently doing nothing.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  const title = data.title || 'MiCampeche';
+  const body = data.body || '';
+  const url = data.url || '/';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: '/assets/icons/MiCampeche-app-icon.png',
+      badge: '/assets/icons/MiCampeche-app-icon.png',
+      data: { url }
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(url);
+    })
+  );
 });

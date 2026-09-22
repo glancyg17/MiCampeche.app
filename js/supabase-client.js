@@ -713,6 +713,66 @@ MC.adminSetBusinessPremium=async function(businessId,value){
   return sb.from('businesses').update({is_premium:!!value}).eq('id',businessId);
 };
 
+/* ── PUSH NOTIFICATIONS ──
+   The send side (push_subscriptions table + RLS, the send-push Edge
+   Function, and the DB triggers that fire it on new Pendiente items) is
+   already live in Supabase — this is only the client half: subscribing
+   this device, and the on/off status check the account-menu toggle uses.
+   sw.js has the receiving end (push/notificationclick listeners). */
+
+/* Standard VAPID-key conversion boilerplate — pushManager.subscribe()
+   needs the key as a Uint8Array, not the base64url string it's stored/
+   passed around as everywhere else. */
+function urlBase64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const rawData=atob(base64);
+  return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));
+}
+const VAPID_PUBLIC_KEY='BCgyofoWbIhMHqJzzQEb27BtuLC2qHI3G3VHcCDMjO7N1SRGcr3ghomyyWpzos3xHPCeBgcyMn0NG98X3YQdTSg';
+
+MC.hasPushSubscription=async function(){
+  if(!('serviceWorker' in navigator))return false;
+  const reg=await navigator.serviceWorker.getRegistration();
+  if(!reg)return false;
+  const sub=await reg.pushManager.getSubscription();
+  return !!sub;
+};
+
+/* Re-subscribing with a browser-level subscription that's already stored
+   (same endpoint) takes the upsert's ON CONFLICT DO UPDATE path, not a
+   plain insert — confirmed directly against Supabase that this needs its
+   own owner-scoped UPDATE policy on push_subscriptions (insert/select/
+   delete alone aren't enough; the DB has that policy now). */
+MC.subscribeToPush=async function(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))return {error:'not_supported'};
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted')return {error:'permission_denied'};
+  const uid=await MC.ready;
+  if(!uid)return {error:'not_signed_in'};
+  const reg=await navigator.serviceWorker.ready;
+  const sub=(await reg.pushManager.getSubscription())||(await reg.pushManager.subscribe({
+    userVisibleOnly:true,
+    applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+  }));
+  const json=sub.toJSON();
+  const {error}=await sb.from('push_subscriptions').upsert({
+    profile_id:uid,endpoint:json.endpoint,p256dh:json.keys.p256dh,auth:json.keys.auth
+  },{onConflict:'endpoint'});
+  return {error};
+};
+
+MC.unsubscribeFromPush=async function(){
+  if(!('serviceWorker' in navigator))return;
+  const reg=await navigator.serviceWorker.getRegistration();
+  if(!reg)return;
+  const sub=await reg.pushManager.getSubscription();
+  if(sub){
+    await sb.from('push_subscriptions').delete().eq('endpoint',sub.endpoint);
+    await sub.unsubscribe();
+  }
+};
+
 /* Fallback thumbnail when a noticia has no real thumbnail_url — keyed on
    source_name exactly as the sync-noticias-tribuna / sync-noticias-central
    Edge Functions set it (confirmed live: 'Tribuna Campeche' / 'Central de

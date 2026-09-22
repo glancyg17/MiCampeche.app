@@ -30,7 +30,8 @@ const ICO={
   bolt:'<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>',
   thumb:'<path d="M7 22V11M2 13v7a2 2 0 0 0 2 2h11.6a2 2 0 0 0 2-1.6l1.2-6A2 2 0 0 0 16.8 12H14V6a2 2 0 0 0-2-2L9 11v11H7"/>',
   check:'<path d="M20 6L9 17l-5-5"/>',
-  external:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/>'
+  external:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/>',
+  bell:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>'
 };
 function svgIco(name,cls){return `<svg class="ico ${cls||''}" viewBox="0 0 24 24">${ICO[name]||''}</svg>`;}
 
@@ -2793,9 +2794,97 @@ function renderAccountSignedIn(acct){
       ${((acct.pendingCount||0)+(acct.cancellationCount||0))>0?`<span class="menu-badge on">${((acct.pendingCount||0)+(acct.cancellationCount||0))>99?'99+':((acct.pendingCount||0)+(acct.cancellationCount||0))}</span>`:''}
       <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>`:''}
+    ${acct.isAdmin?pushToggleRowHtml('checking'):''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
   document.getElementById('modal-bg').classList.add('on');
+  // Real support/subscription status needs two async calls this render
+  // can't block on — painted as "Comprobando…" above, patched here once it
+  // resolves. `seq` mirrors openAccount()'s own accountViewSeq guard: this
+  // function only ever runs while accountViewSeq still equals the turn it
+  // was called for, so capturing it now is equivalent to capturing "my
+  // turn" — if the account view gets closed/reopened before this resolves,
+  // the patch is silently dropped instead of touching a stale/gone modal.
+  if(acct.isAdmin)refreshPushToggleRow(accountViewSeq);
+}
+
+/* Push notifications — admin-only for now. The mechanism itself isn't
+   admin-specific (any profile_id can hold a subscription), only which
+   events currently trigger a send is (new Pendiente items) — extending
+   this to regular accounts later just means relaxing this one gate and
+   adding new server-side triggers, nothing here needs to change. */
+function pushToggleRowHtml(state){
+  // 'checking' (first paint / mid-toggle) and 'unsupported' render as an
+  // inert row — no onclick, no arrow — so a tap can't fire before a real
+  // on/off state is known, and can't do anything on a browser that simply
+  // doesn't have the API (e.g. iOS Safari outside of "add to home screen").
+  const sub={checking:'Comprobando…',unsupported:'No disponibles en este navegador',off:'Desactivadas',on:'Activadas'}[state];
+  const tappable=state==='off'||state==='on';
+  return `<div class="menu-item" id="push-toggle-row" data-push-state="${state}"${tappable?' onclick="togglePushSubscription()" style="border:1.5px solid var(--line2);margin-bottom:4px;cursor:pointer"':' style="border:1.5px solid var(--line2);margin-bottom:4px;opacity:.7"'}>
+    <span class="menu-item-ico">${svgIco('bell')}</span>
+    <span class="menu-item-txt">
+      <span class="menu-item-lbl">Notificaciones push</span>
+      <span class="menu-item-sub">${sub}</span>
+    </span>
+    ${tappable?'<svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>':''}
+  </div>`;
+}
+async function refreshPushToggleRow(seq){
+  const supported=('Notification' in window)&&('PushManager' in window)&&('serviceWorker' in navigator);
+  if(!supported){
+    if(seq!==accountViewSeq)return;
+    const row=document.getElementById('push-toggle-row');
+    if(row)row.outerHTML=pushToggleRowHtml('unsupported');
+    return;
+  }
+  const subscribed=await MC.hasPushSubscription();
+  if(seq!==accountViewSeq)return;
+  const row=document.getElementById('push-toggle-row');
+  if(row)row.outerHTML=pushToggleRowHtml(subscribed?'on':'off');
+}
+async function togglePushSubscription(){
+  const seq=accountViewSeq;
+  const row=document.getElementById('push-toggle-row');
+  if(!row||row.dataset.pushState==='checking')return; // already mid-toggle
+  const turningOff=row.dataset.pushState==='on';
+  row.outerHTML=pushToggleRowHtml('checking');
+  try{
+    if(turningOff){
+      await MC.unsubscribeFromPush();
+      if(seq!==accountViewSeq)return;
+      const fresh=document.getElementById('push-toggle-row');
+      if(fresh)fresh.outerHTML=pushToggleRowHtml('off');
+      toast('Notificaciones desactivadas');
+      return;
+    }
+    const {error}=await MC.subscribeToPush();
+    if(seq!==accountViewSeq)return;
+    const fresh=document.getElementById('push-toggle-row');
+    if(error){
+      if(error==='not_supported'){
+        if(fresh)fresh.outerHTML=pushToggleRowHtml('unsupported');
+      }else if(error==='permission_denied'){
+        if(fresh)fresh.outerHTML=pushToggleRowHtml('off');
+        toast('Bloqueaste las notificaciones — actívalas en la configuración del sitio de tu navegador para intentarlo de nuevo');
+      }else{
+        // any other failure (not_signed_in, a real Postgres error, …) — a
+        // generic fallback so a tap never just silently does nothing.
+        if(fresh)fresh.outerHTML=pushToggleRowHtml('off');
+        toast('No se pudieron activar las notificaciones — intenta de nuevo');
+      }
+      return;
+    }
+    if(fresh)fresh.outerHTML=pushToggleRowHtml('on');
+    toast('Notificaciones activadas ✓');
+  }catch(err){
+    // e.g. pushManager.subscribe() rejecting for a reason that isn't a
+    // clean {error} shape — never leave the row stuck on "Comprobando…".
+    console.error('push toggle failed:',err);
+    if(seq!==accountViewSeq)return;
+    const fresh=document.getElementById('push-toggle-row');
+    if(fresh)fresh.outerHTML=pushToggleRowHtml(turningOff?'on':'off');
+    toast('No se pudieron actualizar las notificaciones — intenta de nuevo');
+  }
 }
 
 let myBusinessesList=[];
