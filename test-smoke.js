@@ -642,6 +642,31 @@ const fakeClient = {
   assert(heroClasses.length === 1 && heroClasses[0] === expectedHeroCls, 'the welcome hero carries exactly one wh-am/wh-pm/wh-noche class, matching the real current time-of-day bucket');
   assert((heroEl.innerHTML || '').includes(expectedGreet), 'the hero class matches whichever greeting text is actually showing');
 
+  // ── Below-hero quick-nav row: 4 real shortcuts, in normal document flow
+  //    (between the hero and dash-body, not fixed/sticky), each wired to
+  //    the exact nav()+sub-tab call it claims. jsdom can't fire the real
+  //    compound inline onclick, so this checks the real wiring string and
+  //    separately proves nav()+setXMode() themselves work (elsewhere in
+  //    this suite) rather than simulating a click. ──
+  {
+    const qnTiles = [...doc.querySelectorAll('#inicio-quicknav .qn-tile')];
+    assert(qnTiles.length === 4, `the quick-nav row has exactly 4 tiles (got ${qnTiles.length})`);
+    const qnLabels = qnTiles.map(b => (b.querySelector('.qn-tile-lbl') || {}).textContent);
+    assert(JSON.stringify(qnLabels) === JSON.stringify(['Mercado', 'Eventos', 'Mandaditos', 'Avisos']), `the tiles read Mercado/Eventos/Mandaditos/Avisos in that order (got: ${qnLabels.join(' | ')})`);
+    const qnOnclicks = qnTiles.map(b => b.getAttribute('onclick'));
+    assert(JSON.stringify(qnOnclicks) === JSON.stringify([
+      "nav('tienda');setTiendaMode('mercado')",
+      "nav('anuncios');setAnunciosMode('eventos')",
+      "nav('tienda');setTiendaMode('mandaditos')",
+      "nav('reportar');setReportarMode('avisos')",
+    ]), `each tile is wired to the real nav()+sub-tab call, not just a bare nav() (got: ${qnOnclicks.join(' | ')})`);
+    // DOM position: after the hero, before dash-body — normal flow, no
+    // fixed/sticky positioning that would keep it pinned while scrolling.
+    const quicknavEl = doc.getElementById('inicio-quicknav');
+    assert(heroEl.nextElementSibling === quicknavEl && quicknavEl.nextElementSibling === doc.getElementById('dash-body'), 'the row sits directly between the hero and dash-body in the real DOM order');
+    assert(window.getComputedStyle(quicknavEl).position !== 'fixed' && window.getComputedStyle(quicknavEl).position !== 'sticky', 'the row is in normal document flow, not pinned while scrolling');
+  }
+
   assert(text('news-list') && text('news-list').includes('Titular de prueba'), 'Noticias rendered real fetched data');
   assert(text('news-list').includes('news-desc'), 'a noticia WITH a summary shows its description line');
   assert(text('evt-list') && text('evt-list').includes('Evento de prueba'), 'Eventos rendered real fetched data');

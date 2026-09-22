@@ -1,6 +1,7 @@
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
+  mandaditos:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
   home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
   news:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>',
   eventos:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
@@ -1030,9 +1031,30 @@ function renderEventosHoySection(){
   `).join(''));
 }
 
+/* Below-hero row of 4 quick-nav shortcuts — scrolls away with the rest of
+   Inicio (normal document flow, no fixed/sticky), not a persistent nav
+   bar. avisos reuses ICO.bell directly (identical path data already
+   exists there) rather than duplicating it under a second key. */
+function renderInicioQuickNav(){
+  const el=document.getElementById('inicio-quicknav');
+  if(!el)return;
+  const tile=(ico,lbl,onclick)=>`
+    <button class="qn-tile" onclick="${onclick}">
+      <span class="qn-tile-ico">${svgIco(ico)}</span>
+      <span class="qn-tile-lbl">${lbl}</span>
+    </button>
+  `;
+  el.innerHTML=
+    tile('tienda','Mercado',`nav('tienda');setTiendaMode('mercado')`)
+    +tile('eventos','Eventos',`nav('anuncios');setAnunciosMode('eventos')`)
+    +tile('mandaditos','Mandaditos',`nav('tienda');setTiendaMode('mandaditos')`)
+    +tile('bell','Avisos',`nav('reportar');setReportarMode('avisos')`);
+}
+
 function renderInicio(){
   const w=WEATHER;
   renderWelcomeHero();
+  renderInicioQuickNav();
   startEventosRotation();
 
   const topNews=NOTICIAS.slice(0,2);
