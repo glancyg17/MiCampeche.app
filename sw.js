@@ -4,7 +4,7 @@
 // network. This avoids silently serving stale content the way a
 // cache-everything strategy would.
 // Bump CACHE_NAME whenever app-shell files change so old caches get cleared.
-const CACHE_NAME = 'micampeche-shell-v125';
+const CACHE_NAME = 'micampeche-shell-v126';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -12,7 +12,12 @@ const APP_SHELL = [
   '/js/vendor/supabase.js',
   '/js/supabase-client.js',
   '/js/app.js',
-  '/manifest.json'
+  '/manifest.json',
+  // A push can arrive while nothing has the app open, so the notification's
+  // badge icon needs to be available without a network round-trip at that
+  // moment — unlike the rest of assets/, which is deliberately left off
+  // this list and fetched network-first (see the file header comment).
+  '/assets/icons/notification-badge.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -72,7 +77,7 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(title, {
       body,
       icon: '/assets/icons/MiCampeche-app-icon.png',
-      badge: '/assets/icons/MiCampeche-app-icon.png',
+      badge: '/assets/icons/notification-badge.png',
       data: { url }
     })
   );
