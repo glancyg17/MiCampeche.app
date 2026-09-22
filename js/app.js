@@ -1,5 +1,6 @@
 /* ══════════════ ICONS ══════════════ */
 const ICO={
+  account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
   home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
   news:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>',
   eventos:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
@@ -664,18 +665,43 @@ async function loadAllData(){
 
 /* ══════════════ BOTTOM NAV (4 primary tabs) ══════════════ */
 const TAB_DEFS=[
-  {k:'inicio',lbl:'Inicio',ico:'home'},
   {k:'tienda',lbl:'Comercio',ico:'tienda'},
   {k:'anuncios',lbl:'Anuncios',ico:'eventos'},
-  {k:'reportar',lbl:'Vecinos',ico:'reportar'}
+  {k:'reportar',lbl:'Vecinos',ico:'reportar'},
+  {k:'perfil',lbl:'Perfil',ico:'account'}
 ];
 const TABS=TAB_DEFS.map(t=>t.k);
-let curTab='inicio';
+let curTab=null; // no bottom-nav tab represents Inicio any more — home is reached via the header logo, so nothing should show as "active" while there
+
+// renderBottomNav() rebuilds #bottom-nav's innerHTML from scratch on every
+// tab switch (nav() calls it unconditionally) — unlike the old header
+// button, which lived outside that markup and never got wiped. The Perfil
+// tab's label and admin-pending badge are both real, already-fetched state
+// (refreshHeaderAccount/refreshPendingBadge), not something to re-derive
+// from TAB_DEFS's static default each redraw — so their last-known values
+// are cached here and reapplied synchronously after every rebuild, instead
+// of re-querying Supabase (MC.currentAccount() is a real multi-query round
+// trip) on every single tap between tabs.
+let lastKnownSignedIn=null; // null = not resolved yet (first paint, before refreshHeaderAccount() has ever run)
+let lastPendingBadgeText='';
 
 function renderBottomNav(){
-  document.getElementById('bottom-nav').innerHTML=TAB_DEFS.map(t=>
-    `<button class="bn${t.k===curTab?' on':''}" data-tab="${t.k}" onclick="nav('${t.k}')">${svgIco(t.ico)}<span>${t.lbl}</span></button>`
-  ).join('');
+  document.getElementById('bottom-nav').innerHTML=TAB_DEFS.map(t=>{
+    if(t.k==='perfil'){
+      return `<button class="bn" id="bn-perfil" onclick="openAccount()" aria-label="Mi cuenta">${svgIco(t.ico)}<span id="bn-perfil-lbl">${t.lbl}</span><span class="bn-badge" id="bn-perfil-badge"></span></button>`;
+    }
+    return `<button class="bn${t.k===curTab?' on':''}" data-tab="${t.k}" onclick="nav('${t.k}')">${svgIco(t.ico)}<span>${t.lbl}</span></button>`;
+  }).join('');
+  const perfilBtn=document.getElementById('bn-perfil');
+  if(perfilBtn){
+    if(lastKnownSignedIn!==null){
+      perfilBtn.classList.toggle('signin',!lastKnownSignedIn);
+      const lbl=document.getElementById('bn-perfil-lbl');
+      if(lbl)lbl.textContent=lastKnownSignedIn?'Perfil':'Entrar';
+    }
+    const badge=document.getElementById('bn-perfil-badge');
+    if(badge){badge.textContent=lastPendingBadgeText;badge.classList.toggle('on',!!lastPendingBadgeText);}
+  }
 }
 
 let curScreen='inicio';        // the actual visible .scr (tabs AND detail screens)
@@ -703,7 +729,12 @@ function nav(tab,fromBack){
   const target=document.getElementById('scr-'+tab);
   if(!target)return;
   target.classList.add('on');
+  // 'inicio' is no longer one of the 4 bottom-nav tabs, so it needs its own
+  // branch here too — otherwise curTab would just keep whatever tab was
+  // last active, leaving it visibly (and wrongly) highlighted after tapping
+  // the header logo back to Inicio.
   if(TABS.indexOf(tab)>-1){curTab=tab;}
+  else if(tab==='inicio'){curTab=null;}
   renderBottomNav();
   target.scrollTop=0;
   if(!fromBack&&tab!==curScreen){
@@ -5107,27 +5138,32 @@ async function refreshContent(){
   loadWeather(); // fire-and-forget; re-renders the header (and the lightbox if open) when it lands
 }
 
-/* Header account icon: a compact "Entrar" pill while signed out (taps
-   through to the sign-in / create-account form), just the round icon once
-   signed in. Called on load and after any sign-in/sign-out. */
+/* Perfil bottom-nav tab: label reads "Entrar" while signed out (taps
+   through to the sign-in / create-account form), "Perfil" once signed in.
+   Called on load and after any sign-in/sign-out. Also caches the result
+   into lastKnownSignedIn, which renderBottomNav() reapplies on every tab
+   switch — see the comment above that function for why. */
 async function refreshHeaderAccount(){
-  const btn=document.getElementById('tb-acct');
+  const btn=document.getElementById('bn-perfil');
   if(!btn)return;
   const acct=await MC.currentAccount();
+  lastKnownSignedIn=acct.signedIn;
   btn.classList.toggle('signin',!acct.signedIn);
+  const lbl=document.getElementById('bn-perfil-lbl');
+  if(lbl)lbl.textContent=acct.signedIn?'Perfil':'Entrar';
 }
 
-/* Header notification badge — admin-only for now (per the founder's own
+/* Perfil-tab notification badge — admin-only for now (per the founder's own
    scoping: regular accounts may get their own notifications later, but
    this is just the admin's "Pendiente" count today). Called on load,
    after sign-in/out (admin status can change), after pull-to-refresh,
    and after every approve/reject action so the count stays live without
    needing to close and reopen anything. */
 async function refreshPendingBadge(){
-  // Same count on the header burger badge AND the "Mi cuenta" row inside
-  // the menu, so an admin can see which item the header dot is pointing at.
-  const els=[document.getElementById('tb-badge'),document.getElementById('menu-account-badge')];
-  const set=(txt)=>els.forEach(el=>{ if(!el)return; el.textContent=txt; el.classList.toggle('on',!!txt); });
+  // Same count on the Perfil tab's badge AND the "Mi cuenta" row inside
+  // the menu, so an admin can see which item the tab dot is pointing at.
+  const els=[document.getElementById('bn-perfil-badge'),document.getElementById('menu-account-badge')];
+  const set=(txt)=>{ lastPendingBadgeText=txt; els.forEach(el=>{ if(!el)return; el.textContent=txt; el.classList.toggle('on',!!txt); }); };
   const acct=await MC.currentAccount();
   // Keep the app-wide "who's signed in" cache fresh from here too — it runs
   // on load and after every sign-in/out, so admin-only affordances

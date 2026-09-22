@@ -804,6 +804,85 @@ const fakeClient = {
   window.nav('inicio'); // restore the default screen for the hardware-back test below
   try { window.localStorage.removeItem('mc_onboard_eventos'); window.localStorage.removeItem('mc_onboard_empleos'); } catch (_) {}
 
+  // ── Nav redesign phase 1: bottom nav loses Inicio, gains Perfil in its
+  //    place; the header's separate account icon/"Entrar" pill is gone
+  //    entirely (home is reached via the logo, unchanged). Every button
+  //    reference below is re-queried fresh after each nav() call, since
+  //    renderBottomNav() rebuilds #bottom-nav's innerHTML from scratch on
+  //    every one — a cached reference from before would go stale. Placed
+  //    here (after the tip-gate tests above, not earlier) deliberately:
+  //    tipGateShownThisSession is a one-time-per-section flag this block's
+  //    own nav() calls would otherwise consume early, making the dedicated
+  //    Anuncios/Empleos tip-gate tests above fail to see their real
+  //    "first visit" — this position is the first safe point after they've
+  //    already run. ──
+  {
+    const perfilEl = () => doc.getElementById('bn-perfil');
+    const activeTabKey = () => { const el = doc.querySelector('#bottom-nav .bn.on'); return el ? el.dataset.tab : null; };
+
+    const bnButtons = [...doc.querySelectorAll('#bottom-nav .bn')];
+    assert(bnButtons.length === 4, 'the bottom nav has exactly 4 tabs');
+    const bnKeys = bnButtons.map(b => b.dataset.tab || (b.id === 'bn-perfil' ? 'perfil' : null));
+    assert(JSON.stringify(bnKeys) === JSON.stringify(['tienda', 'anuncios', 'reportar', 'perfil']), `the bottom nav is exactly Comercio/Anuncios/Vecinos/Perfil in that order, Inicio is gone (got: ${bnKeys.join(',')})`);
+    assert(!doc.getElementById('tb-acct') && !doc.getElementById('tb-badge'), 'the header account icon/"Entrar" pill is gone entirely from the DOM, not just hidden');
+    assert(!!doc.getElementById('tb-weather') && !!doc.getElementById('tb-icon'), 'the header still has weather + burger, untouched');
+
+    // the logo still goes home, and correctly clears whatever tab was
+    // showing as active — a real regression this phase would otherwise
+    // introduce, since nav('inicio') no longer itself matches one of the 4
+    // tabs that the old highlighting check (TABS.indexOf(tab)>-1) covers
+    window.nav('tienda');
+    assert(activeTabKey() === 'tienda', 'sanity check: switching to Comercio highlights it');
+    const brand = doc.querySelector('.brand');
+    assert(brand && brand.getAttribute('onclick') === "nav('inicio')", 'the header logo is still wired to go home, untouched');
+    window.nav('inicio');
+    assert(doc.getElementById('scr-inicio').classList.contains('on'), "tapping the logo (nav('inicio')) shows the Inicio screen");
+    assert(activeTabKey() === null, 'and no bottom-nav tab is left stuck showing as active — Inicio no longer has one of its own');
+
+    // Perfil opens the account modal directly, it's not a switchable tab
+    assert(perfilEl().getAttribute('onclick') === 'openAccount()', 'Perfil is wired to open the account modal, not switch a screen');
+    assert(!perfilEl().hasAttribute('data-tab'), 'Perfil has no data-tab — nav() never treats it as one of the 4 switchable tabs');
+
+    // label + admin badge must both SURVIVE a tab switch, not just be set
+    // once — renderBottomNav() rebuilds this exact button from scratch on
+    // every nav() call, which the old header button (living outside that
+    // markup) never had to survive
+    await window.refreshHeaderAccount();
+    assert(text('bn-perfil-lbl') === 'Entrar' && perfilEl().classList.contains('signin'), 'signed out, the Perfil tab reads "Entrar"');
+    window.nav('anuncios');
+    assert(text('bn-perfil-lbl') === 'Entrar' && perfilEl().classList.contains('signin'), 'and "Entrar" survives a tab switch — not silently reset to the tab\'s default "Perfil" label');
+    window.nav('inicio');
+
+    const savedSession = currentSession;
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    await window.refreshHeaderAccount();
+    assert(text('bn-perfil-lbl') === 'Perfil' && !perfilEl().classList.contains('signin'), 'signed in, the tab reads "Perfil" and drops the signed-out styling hook');
+    window.nav('tienda');
+    assert(text('bn-perfil-lbl') === 'Perfil', 'and "Perfil" also survives a tab switch');
+    window.nav('inicio');
+
+    // currentProfile.is_admin defaults to true in this fixture; the pending
+    // count itself just needs to be real and non-zero, which the fixture's
+    // existing pending rows (alertas, eventos, …) already guarantee. This
+    // also exercises fetchPendingQueue() (via refreshPendingBadge ->
+    // fetchPendingCount), which — unlike the public Avisos/Clasificados
+    // feed fetchers — still embeds profiles(display_name); harmless here
+    // (it's admin-only, and profiles keeps its admin-read-all policy), and
+    // this is deliberately the LAST thing in this file that touches
+    // lastSelect.avisos/.clasificados, since nothing after this point reads
+    // those two keys again.
+    await window.refreshPendingBadge();
+    const realBadgeText = text('bn-perfil-badge');
+    assert(!!realBadgeText && realBadgeText === text('menu-account-badge'), 'as admin, the Perfil tab badge shows the same real pending count as the burger\'s "Mi cuenta" row');
+    window.nav('reportar'); // any real tab switch — the same rebuild that used to wipe the badge before this was fixed
+    assert(text('bn-perfil-badge') === realBadgeText && doc.getElementById('bn-perfil-badge').classList.contains('on'), 'the admin pending badge also survives a tab switch, not wiped by every renderBottomNav() rebuild');
+    window.nav('inicio');
+
+    // restore the signed-out session the rest of this file assumes going in
+    currentSession = savedSession;
+    await window.refreshHeaderAccount();
+  }
+
   // ── Hardware back button (Android / installed PWA): each press peels one
   //    UI layer — overlay, then screen — instead of quitting on press one. ──
   try {

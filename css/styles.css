@@ -155,11 +155,25 @@ svg{display:block}
 
 /* ═══ BOTTOM NAV ═══ */
 .bottom-nav{display:flex;flex-shrink:0;background:var(--surface);border-top:1px solid var(--line);padding:8px 6px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px rgba(20,25,20,.05);position:relative;z-index:30}
-.bn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--ink3)}
+.bn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--ink3);position:relative}
 .bn .ico{width:22px;height:22px;stroke-width:1.7}
 .bn span{font-size:10.5px;font-weight:600}
 .bn.on{color:var(--gulf)}
 .bn.on .ico{stroke-width:2}
+/* Perfil tab's admin pending-count dot — same shape/color as .tb-badge
+   (the header pill it replaces), sized down and anchored to the icon
+   (horizontally centered within the wider flex tab) rather than the tab's
+   own corner, and bordered with --surface (the bottom nav's own light
+   background) instead of --night, since it no longer sits on the dark
+   header bar. */
+.bn-badge{position:absolute;top:2px;left:calc(50% + 6px);min-width:15px;height:15px;padding:0 3px;border-radius:99px;background:var(--signal);color:#fff;font-size:9.5px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1;border:1.5px solid var(--surface)}
+.bn-badge.on{display:flex}
+/* A subtle nudge while signed out — the old header pill widened to show
+   "Entrar" as its own visual cue, which a fixed-width bottom-nav tab can't
+   do; the label swap alone (see refreshHeaderAccount) carries most of that
+   weight, this just echoes the same "notable tab" accent .bn.on already
+   uses elsewhere in this row. */
+.bn.signin{color:var(--gulf)}
 
 /* ═══ SCREENS ═══ */
 .screens{flex:1;overflow:hidden;position:relative;z-index:5}
