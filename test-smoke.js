@@ -1059,6 +1059,121 @@ const fakeClient = {
     const fixturePhones = ['981 100 2000', '981 300 4000', '981 400 5000', '981 555 1234', '981 200 3000', '9811234567'];
     assert(fixturePhones.every(p => !searchHtml.includes(p)), 'no rendered search result ever includes a fixture phone number — search never reads phone/contact fields');
     window.closeSearch();
+
+    // ── Whole-app search: "Secciones y acciones" (every tab/sub-section/
+    //    menu item/"Publicar…" action) and "Categorías" (built from LIVE
+    //    categories, with counts) — both come before the content groups. ──
+    const findGroup = (label) => [...doc.querySelectorAll('#search-body .sr-group')].find(g => (g.querySelector('.sr-group-hdr') || {}).textContent.includes(label));
+
+    // (a) 'clima' surfaces the Clima row in Secciones y acciones; tapping
+    // it really runs openWeatherLightbox() — the exact SEARCH_PAGES.go for
+    // that entry, proven by spying on the real function, not a stand-in.
+    window.openSearch();
+    window.onSearchInput('clima');
+    let paginasGroup = findGroup('Secciones y acciones');
+    assert(!!paginasGroup, '"clima" surfaces the Secciones y acciones group');
+    const climaRow = paginasGroup ? [...paginasGroup.querySelectorAll('.sr-row')].find(r => r.querySelector('.sr-row-title').textContent === 'Clima') : null;
+    assert(!!climaRow, 'and that group contains a real "Clima" row');
+    assert(!!climaRow.querySelector('.sr-thumb.sr-ico'), 'a section/action row with no photo shows a coloured icon tile (.sr-ico), not a photo or a blank space');
+    let weatherCalls = 0;
+    const realOpenWeatherLightbox = window.openWeatherLightbox;
+    window.openWeatherLightbox = (...args) => { weatherCalls++; return realOpenWeatherLightbox(...args); };
+    window.openSearchResult('paginas', 'clima');
+    assert(weatherCalls === 1, 'tapping the Clima row calls the real openWeatherLightbox() — SEARCH_PAGES.go actually runs, not just closes search');
+    window.openWeatherLightbox = realOpenWeatherLightbox;
+    // openWeatherLightbox() really opened #wx-lb-bg — close it, or mcTopLayer()
+    // reports 'weather' ahead of 'screen' for every test after this one.
+    window.closeWeatherLightbox();
+
+    // 'publicar' surfaces the Publicar… actions (every content type's own
+    // "Acción · …" entry).
+    window.openSearch();
+    window.onSearchInput('publicar');
+    paginasGroup = findGroup('Secciones y acciones');
+    const pubTitles = paginasGroup ? [...paginasGroup.querySelectorAll('.sr-row-title')].map(t => t.textContent) : [];
+    assert(pubTitles.some(t => t.startsWith('Publicar')), `"publicar" surfaces at least one "Publicar…" action (got: ${pubTitles.join(' | ')})`);
+    window.closeSearch();
+
+    // (b) SEARCH_PAGES ids are unique, and every function a "go" callback
+    // references really exists. SEARCH_PAGES itself is a top-level const
+    // inside the eval'd script (not reachable as window.SEARCH_PAGES, same
+    // as searchOpen/curScreen elsewhere in this file), so this is a static
+    // check against the real source text, then a real typeof check against
+    // window for each referenced function (which — being plain top-level
+    // function declarations — genuinely are window properties, unlike the
+    // const/let bindings).
+    {
+      const appSrc = fs.readFileSync(path.join(__dirname, 'js/app.js'), 'utf8');
+      const pagesBlockMatch = appSrc.match(/const SEARCH_PAGES=\[([\s\S]*?)\n\];/);
+      assert(!!pagesBlockMatch, 'the SEARCH_PAGES array literal is found in js/app.js (static source check)');
+      const pagesBlock = pagesBlockMatch ? pagesBlockMatch[1] : '';
+      const pageIds = [...pagesBlock.matchAll(/\{id:'([a-z0-9-]+)'/g)].map(m => m[1]);
+      assert(pageIds.length > 10 && new Set(pageIds).size === pageIds.length, `every SEARCH_PAGES id is unique (${pageIds.length} entries, ${new Set(pageIds).size} unique)`);
+      // 'var' is a false positive from bg:'var(--token)' CSS values inside
+      // the object literals, not a real function call — filtered out.
+      const calledFns = [...new Set([...pagesBlock.matchAll(/\b([a-zA-Z_$][\w$]*)\(/g)].map(m => m[1]))].filter(fn => fn !== 'var');
+      const missingFns = calledFns.filter(fn => typeof window[fn] !== 'function');
+      assert(calledFns.length > 5 && missingFns.length === 0, `every function a SEARCH_PAGES "go" callback references actually exists (checked: ${calledFns.join(', ')}${missingFns.length ? ' — MISSING: ' + missingFns.join(', ') : ''})`);
+    }
+
+    // (c) a Categorías result applies the real filter and switches to the
+    // right tab/mode — checked against the real rendered DOM (the active
+    // chip / select value / grid contents), since repFilter/mktFilter are
+    // themselves unreachable module-scoped variables, same reason as (b).
+    // r1 ('Bache') and p1 ('Comida') are the only fixture rows in
+    // Reportes/Mercado at this point in the file.
+    window.openSearch();
+    window.onSearchInput('bache');
+    let catGroup = findGroup('Categorías');
+    assert(!!catGroup && catGroup.querySelector('.sr-row-title').textContent === 'Bache' && catGroup.querySelector('.sr-row-sub').textContent.includes('Reportes'), 'searching a live Reportes category ("Bache") surfaces it in the Categorías group with the real section label');
+    window.openSearchResult('categorias', 'cat-reportes|' + encodeURIComponent('Bache'));
+    assert(doc.getElementById('scr-reportar').classList.contains('on'), 'tapping the Reportes category switches to the Vecinos/Reportar tab');
+    assert((doc.querySelector('#rep-chips .chip.on') || {}).textContent === 'Bache', 'and the real repFilter is set to that category (reflected in the active chip)');
+    assert(text('rep-list').includes('Bache test'), 'and the Reportes list actually shows the matching card, not an empty/unfiltered view');
+    window.setRepFilter('all');
+    window.nav('inicio');
+
+    window.openSearch();
+    window.onSearchInput('comida');
+    catGroup = findGroup('Categorías');
+    const comidaRow = catGroup ? [...catGroup.querySelectorAll('.sr-row')].find(r => r.querySelector('.sr-row-title').textContent === 'Comida' && r.querySelector('.sr-row-sub').textContent.includes('Mercado')) : null;
+    assert(!!comidaRow, 'searching a live Mercado category ("Comida") surfaces it in the Categorías group');
+    window.openSearchResult('categorias', 'cat-mercado|' + encodeURIComponent('Comida'));
+    assert(doc.getElementById('scr-tienda').classList.contains('on'), 'tapping the Mercado category switches to the Comercio tab');
+    assert(doc.getElementById('mkt-cat-select').value === 'Comida', 'and the real mktFilter is set to that category (reflected in the category select)');
+    assert(text('mkt-grid').includes('Producto test'), 'and the Mercado grid actually shows the matching card');
+    window.setMktFilter('all');
+    window.nav('inicio');
+
+    // (d) thumbnails: a fixture with a real photo renders .sr-thumb with
+    // that background-image; a content-group fixture with none falls back
+    // to .sr-ph (a neutral icon tile); a section/category (never has a
+    // photo) always uses .sr-ico (already checked above for Clima).
+    window.openSearch();
+    window.onSearchInput('prueba');
+    const eventosGroup = findGroup('Eventos');
+    const e1Row = eventosGroup ? [...eventosGroup.querySelectorAll('.sr-row')].find(r => r.querySelector('.sr-row-title').textContent === 'Evento de prueba') : null;
+    assert(!!e1Row, 'the fixture event with a real photo (e1) is found in the Eventos group');
+    const e1Thumb = e1Row ? e1Row.querySelector('.sr-thumb') : null;
+    assert(!!e1Thumb && !e1Thumb.classList.contains('sr-ph') && !e1Thumb.classList.contains('sr-ico') && (e1Thumb.getAttribute('style') || '').includes("url('https://example.com/cartel.jpg')"), "a fixture with a real photo renders .sr-thumb with that photo's real background-image, not a fallback icon");
+
+    window.onSearchInput('puesto');
+    const empleosGroup = findGroup('Empleos');
+    const j1Row = empleosGroup ? [...empleosGroup.querySelectorAll('.sr-row')].find(r => r.querySelector('.sr-row-title').textContent === 'Puesto test') : null;
+    assert(!!j1Row && !!j1Row.querySelector('.sr-thumb.sr-ph'), 'an Empleos result (a content group with no photos at all) falls back to a neutral .sr-ph icon tile');
+    window.closeSearch();
+
+    // (e) a single quote in an image URL must not break the row markup —
+    // searchThumb() itself replaces the URL's OWN quotes with %27 before
+    // wrapping it in url('...'), so nothing can break out of that wrapper.
+    // Tested directly against the real function (exposed on window, same
+    // as every other plain top-level function here) rather than by
+    // mutating shared fixture data mid-suite.
+    const apoThumbHtml = window.searchThumb({ img: "https://example.com/foto's.jpg", title: 'x' }, { ico: 'news' });
+    assert(!apoThumbHtml.includes("foto's") && apoThumbHtml.includes('foto%27s'), "searchThumb escapes a single quote in the image URL to %27 before it ever reaches url('...')");
+    const apoThumbHost = doc.createElement('div');
+    apoThumbHost.innerHTML = apoThumbHtml;
+    assert(apoThumbHost.children.length === 1 && !!apoThumbHost.querySelector('.sr-thumb') && (apoThumbHost.querySelector('.sr-thumb').style.backgroundImage || '').includes('foto%27s'), 'the escaped markup parses as exactly one well-formed .sr-thumb element, not broken/truncated by the stray quote');
   }
 
   // ── Burger menu: single-open accordion (Cuenta/Noticias/Comercio/

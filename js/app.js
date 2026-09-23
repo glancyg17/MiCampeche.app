@@ -5475,18 +5475,79 @@ function searchScore(tokens,title,extras){
   }
   return score;
 }
+// Static index of every page / menu item / action in the app. `k` = extra
+// keywords (synonyms people actually type). `go` runs AFTER search has closed.
+const SEARCH_PAGES=[
+  {id:'inicio',t:'Inicio',s:'Página principal',k:'home portada principal',ico:'home',bg:'var(--night)',go:()=>nav('inicio')},
+  {id:'noticias',t:'Noticias',s:'Lo último de Campeche',k:'periódico prensa notas',ico:'news',bg:'var(--gulf)',go:()=>nav('noticias')},
+  {id:'comercio',t:'Comercio',s:'Ofertas, mercado, clasificados y mandaditos',k:'tienda compras',ico:'tienda',bg:'var(--palm)',go:()=>nav('tienda')},
+  {id:'ofertas',t:'Ofertas del día',s:'Comercio · descuentos de negocios locales',k:'descuentos promociones promo 2x1 rebajas',ico:'tienda',bg:'var(--palm)',go:()=>nav('tienda')},
+  {id:'mercado',t:'Mercado',s:'Comercio · productos de negocios locales',k:'tienda productos negocios comprar',ico:'tienda',bg:'var(--palm)',go:()=>{nav('tienda');setTiendaMode('mercado');}},
+  {id:'clasificados',t:'Clasificados',s:'Comercio · artículos de vecinos',k:'segunda mano usados vender comprar',ico:'tienda',bg:'var(--palm)',go:()=>{nav('tienda');setTiendaMode('clasificados');}},
+  {id:'mandaditos',t:'Mandaditos',s:'Comercio · quién te ayuda con un encargo',k:'mensajero repartidor envíos encargos recados',ico:'mandaditos',bg:'var(--gulf)',go:()=>{nav('tienda');setTiendaMode('mandaditos');}},
+  {id:'anuncios',t:'Anuncios',s:'Eventos, empleos y alertas',k:'',ico:'eventos',bg:'var(--wall-dk)',go:()=>nav('anuncios')},
+  {id:'eventos',t:'Eventos',s:'Anuncios · qué pasa en la ciudad',k:'conciertos fiestas agenda calendario',ico:'eventos',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('eventos');}},
+  {id:'empleos',t:'Empleos',s:'Anuncios · vacantes en Campeche',k:'trabajo vacantes chamba',ico:'empleos',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('empleos');}},
+  {id:'alertas',t:'Alertas',s:'Anuncios · avisos oficiales',k:'clima agua cfe protección civil emergencia',ico:'alertas',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('alertas');}},
+  {id:'vecinos',t:'Vecinos',s:'Avisos, reportes y perdidos',k:'comunidad',ico:'reportar',bg:'var(--signal)',go:()=>nav('reportar')},
+  {id:'avisos',t:'Avisos',s:'Vecinos · avisos de la comunidad',k:'comunidad juntas',ico:'reportar',bg:'var(--signal)',go:()=>{nav('reportar');setReportarMode('avisos');}},
+  {id:'reportes',t:'Reportes',s:'Vecinos · baches, fugas, alumbrado',k:'infraestructura bache fuga luz alumbrado basura calle',ico:'reportar',bg:'var(--signal)',go:()=>{nav('reportar');setReportarMode('reportes');}},
+  {id:'perdidos',t:'Perdidos y encontrados',s:'Vecinos · mascotas, objetos, personas',k:'extraviado extraviada mascota perro gato cartera',ico:'perdidos',bg:'var(--signal)',go:()=>{setPfFilter('all');nav('reportar');setReportarMode('perdidos');}},
+  {id:'perdidos-p',t:'Perdidos',s:'Vecinos · lo que alguien perdió',k:'extraviado busco',ico:'perdidos',bg:'var(--signal)',go:()=>{searchResetInput('pf-colonia-filter');setPfColonia('');setPfFilter('perdido');nav('reportar');setReportarMode('perdidos');}},
+  {id:'perdidos-e',t:'Encontrados',s:'Vecinos · lo que alguien encontró',k:'hallado',ico:'perdidos',bg:'var(--signal)',go:()=>{searchResetInput('pf-colonia-filter');setPfColonia('');setPfFilter('encontrado');nav('reportar');setReportarMode('perdidos');}},
+  {id:'koox',t:"Transporte (Ko'ox)",s:'Rutas, tarifas y apps en tiempo real',k:'koox camión autobús transporte ruta urbano',ico:'bus',bg:'var(--gulf)',go:()=>goToKoox()},
+  {id:'clima',t:'Clima',s:'Pronóstico de hoy',k:'tiempo temperatura lluvia calor pronóstico',ico:'sun',bg:'var(--gulf)',go:()=>openWeatherLightbox()},
+  {id:'perfil',t:'Mi perfil',s:'Tu cuenta',k:'cuenta entrar iniciar sesión registrarme crear cuenta',ico:'account',bg:'var(--night)',go:()=>openAccount()},
+  {id:'negocio',t:'Mi negocio',s:'Tu negocio y su verificación',k:'negocios verificar premium registrar',ico:'account',bg:'var(--night)',go:()=>{openMenu();toggleMenuSection('cuenta');}},
+  {id:'mispub',t:'Mis publicaciones',s:'Lo que has publicado',k:'posts anuncios míos',ico:'account',bg:'var(--night)',go:()=>openMyPosts()},
+  {id:'prefs',t:'Preferencias',s:'Tema, consejos y más',k:'tema oscuro claro modo ajustes configuración',ico:'info',bg:'var(--ink3)',go:()=>openPreferences()},
+  {id:'sugerencias',t:'Sugerencias',s:'Cuéntanos qué mejorar',k:'opinión feedback ideas mejorar',ico:'message',bg:'var(--palm)',go:()=>openSuggestionForm('menu')},
+  {id:'contacto',t:'Contacto',s:'Escríbenos por correo',k:'correo email ayuda soporte',ico:'message',bg:'var(--signal)',go:()=>contactUs()},
+  {id:'privacidad',t:'Aviso de privacidad y Términos',s:'Cómo tratamos tus datos',k:'privacidad términos condiciones datos legal',ico:'info',bg:'var(--ink3)',go:()=>nav('privacidad')},
+  {id:'pub-evento',t:'Publicar un evento',s:'Acción · Anuncios',k:'crear agregar anunciar',ico:'eventos',bg:'var(--wall-dk)',go:()=>openPost('eventos')},
+  {id:'pub-oferta',t:'Publicar una oferta',s:'Acción · Comercio (negocios)',k:'crear agregar descuento promoción',ico:'tienda',bg:'var(--palm)',go:()=>openPost('oferta')},
+  {id:'pub-producto',t:'Vender en el Mercado',s:'Acción · Comercio (negocios)',k:'publicar producto crear agregar',ico:'tienda',bg:'var(--palm)',go:()=>openPost('producto')},
+  {id:'pub-clasificado',t:'Publicar en Clasificados',s:'Acción · Comercio',k:'vender artículo segunda mano crear',ico:'tienda',bg:'var(--palm)',go:()=>openPost('clasificado')},
+  {id:'pub-empleo',t:'Publicar una vacante',s:'Acción · Anuncios',k:'empleo trabajo contratar crear',ico:'empleos',bg:'var(--wall-dk)',go:()=>openPost('empleos')},
+  {id:'pub-aviso',t:'Publicar un aviso',s:'Acción · Vecinos',k:'crear comunidad',ico:'reportar',bg:'var(--signal)',go:()=>openPost('avisos')},
+  {id:'pub-reporte',t:'Hacer un reporte',s:'Acción · Vecinos',k:'reportar bache fuga luz alumbrado problema crear',ico:'reportar',bg:'var(--signal)',go:()=>openPost('reportar')},
+  {id:'pub-perdido',t:'Reportar algo perdido o encontrado',s:'Acción · Vecinos',k:'extraviado mascota objeto crear',ico:'perdidos',bg:'var(--signal)',go:()=>openPost('perdidos')},
+  {id:'ser-mandadito',t:'Ser mandadito',s:'Acción · Comercio',k:'registrarme trabajar repartir mensajero',ico:'mandaditos',bg:'var(--gulf)',go:()=>openMandaditoSignup()},
+  {id:'verificar-negocio',t:'Verificar mi negocio',s:'Acción · Comercio',k:'registrar negocio dar de alta vender',ico:'checkBadge',bg:'var(--palm)',go:()=>{editingBusinessId=null;openPost('negocio_verificar');}}
+];
+// Categories come from what is LIVE right now (so tapping one never lands on
+// an empty list), with counts. Ids are URI-encoded so a stray ' can't break onclick.
+function searchCatCounts(list,getCat){
+  const m=new Map();
+  list.forEach(x=>{const c=getCat(x);if(c)m.set(c,(m.get(c)||0)+1);});
+  return [...m.entries()];
+}
+function searchCategoryItems(){
+  const out=[];
+  const push=(kind,section,ico,bg,entries)=>entries.forEach(([c,n])=>out.push({
+    id:kind+'|'+encodeURIComponent(c).replace(/'/g,'%27'),title:c,extras:[],
+    sub:section+' · '+n+(n===1?' resultado':' resultados'),ico,bg}));
+  push('cat-eventos','Eventos','eventos','var(--wall-dk)',searchCatCounts(EVENTOS.filter(x=>!evtFinished(x)),x=>x.cat));
+  push('cat-mercado','Mercado','tienda','var(--palm)',searchCatCounts(TIENDA.filter(x=>x.sellerType==='negocio'),x=>x.cat));
+  push('cat-clasificados','Clasificados','tienda','var(--palm)',searchCatCounts(TIENDA.filter(x=>x.sellerType==='personal'),x=>x.cat));
+  push('cat-reportes','Reportes','reportar','var(--signal)',searchCatCounts(REPORTES,x=>x.cat));
+  return out;
+}
+// ico = tile shown when a row has no photo (or, for groups with no photos, always).
 const SEARCH_GROUPS=[
-  {key:'noticias',label:'Noticias',items:()=>NOTICIAS.map(n=>({id:n.id,title:n.title,extras:[n.desc,n.source],sub:n.source}))},
-  {key:'eventos',label:'Eventos',items:()=>EVENTOS.filter(x=>!evtFinished(x)).map(x=>({id:x.id,title:x.name,extras:[x.cat,x.loc,x.colonia,x.desc],sub:x.dateLong+(x.loc?' · '+x.loc:'')}))},
-  {key:'ofertas',label:'Ofertas',items:()=>OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS).map(o=>({id:o.id,title:o.name,extras:[o.seller,o.desc],sub:o.seller+' · $'+o.priceNow}))},
-  {key:'mercado',label:'Mercado',items:()=>TIENDA.filter(x=>x.sellerType==='negocio').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.seller,x.desc,x.colonia],sub:x.seller+(x.price?' · '+x.price:'')}))},
-  {key:'clasificados',label:'Clasificados',items:()=>TIENDA.filter(x=>x.sellerType==='personal').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.desc,x.colonia],sub:[x.price,x.colonia].filter(Boolean).join(' · ')}))},
-  {key:'mandaditos',label:'Mandaditos',items:()=>MANDADITOS.map(m=>({id:m.id,title:m.name,extras:[m.desc,m.vehicle],sub:m.vehicle||'Mandadito'}))},
-  {key:'empleos',label:'Empleos',items:()=>EMPLEOS.map(x=>({id:x.id,title:x.title,extras:[x.co,x.desc,(x.tags||[]).join(' '),x.colonia],sub:[x.co,x.pay].filter(Boolean).join(' · ')}))},
-  {key:'alertas',label:'Alertas',items:()=>ALERTAS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.zone,a.type],sub:[a.type,a.time].filter(Boolean).join(' · ')}))},
-  {key:'avisos',label:'Avisos',items:()=>AVISOS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.cat,a.colonia],sub:a.cat}))},
-  {key:'perdidos',label:'Perdidos y encontrados',items:()=>PERDIDOS.map(x=>({id:x.id,title:x.name,extras:[x.desc,x.loc,x.colonia,x.tag],sub:(x.tag==='perdido'?'Perdido':'Encontrado')+(x.loc?' · '+x.loc:'')}))},
-  {key:'reportes',label:'Reportes',items:()=>REPORTES.map(x=>({id:x.id,title:x.title,extras:[x.desc,x.loc,x.loc_colonia,x.cat],sub:[x.cat,x.loc].filter(Boolean).join(' · ')}))}
+  {key:'paginas',label:'Secciones y acciones',items:()=>SEARCH_PAGES.map(p=>({id:p.id,title:p.t,extras:[p.k],sub:p.s,ico:p.ico,bg:p.bg}))},
+  {key:'categorias',label:'Categorías',items:()=>searchCategoryItems()},
+  {key:'noticias',label:'Noticias',ico:'news',items:()=>NOTICIAS.map(n=>({id:n.id,title:n.title,extras:[n.desc,n.source],sub:n.source,img:n.img}))},
+  {key:'eventos',label:'Eventos',ico:'eventos',items:()=>EVENTOS.filter(x=>!evtFinished(x)).map(x=>({id:x.id,title:x.name,extras:[x.cat,x.loc,x.colonia,x.desc],sub:x.dateLong+(x.loc?' · '+x.loc:''),img:x.img}))},
+  {key:'ofertas',label:'Ofertas',ico:'tienda',items:()=>OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS).map(o=>({id:o.id,title:o.name,extras:[o.seller,o.desc],sub:o.seller+' · $'+o.priceNow,img:o.img}))},
+  {key:'mercado',label:'Mercado',ico:'tienda',items:()=>TIENDA.filter(x=>x.sellerType==='negocio').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.seller,x.desc,x.colonia],sub:x.seller+(x.price?' · '+x.price:''),img:x.img}))},
+  {key:'clasificados',label:'Clasificados',ico:'tienda',items:()=>TIENDA.filter(x=>x.sellerType==='personal').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.desc,x.colonia],sub:[x.price,x.colonia].filter(Boolean).join(' · '),img:x.img}))},
+  {key:'mandaditos',label:'Mandaditos',ico:'mandaditos',items:()=>MANDADITOS.map(m=>({id:m.id,title:m.name,extras:[m.desc,m.vehicle],sub:m.vehicle||'Mandadito',img:m.img}))},
+  {key:'empleos',label:'Empleos',ico:'empleos',items:()=>EMPLEOS.map(x=>({id:x.id,title:x.title,extras:[x.co,x.desc,(x.tags||[]).join(' '),x.colonia],sub:[x.co,x.pay].filter(Boolean).join(' · ')}))},
+  {key:'alertas',label:'Alertas',ico:'alertas',items:()=>ALERTAS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.zone,a.type],sub:[a.type,a.time].filter(Boolean).join(' · ')}))},
+  {key:'avisos',label:'Avisos',ico:'reportar',items:()=>AVISOS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.cat,a.colonia],sub:a.cat,img:a.img}))},
+  {key:'perdidos',label:'Perdidos y encontrados',ico:'perdidos',items:()=>PERDIDOS.map(x=>({id:x.id,title:x.name,extras:[x.desc,x.loc,x.colonia,x.tag],sub:(x.tag==='perdido'?'Perdido':'Encontrado')+(x.loc?' · '+x.loc:''),img:x.img}))},
+  {key:'reportes',label:'Reportes',ico:'pin',items:()=>REPORTES.map(x=>({id:x.id,title:x.title,extras:[x.desc,x.loc,x.loc_colonia,x.cat],sub:[x.cat,x.loc].filter(Boolean).join(' · '),img:x.img}))}
 ];
 function runSearch(q){
   const tokens=searchTokens(q);
@@ -5494,22 +5555,30 @@ function runSearch(q){
   const out=[];
   for(const g of SEARCH_GROUPS){
     const hits=[];
-    g.items().forEach((it,i)=>{const s=searchScore(tokens,it.title,it.extras);if(s)hits.push({id:it.id,title:it.title,sub:it.sub,score:s,i});});
+    g.items().forEach((it,i)=>{const s=searchScore(tokens,it.title,it.extras);if(s)hits.push({id:it.id,title:it.title,sub:it.sub,img:it.img,ico:it.ico,bg:it.bg,score:s,i});});
     if(hits.length){hits.sort((a,b)=>b.score-a.score||a.i-b.i);out.push({g,hits});}
   }
   return out;
+}
+// Leading visual for every row: the item's photo if it has one; else a coloured
+// icon tile (sections/categories); else a neutral icon tile for that content type.
+function searchThumb(h,g){
+  if(h.img)return '<span class="sr-thumb" style="background-image:url(\''+e(String(h.img).replace(/'/g,'%27'))+'\')"></span>';
+  if(h.ico)return '<span class="sr-thumb sr-ico" style="background:'+h.bg+'">'+svgIco(h.ico)+'</span>';
+  if(g.ico)return '<span class="sr-thumb sr-ph">'+svgIco(g.ico)+'</span>';
+  return '';
 }
 function renderSearchResults(q){
   const body=document.getElementById('search-body');
   if(!body)return;
   const res=runSearch(q);
-  if(res===null){body.innerHTML='<div class="sr-hint"><b>¿Qué buscas?</b>Noticias, eventos, productos, ofertas, mandaditos, empleos, avisos…</div>';return;}
+  if(res===null){body.innerHTML='<div class="sr-hint"><b>¿Qué buscas?</b>Noticias, eventos, productos, secciones, categorías, mandaditos, empleos, avisos…</div>';return;}
   if(!res.length){body.innerHTML='<div class="sr-hint"><b>Sin resultados</b>No encontramos nada para “'+e(String(q).trim())+'”. Prueba con otra palabra.</div>';return;}
   body.innerHTML=res.map(({g,hits})=>{
     const open=!!searchExpanded[g.key];
     const shown=open?hits:hits.slice(0,SEARCH_GROUP_CAP);
     return '<div class="sr-group"><div class="sr-group-hdr">'+g.label+'<span>'+hits.length+'</span></div>'
-      +shown.map(h=>'<button class="sr-row" onclick="openSearchResult(\''+g.key+'\',\''+e(h.id)+'\')"><span class="sr-row-txt"><span class="sr-row-title">'+e(h.title)+'</span>'+(h.sub?'<span class="sr-row-sub">'+e(h.sub)+'</span>':'')+'</span>'+svgIco('chevronR','sr-row-arr')+'</button>').join('')
+      +shown.map(h=>'<button class="sr-row" onclick="openSearchResult(\''+g.key+'\',\''+e(h.id)+'\')">'+searchThumb(h,g)+'<span class="sr-row-txt"><span class="sr-row-title">'+e(h.title)+'</span>'+(h.sub?'<span class="sr-row-sub">'+e(h.sub)+'</span>':'')+'</span>'+svgIco('chevronR','sr-row-arr')+'</button>').join('')
       +(!open&&hits.length>SEARCH_GROUP_CAP?'<button class="sr-more" onclick="expandSearchGroup(\''+g.key+'\')">Ver '+(hits.length-SEARCH_GROUP_CAP)+' más</button>':'')
       +'</div>';
   }).join('');
@@ -5558,6 +5627,16 @@ function searchResetInput(id){const i=document.getElementById(id);if(i)i.value='
 function openSearchResult(kind,id){
   closeSearch();
   switch(kind){
+    case 'paginas':{const p=SEARCH_PAGES.find(x=>x.id===id);if(p)p.go();break;}
+    case 'categorias':{
+      const parts=String(id).split('|'),ck=parts[0],cat=decodeURIComponent(parts[1]||'');
+      // Clear the target list's other filters first so the category can't land on a hidden/empty view.
+      if(ck==='cat-eventos'){searchResetInput('evt-colonia');setEvtColonia('');setEvtDateFilter('all');nav('anuncios');setAnunciosMode('eventos');setEvtFilter(cat);}
+      else if(ck==='cat-mercado'){searchResetInput('mkt-colonia');searchResetInput('mkt-search');mktColonia='';mktSearch='';mktFilter=cat;nav('tienda');setTiendaMode('mercado');renderMktChips();renderMercado();}
+      else if(ck==='cat-clasificados'){searchResetInput('clas-colonia');searchResetInput('clas-search');clasColonia='';clasSearch='';clasFilter=cat;nav('tienda');setTiendaMode('clasificados');renderClasChips();renderClasificados();}
+      else if(ck==='cat-reportes'){searchResetInput('rep-colonia');setRepColonia('');nav('reportar');setReportarMode('reportes');setRepFilter(cat);}
+      break;
+    }
     case 'noticias':showNoticia(id);break;
     case 'eventos':openEvento(id);break;
     case 'mercado':openProdView('negocio',id);break;
