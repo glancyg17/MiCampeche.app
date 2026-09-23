@@ -208,6 +208,7 @@ async function renderMenuBody(){
         child(`closeMenu();nav('reportar');setReportarMode('perdidos')`,'Perdidos')
       ].join(''))
     + leaf(svgIco('bus'),'var(--gulf)',"Transporte (Ko'ox)",'Rutas, tarifas y apps en tiempo real','goToKoox()')
+    + leaf('<svg class="ico" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>','var(--palm)','Sugerencias','Cuéntanos qué mejorar',`closeMenu();openSuggestionForm('menu')`)
     + leaf('<svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>','var(--signal)','Contacto','Escríbenos por correo','contactUs()')
     + leaf('<svg class="ico" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>','var(--ink3)','Aviso de privacidad y Términos','Cómo tratamos tus datos',`closeMenu();nav('privacidad')`);
 }
@@ -221,8 +222,11 @@ function openAdminChooser(){
     <button class="menu-item" onclick="closeMenu();closeModal();openAdminUsers()" style="border:1.5px solid var(--line2);margin-bottom:8px">
       <span class="menu-item-txt"><span class="menu-item-lbl">Usuarios</span><span class="menu-item-sub">Buscar cuentas y sus negocios</span></span>
     </button>
-    <button class="menu-item" onclick="closeMenu();closeModal();openPending()" style="border:1.5px solid var(--line2)">
+    <button class="menu-item" onclick="closeMenu();closeModal();openPending()" style="border:1.5px solid var(--line2);margin-bottom:8px">
       <span class="menu-item-txt"><span class="menu-item-lbl">Pendiente</span></span>
+    </button>
+    <button class="menu-item" onclick="closeMenu();closeModal();openAdminSuggestions()" style="border:1.5px solid var(--line2)">
+      <span class="menu-item-txt"><span class="menu-item-lbl">Sugerencias</span><span class="menu-item-sub">Lo que piden los usuarios</span></span>
     </button>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -3408,8 +3412,8 @@ function restoreAdminUsersList(){
 }
 
 /* ── 2. One account ── */
-async function openAdminUserView(userId){
-  mcModalPushView('adminUsers',restoreAdminUsersList);
+async function openAdminUserView(userId,backRestore){
+  mcModalPushView('adminUsers',backRestore||restoreAdminUsersList);
   adminViewingUserId=userId;
   adminUserDetail=null;
   adminUserPosts=[];
@@ -5570,6 +5574,114 @@ function openSearchResult(kind,id){
   }
 }
 
+/* ══════════════ SUGGESTIONS (menu form + weekly prompt + admin inbox) ══════════════ */
+const SUGGEST_MIN=5,SUGGEST_MAX=1000;
+const SUGGEST_PROMPT_EVERY_MS=7*24*60*60*1000;
+// Same gate as every other write: signed in + phone verified. Checked when the
+// form OPENS (not on submit) so nobody types a suggestion and then loses it
+// behind a sign-in modal. The DB enforces the same rule (RLS).
+async function openSuggestionForm(source){
+  const acct=await MC.currentAccount();
+  if(!runWriteGate(acct,null))return;
+  renderSuggestionForm(source||'menu');
+  document.getElementById('modal-bg').classList.add('on');
+}
+function renderSuggestionForm(source){
+  const weekly=source==='weekly';
+  document.getElementById('modal-title').textContent=weekly?'Tu opinión cuenta':'Sugerencias';
+  document.getElementById('modal-body').innerHTML='<div style="color:var(--ink3);font-size:13.5px;line-height:1.5;margin-bottom:10px">'
+    +(weekly?'¿Hay algo que te gustaría ver o mejorar en MiCampeche? Cuéntanos — es opcional.':'Cuéntanos qué te gustaría ver, mejorar o arreglar en MiCampeche.')
+    +'</div><textarea class="ft" id="suggestion-text" maxlength="'+SUGGEST_MAX+'" placeholder="Escribe tu sugerencia…"></textarea>'
+    +'<div style="display:flex;gap:8px;margin-top:4px">'
+    +(weekly?'<button class="submit-btn" style="flex:1;background:var(--paper2);color:var(--ink);box-shadow:none" onclick="closeModal()">Ahora no</button>':'')
+    +'<button class="submit-btn" id="suggestion-submit-btn" style="flex:1" onclick="submitSuggestion()">Enviar</button></div>';
+}
+async function submitSuggestion(){
+  const btn=document.getElementById('suggestion-submit-btn');
+  const txt=(document.getElementById('suggestion-text').value||'').trim();
+  if(txt.length<SUGGEST_MIN){toast('Cuéntanos un poco más (mínimo '+SUGGEST_MIN+' letras).');return;}
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {error}=await MC.submitSuggestion(txt);
+  if(error){
+    toast((error.message||'').includes('suggestion_rate_limit')
+      ?'Ya nos mandaste varias hoy — gracias. Puedes enviar más mañana.'
+      :pgErrorToast(error,'No se pudo enviar. Intenta de nuevo.'));
+    if(btn){btn.disabled=false;btn.textContent='Enviar';}
+    return;
+  }
+  closeModal();
+  toast('¡Gracias por tu sugerencia! ✓');
+}
+
+// Weekly prompt: verified accounts only, at most once per 7 days per account
+// per device (localStorage, keyed by uid). The timestamp is written when the
+// popup is SHOWN, so closing it any way (Ahora no / ✕ / backdrop) counts as
+// skipping this week — it's optional, unlike the admin-message popup. Never
+// stacks on top of anything else: if any layer is open when it fires, it
+// quietly waits for the next app-open.
+function anyOverlayOpen(){
+  return ['modal-bg','menu-bg','wx-lb-bg','install-gate','tip-gate','desktop-gate','search-panel'].some(id=>{
+    const el=document.getElementById(id);
+    return !!el&&el.classList.contains('on');
+  });
+}
+async function maybeShowWeeklySuggestionPrompt(){
+  if(anyOverlayOpen())return;
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn||acct.phoneVerificationStatus!=='verified')return;
+  const uid=await MC.ready;
+  if(!uid)return;
+  const key='mc_sugg_prompt_'+uid;
+  let last=0;
+  try{last=parseInt(localStorage.getItem(key)||'0',10)||0;}catch(err){return;}
+  if(Date.now()-last<SUGGEST_PROMPT_EVERY_MS)return;
+  if(anyOverlayOpen())return;   // re-check: the awaits above gave other popups time to open
+  try{localStorage.setItem(key,String(Date.now()));}catch(err){}
+  renderSuggestionForm('weekly');
+  document.getElementById('modal-bg').classList.add('on');
+}
+
+/* ── Admin inbox ── */
+let adminSuggestions=[];
+async function openAdminSuggestions(){
+  mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Sugerencias';
+  document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
+  document.getElementById('modal-bg').classList.add('on');
+  adminSuggestions=await MC.adminFetchSuggestions();
+  renderAdminSuggestions();
+}
+function restoreAdminSuggestions(){
+  renderAdminSuggestions();
+  MC.adminFetchSuggestions().then(list=>{adminSuggestions=list;renderAdminSuggestions();});
+}
+function renderAdminSuggestions(){
+  document.getElementById('modal-title').textContent='Sugerencias';
+  if(!adminSuggestions.length){
+    document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:30px 10px;color:var(--ink3)">Todavía no hay sugerencias.</div>';
+    return;
+  }
+  document.getElementById('modal-body').innerHTML=adminSuggestions.map(s=>`
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--rs);padding:12px 13px;margin-bottom:8px;${s.reviewedAt?'opacity:.6':''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink3);margin-bottom:6px">
+        <span><b style="color:var(--ink2)">${e(s.name)}</b> · ${e(s.time)}</span>
+        ${s.reviewedAt?'':'<span style="color:var(--signal);font-weight:700">Nueva</span>'}
+      </div>
+      <div style="font-size:14px;line-height:1.5;white-space:pre-wrap">${e(s.message)}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="chip" onclick="openAdminUserView('${s.profileId}',restoreAdminSuggestions)">Ver usuario</button>
+        ${s.reviewedAt?'':`<button class="chip" onclick="markSuggestionReviewed('${s.id}')">Marcar leída</button>`}
+      </div>
+    </div>`).join('');
+}
+async function markSuggestionReviewed(id){
+  const {error}=await MC.adminMarkSuggestionReviewed(id);
+  if(error){toast('No se pudo marcar.');return;}
+  const s=adminSuggestions.find(x=>x.id===id);
+  if(s)s.reviewedAt=new Date().toISOString();
+  renderAdminSuggestions();
+}
+
 async function init(){
   if(!isMobile()){
     document.getElementById('desktop-gate').classList.add('on');
@@ -5588,6 +5700,7 @@ async function init(){
   nudgeAdminVerifications();
   maybeShowMandaditoReviewNudge();
   maybeShowUndismissedMessages();
+  setTimeout(maybeShowWeeklySuggestionPrompt,8000);
   setTiendaMode('mercado');
   setAnunciosMode('eventos');
   setReportarMode('avisos');

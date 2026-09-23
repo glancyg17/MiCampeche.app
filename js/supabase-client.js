@@ -742,6 +742,29 @@ MC.dismissAdminMessage=async function(id){
   return sb.rpc('dismiss_admin_message',{target_id:id});
 };
 
+/* Suggestions box. RLS only allows a plain insert (no owner SELECT), so
+   this deliberately doesn't chain .select() — the row's real content is
+   never read back, just whether the insert itself succeeded. A trigger
+   caps this at 3/person/24h and raises an exception whose message
+   contains 'suggestion_rate_limit'; the caller matches on that text. */
+MC.submitSuggestion=async function(message){
+  const uid=await MC.ready;
+  return sb.from('suggestions').insert({profile_id:uid,message});
+};
+/* Admin-only. Unread first (reviewed_at nulls first), newest first within
+   that — so a fresh batch surfaces above anything already triaged. */
+MC.adminFetchSuggestions=async function(){
+  const {data,error}=await sb.from('suggestions')
+    .select('id,message,created_at,reviewed_at,profile_id,profiles(display_name)')
+    .order('reviewed_at',{ascending:true,nullsFirst:true})
+    .order('created_at',{ascending:false}).limit(100);
+  if(error){console.error(error);return [];}
+  return data.map(r=>({id:r.id,message:r.message,createdAt:r.created_at,reviewedAt:r.reviewed_at,profileId:r.profile_id,name:(r.profiles&&r.profiles.display_name)||'Vecino',time:relTimeEs(r.created_at)}));
+};
+MC.adminMarkSuggestionReviewed=async function(id){
+  return sb.from('suggestions').update({reviewed_at:new Date().toISOString()}).eq('id',id);
+};
+
 /* ── PUSH NOTIFICATIONS ──
    The send side (push_subscriptions table + RLS, the send-push Edge
    Function, and the DB triggers that fire it on new Pendiente items) is

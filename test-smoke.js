@@ -256,6 +256,12 @@ const SAMPLE = {
   // Inicio's Special Slot — empty by default, matching real production
   // right now (the table has no rows at all yet).
   home_special_slot: [],
+  // Suggestions inbox: sg1 unread (reviewed_at null), sg2 already reviewed —
+  // already in unread-first order here since the fake ignores .order().
+  suggestions: [
+    { id: 'sg1', profile_id: 'uid-1', message: 'Deberían agregar un mapa del centro histórico', created_at: NOW.toISOString(), reviewed_at: null, profiles: { display_name: 'Vecino Test' } },
+    { id: 'sg2', profile_id: 'uid-2', message: 'Ya lo revisamos, gracias', created_at: new Date(NOW.getTime() - 3 * 86400000).toISOString(), reviewed_at: NOW.toISOString(), profiles: { display_name: 'Otro Vecino' } },
+  ],
 };
 
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
@@ -1076,10 +1082,12 @@ const fakeClient = {
 
     await openMenuSettled();
     const top = topBtns();
-    assert(top.length === 8, `the menu has exactly 8 top-level rows (got ${top.length})`);
+    assert(top.length === 9, `the menu has exactly 9 top-level rows (got ${top.length})`);
     const topLabels = top.map(b => (b.querySelector('.menu-item-lbl') || {}).textContent);
-    assert(JSON.stringify(topLabels) === JSON.stringify(['Cuenta', 'Noticias', 'Comercio', 'Anuncios', 'Vecinos', "Transporte (Ko'ox)", 'Contacto', 'Aviso de privacidad y Términos']),
-      `the 8 rows are in the agreed order (got: ${topLabels.join(' | ')})`);
+    assert(JSON.stringify(topLabels) === JSON.stringify(['Cuenta', 'Noticias', 'Comercio', 'Anuncios', 'Vecinos', "Transporte (Ko'ox)", 'Sugerencias', 'Contacto', 'Aviso de privacidad y Términos']),
+      `the 9 rows are in the agreed order, with Sugerencias right before Contacto (got: ${topLabels.join(' | ')})`);
+    const menuSuggestBtn = topBtn('Sugerencias');
+    assert(!!menuSuggestBtn && (menuSuggestBtn.getAttribute('onclick') || '') === "closeMenu();openSuggestionForm('menu')", 'the "Sugerencias" row closes the menu and opens the suggestion form');
     assert(![...doc.querySelectorAll('.menu-submenu')].some(s => s.classList.contains('open')) && ![...doc.querySelectorAll('.menu-item-arr')].some(a => a.classList.contains('open')),
       'every submenu — and every chevron — starts collapsed');
 
@@ -1164,9 +1172,10 @@ const fakeClient = {
     assert(!!adminChild && adminChild.getAttribute('onclick') === 'closeMenu();openAdminChooser()',
       'Admin closes the menu itself before opening the chooser — .menu-bg (z-index 240) would otherwise render above .modal-bg (z-index 200) and hide it entirely');
     window.closeMenu(); window.openAdminChooser();
-    assert(doc.getElementById('modal-title').textContent === 'Admin' && text('modal-body').includes('Usuarios') && text('modal-body').includes('Pendiente'), 'Admin opens a small two-option chooser, not another accordion level');
+    assert(doc.getElementById('modal-title').textContent === 'Admin' && text('modal-body').includes('Usuarios') && text('modal-body').includes('Pendiente') && text('modal-body').includes('Sugerencias'), 'Admin opens a small three-option chooser, not another accordion level');
     assert(!!doc.querySelectorAll('#modal-body .menu-item')[0].getAttribute('onclick').includes('openAdminUsers()'), 'the chooser\'s first button really opens Usuarios');
     assert(!!doc.querySelectorAll('#modal-body .menu-item')[1].getAttribute('onclick').includes('openPending()'), 'the second really opens Pendiente');
+    assert(!!doc.querySelectorAll('#modal-body .menu-item')[2].getAttribute('onclick').includes('openAdminSuggestions()'), 'the third really opens the Sugerencias inbox');
     window.closeModal();
 
     // Cerrar sesión really signs out.
@@ -1178,6 +1187,119 @@ const fakeClient = {
 
     currentSession = savedSession3; currentProfile.is_admin = savedAdmin3;
     window.closeMenu();
+  }
+
+  // ── Suggestions: the menu form (gated on OPEN, not on submit, so nobody
+  //    types something and then loses it behind a sign-in modal), the
+  //    rate-limited insert-only write, the weekly optional prompt, and the
+  //    admin inbox (unread-first, "Marcar leída"). ──
+  {
+    const savedSession = currentSession, savedStatus = currentProfile.phone_verification_status, savedAdmin = currentProfile.is_admin;
+    const suggInput = () => doc.getElementById('suggestion-text');
+    const promptKey = 'mc_sugg_prompt_uid-1';
+    try { window.localStorage.removeItem(promptKey); } catch (_) {}
+
+    // guest: the sign-in gate, never the real form
+    currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+    await window.openSuggestionForm('menu');
+    assert(text('modal-title') === 'Inicia sesión para continuar' && !suggInput(), 'a guest opening Sugerencias gets the sign-in gate, not the real form');
+    window.closeModal();
+
+    // verified account: the real form
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    currentProfile.phone_verification_status = 'verified';
+    await window.openSuggestionForm('menu');
+    assert(text('modal-title') === 'Sugerencias' && !!suggInput(), 'a verified account gets the real suggestion form');
+
+    // too-short text never reaches Supabase
+    delete lastInsert.suggestions;
+    suggInput().value = 'hola';
+    await window.submitSuggestion();
+    assert(text('toast') === 'Cuéntanos un poco más (mínimo 5 letras).' && !lastInsert.suggestions, 'fewer than 5 characters is blocked client-side and never calls insert');
+
+    // valid text: real insert (no chained .select() — RLS has no owner
+    // SELECT), then closes the modal
+    suggInput().value = '  Deberían poner un mapa del centro histórico  ';
+    await window.submitSuggestion();
+    assert(JSON.stringify(lastInsert.suggestions) === JSON.stringify({ profile_id: 'uid-1', message: 'Deberían poner un mapa del centro histórico' }), 'a valid suggestion inserts the trimmed message under the real signed-in profile_id, nothing else');
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a successful submit closes the modal');
+    assert(text('toast') === '¡Gracias por tu sugerencia! ✓', 'and shows the thank-you toast');
+
+    // rate limit: the DB trigger's error surfaces as the friendly toast,
+    // and the form stays open with the typed text intact
+    await window.openSuggestionForm('menu');
+    suggInput().value = 'Otra sugerencia distinta, también válida';
+    forcedErrors.insert.suggestions = { message: 'ERROR: suggestion_rate_limit exceeded (P0001)' };
+    await window.submitSuggestion();
+    assert(text('toast') === 'Ya nos mandaste varias hoy — gracias. Puedes enviar más mañana.', 'a rate-limited insert shows the friendly "varias hoy" toast, not the raw Postgres error');
+    assert(doc.getElementById('modal-bg').classList.contains('on'), 'the modal stays open on a rate-limit rejection, so the typed text isn\'t lost');
+    assert(doc.getElementById('suggestion-submit-btn').disabled === false && doc.getElementById('suggestion-submit-btn').textContent === 'Enviar', 'the submit button re-enables after a failed send');
+    delete forcedErrors.insert.suggestions;
+    window.closeModal();
+
+    // weekly prompt: verified account, no stored timestamp → shows, and
+    // writes the per-account localStorage key. anyOverlayOpen() also checks
+    // 'desktop-gate'/'tip-gate' — real, correct behavior in production (the
+    // prompt must never fire behind either), but jsdom's default desktop
+    // UA means init() left 'desktop-gate' permanently 'on' since test
+    // start, and an earlier section (Empleos) left 'tip-gate' 'on' too;
+    // neither is read by anything later in this file, so clearing them
+    // here just simulates "on a real phone, no gate showing".
+    doc.getElementById('desktop-gate').classList.remove('on');
+    doc.getElementById('tip-gate').classList.remove('on');
+    await window.maybeShowWeeklySuggestionPrompt();
+    assert(text('modal-title') === 'Tu opinión cuenta' && doc.getElementById('modal-bg').classList.contains('on') && !!suggInput(), 'a verified account with no stored timestamp gets the weekly prompt');
+    let storedTs = null;
+    try { storedTs = window.localStorage.getItem(promptKey); } catch (_) {}
+    assert(!!storedTs, 'showing the weekly prompt writes the per-account localStorage timestamp');
+    window.closeModal();
+
+    // a timestamp under 7 days old suppresses it
+    try { window.localStorage.setItem(promptKey, String(Date.now())); } catch (_) {}
+    await window.maybeShowWeeklySuggestionPrompt();
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a stored timestamp under 7 days old suppresses the weekly prompt');
+
+    // never shown to a guest, regardless of timestamp
+    try { window.localStorage.removeItem(promptKey); } catch (_) {}
+    currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+    await window.maybeShowWeeklySuggestionPrompt();
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a guest never gets the weekly prompt');
+
+    // never shown to an unverified account
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    currentProfile.phone_verification_status = 'pending';
+    await window.maybeShowWeeklySuggestionPrompt();
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'an unverified account never gets the weekly prompt');
+
+    // never stacks on top of something already open
+    currentProfile.phone_verification_status = 'verified';
+    window.openMenu();
+    await window.maybeShowWeeklySuggestionPrompt();
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'the weekly prompt is skipped while another layer (the menu) is already open');
+    window.closeMenu();
+    try { window.localStorage.removeItem(promptKey); } catch (_) {}
+
+    // admin inbox: the chooser has the Sugerencias option (already checked
+    // above); the inbox itself renders unread-first with "Nueva"/"Marcar leída"
+    currentProfile.is_admin = true;
+    await window.openAdminSuggestions();
+    assert(text('modal-title') === 'Sugerencias', 'the admin inbox opens with the right title');
+    const suggCards = [...doc.querySelectorAll('#modal-body > div')];
+    assert(suggCards.length === 2, `the inbox renders both fixture suggestions (got ${suggCards.length})`);
+    assert(suggCards[0].textContent.includes('Vecino Test') && suggCards[0].textContent.includes('mapa del centro histórico') && suggCards[0].textContent.includes('Nueva'), 'the unread suggestion shows first, flagged "Nueva"');
+    assert(!!suggCards[0].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'the unread card has a "Marcar leída" action');
+    assert(!suggCards[1].textContent.includes('Nueva') && !suggCards[1].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'the already-reviewed suggestion shows no "Nueva" flag and no "Marcar leída" action');
+    const verUsuarioBtn = suggCards[0].querySelector('button.chip[onclick*="openAdminUserView"]');
+    assert(!!verUsuarioBtn && verUsuarioBtn.getAttribute('onclick').includes('restoreAdminSuggestions'), '"Ver usuario" passes restoreAdminSuggestions as the back-target, so Back returns to this inbox, not the Usuarios list');
+
+    // marking it reviewed re-renders without the "Nueva" flag
+    await window.markSuggestionReviewed('sg1');
+    const cardsAfter = [...doc.querySelectorAll('#modal-body > div')];
+    assert(!cardsAfter[0].textContent.includes('Nueva') && !cardsAfter[0].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'marking a suggestion reviewed removes its "Nueva" flag and its own "Marcar leída" button');
+    window.closeModal();
+
+    currentSession = savedSession; currentProfile.phone_verification_status = savedStatus; currentProfile.is_admin = savedAdmin;
+    delete lastInsert.suggestions;
   }
 
   // ── Transporte (Ko'ox): a static reference screen reached from the
@@ -2687,6 +2809,11 @@ const fakeClient = {
       assert(text('modal-title') === 'Usuario' && text('modal-body').includes('Sus negocios'), 'back from the business page returns to the user page');
       assert(text('admin-user-view').includes('Negocio Premium'), 'the user page reflects the Premium change made one level down (re-read on the way back)');
       window.mcModalBack(); await settle();
+      // Also the regression check for openAdminUserView's new optional 2nd
+      // arg (backRestore, used by the Suggestions inbox's "Ver usuario"):
+      // called here with ONE argument, same as every pre-existing caller,
+      // it must still fall back to restoreAdminUsersList — proven by
+      // actually landing back on the Usuarios list, not somewhere else.
       assert(text('modal-title') === 'Usuarios' && doc.getElementById('admin-users-search').value === 'vecino', 'back from the user page returns to the list with the search text intact');
       assert(text('admin-users-results').includes('Premium'), 'the list row picks up the new Premium badge');
       window.mcModalBack(); await settle();
