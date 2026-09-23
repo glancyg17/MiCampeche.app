@@ -109,8 +109,9 @@ async function loadWeather(){
 // for now; this is a fallback path only (Contacto menu item), not the
 // default flow for anything else.
 const MICAMPECHE_WHATSAPP='529811269854';
-// Public contact address for the Contacto menu item. WhatsApp above is kept
-// for phone verification only, not general contact.
+// Email fallback only — used by the guest screen of Contacto (a signed-in
+// account messages the admin in-app instead; see openContactForm). WhatsApp
+// above is kept for phone verification only, not general contact.
 const MICAMPECHE_EMAIL='hola@micampeche.app';
 
 /* Real, live Stripe Payment Links. ?locale=es-419 forces Mexican Spanish
@@ -141,6 +142,7 @@ function toggleMenuSection(key){
 }
 async function renderMenuBody(){
   const acct=await MC.currentAccount();
+  const unread=acct.signedIn?await MC.countMyUnreadMessages():0;
   const parent=(key,ico,bg,lbl,sub,children)=>`
     <button class="menu-item" onclick="toggleMenuSection('${key}')" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico" style="background:${bg}">${ico}</span>
@@ -179,6 +181,7 @@ async function renderMenuBody(){
     child(`closeMenu();openAccount()`,'Perfil'),
     negocioChild,
     child(`closeMenu();openMyPosts()`,'Publicaciones'),
+    acct.signedIn?child(`closeMenu();openMyMessages()`,'Mensajes'+(unread?` <span class="menu-pill">${unread}</span>`:'')):'',
     child(`closeMenu();openPreferences()`,'Preferencias'),
     // Unlike every other row here, this deliberately DOES close the menu
     // first too (the prompt's original draft left it open, layered under
@@ -190,7 +193,7 @@ async function renderMenuBody(){
   ].join('');
 
   document.getElementById('menu-body').innerHTML=
-    parent('cuenta',svgIco('account'),'var(--night)','Cuenta','Perfil, negocio y publicaciones',cuentaChildren)
+    parent('cuenta',svgIco('account'),'var(--night)','Cuenta',unread?(unread+(unread===1?' mensaje nuevo':' mensajes nuevos')):'Perfil, negocio y publicaciones',cuentaChildren)
     + leaf(svgIco('news'),'var(--gulf)','Noticias','Lo último de Campeche',`closeMenu();nav('noticias')`)
     + parent('comercio',svgIco('tienda'),'var(--palm)','Comercio','Mercado, clasificados y mandaditos',[
         child(`closeMenu();nav('tienda');setTiendaMode('mercado')`,'Mercado'),
@@ -209,7 +212,7 @@ async function renderMenuBody(){
       ].join(''))
     + leaf(svgIco('bus'),'var(--gulf)',"Transporte (Ko'ox)",'Rutas, tarifas y apps en tiempo real','goToKoox()')
     + leaf('<svg class="ico" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>','var(--palm)','Sugerencias','Cuéntanos qué mejorar',`closeMenu();openSuggestionForm('menu')`)
-    + leaf('<svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>','var(--signal)','Contacto','Escríbenos por correo','contactUs()')
+    + leaf('<svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>','var(--signal)','Contacto','Escríbenos un mensaje','closeMenu();openContactForm()')
     + leaf('<svg class="ico" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>','var(--ink3)','Aviso de privacidad y Términos','Cómo tratamos tus datos',`closeMenu();nav('privacidad')`);
 }
 /* The one leaf that isn't a nested accordion level — Admin opens a small
@@ -226,7 +229,7 @@ function openAdminChooser(){
       <span class="menu-item-txt"><span class="menu-item-lbl">Pendiente</span></span>
     </button>
     <button class="menu-item" onclick="closeMenu();closeModal();openAdminSuggestions()" style="border:1.5px solid var(--line2)">
-      <span class="menu-item-txt"><span class="menu-item-lbl">Sugerencias</span><span class="menu-item-sub">Lo que piden los usuarios</span></span>
+      <span class="menu-item-txt"><span class="menu-item-lbl">Bandeja</span><span class="menu-item-sub">Contacto y sugerencias de usuarios</span></span>
     </button>
   `;
   document.getElementById('modal-bg').classList.add('on');
@@ -5423,9 +5426,10 @@ async function maybeShowUndismissedMessages(){
 function renderNextAdminMessage(){
   if(!pendingAdminMessages.length){closeModal();return;}
   const m=pendingAdminMessages[0];
-  document.getElementById('modal-title').textContent='Mensaje de MiCampeche';
+  document.getElementById('modal-title').textContent=m.in_reply_to?'Respuesta de MiCampeche':'Mensaje de MiCampeche';
   document.getElementById('modal-body').innerHTML=`
     <div style="text-align:center;padding:10px 4px">
+      ${m.reply_context?`<div style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.4">En respuesta a tu mensaje: «${e(m.reply_context)}»</div>`:''}
       <div style="font-size:14.5px;line-height:1.5;white-space:pre-wrap;margin-bottom:18px">${e(m.message)}</div>
       <button class="submit-btn" onclick="dismissAdminMessagePopup('${m.id}')">Entendido</button>
     </div>
@@ -5503,7 +5507,8 @@ const SEARCH_PAGES=[
   {id:'mispub',t:'Mis publicaciones',s:'Lo que has publicado',k:'posts anuncios míos',ico:'account',bg:'var(--night)',go:()=>openMyPosts()},
   {id:'prefs',t:'Preferencias',s:'Tema, consejos y más',k:'tema oscuro claro modo ajustes configuración',ico:'info',bg:'var(--ink3)',go:()=>openPreferences()},
   {id:'sugerencias',t:'Sugerencias',s:'Cuéntanos qué mejorar',k:'opinión feedback ideas mejorar',ico:'message',bg:'var(--palm)',go:()=>openSuggestionForm('menu')},
-  {id:'contacto',t:'Contacto',s:'Escríbenos por correo',k:'correo email ayuda soporte',ico:'message',bg:'var(--signal)',go:()=>contactUs()},
+  {id:'contacto',t:'Contacto',s:'Escríbenos un mensaje',k:'mensaje correo email ayuda soporte',ico:'message',bg:'var(--signal)',go:()=>openContactForm()},
+  {id:'mensajes',t:'Mensajes',s:'Tu bandeja de entrada',k:'bandeja respuestas inbox notificaciones',ico:'message',bg:'var(--palm)',go:()=>openMyMessages()},
   {id:'privacidad',t:'Aviso de privacidad y Términos',s:'Cómo tratamos tus datos',k:'privacidad términos condiciones datos legal',ico:'info',bg:'var(--ink3)',go:()=>nav('privacidad')},
   {id:'pub-evento',t:'Publicar un evento',s:'Acción · Anuncios',k:'crear agregar anunciar',ico:'eventos',bg:'var(--wall-dk)',go:()=>openPost('eventos')},
   {id:'pub-oferta',t:'Publicar una oferta',s:'Acción · Comercio (negocios)',k:'crear agregar descuento promoción',ico:'tienda',bg:'var(--palm)',go:()=>openPost('oferta')},
@@ -5654,43 +5659,71 @@ function openSearchResult(kind,id){
   }
 }
 
-/* ══════════════ SUGGESTIONS (menu form + weekly prompt + admin inbox) ══════════════ */
+/* ══════════════ SUGGESTIONS + CONTACTO (user→admin messages, replies, inboxes) ══════════════
+   One table (public.suggestions) holds both kinds of user→admin message:
+   kind='sugerencia' (suggestions box + weekly prompt) and kind='contacto'
+   (the Contacto form, which replaces the old mailto). Admin replies are rows
+   in public.admin_messages (in_reply_to + a short reply_context snapshot),
+   so a reply reaches the user as: popup next app-open + push (existing) and
+   a permanent entry in their Mensajes inbox (incoming only — users write to
+   us through Contacto, never by replying in the inbox). */
 const SUGGEST_MIN=5,SUGGEST_MAX=1000;
 const SUGGEST_PROMPT_EVERY_MS=7*24*60*60*1000;
-// Same gate as every other write: signed in + phone verified. Checked when the
-// form OPENS (not on submit) so nobody types a suggestion and then loses it
-// behind a sign-in modal. The DB enforces the same rule (RLS).
+let suggestionKind='sugerencia';   // 'sugerencia' | 'contacto' — set by renderSuggestionForm, read by submitSuggestion
+// Suggestions: same gate as every other write (signed in + phone verified).
+// Checked when the form OPENS (not on submit) so nobody types something and
+// then loses it behind a sign-in modal. The DB enforces the same rule (RLS).
 async function openSuggestionForm(source){
   const acct=await MC.currentAccount();
   if(!runWriteGate(acct,null))return;
   renderSuggestionForm(source||'menu');
   document.getElementById('modal-bg').classList.add('on');
 }
+// Contacto is a SUPPORT channel, so it is deliberately open to ANY signed-in
+// account — including one still waiting on phone verification, which is
+// exactly when someone needs to reach us (the DB policy allows the same).
+// Guests have no account to reply to, so they get sign-in + the email fallback.
+async function openContactForm(){
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn)renderContactGuest();
+  else renderSuggestionForm('contact');
+  document.getElementById('modal-bg').classList.add('on');
+}
+function renderContactGuest(){
+  document.getElementById('modal-title').textContent='Contacto';
+  document.getElementById('modal-body').innerHTML='<div style="color:var(--ink3);font-size:13.5px;line-height:1.5;margin-bottom:14px">Inicia sesión para escribirnos desde la app — así podemos responderte aquí mismo, en <b>Mensajes</b>. Si no puedes entrar o verificar tu cuenta, escríbenos por correo.</div>'
+    +'<button class="submit-btn" style="margin-bottom:8px" onclick="closeModal();openAccount()">Iniciar sesión</button>'
+    +'<button class="submit-btn" style="background:var(--paper2);color:var(--ink);box-shadow:none" onclick="contactUs()">Escribir por correo</button>';
+}
 function renderSuggestionForm(source){
-  const weekly=source==='weekly';
-  document.getElementById('modal-title').textContent=weekly?'Tu opinión cuenta':'Sugerencias';
-  document.getElementById('modal-body').innerHTML='<div style="color:var(--ink3);font-size:13.5px;line-height:1.5;margin-bottom:10px">'
-    +(weekly?'¿Hay algo que te gustaría ver o mejorar en MiCampeche? Cuéntanos — es opcional.':'Cuéntanos qué te gustaría ver, mejorar o arreglar en MiCampeche.')
-    +'</div><textarea class="ft" id="suggestion-text" maxlength="'+SUGGEST_MAX+'" placeholder="Escribe tu sugerencia…"></textarea>'
+  const weekly=source==='weekly',contact=source==='contact';
+  suggestionKind=contact?'contacto':'sugerencia';
+  document.getElementById('modal-title').textContent=weekly?'Tu opinión cuenta':(contact?'Contacto':'Sugerencias');
+  const intro=weekly?'¿Hay algo que te gustaría ver o mejorar en MiCampeche? Cuéntanos — es opcional.'
+    :contact?'Escríbenos tu pregunta, problema o comentario. Te respondemos aquí mismo, en <b>Mensajes</b>.'
+    :'Cuéntanos qué te gustaría ver, mejorar o arreglar en MiCampeche.';
+  document.getElementById('modal-body').innerHTML='<div style="color:var(--ink3);font-size:13.5px;line-height:1.5;margin-bottom:10px">'+intro
+    +'</div><textarea class="ft" id="suggestion-text" maxlength="'+SUGGEST_MAX+'" placeholder="'+(contact?'Escribe tu mensaje…':'Escribe tu sugerencia…')+'"></textarea>'
     +'<div style="display:flex;gap:8px;margin-top:4px">'
     +(weekly?'<button class="submit-btn" style="flex:1;background:var(--paper2);color:var(--ink);box-shadow:none" onclick="closeModal()">Ahora no</button>':'')
     +'<button class="submit-btn" id="suggestion-submit-btn" style="flex:1" onclick="submitSuggestion()">Enviar</button></div>';
 }
 async function submitSuggestion(){
+  const contact=suggestionKind==='contacto';
   const btn=document.getElementById('suggestion-submit-btn');
   const txt=(document.getElementById('suggestion-text').value||'').trim();
-  if(txt.length<SUGGEST_MIN){toast('Cuéntanos un poco más (mínimo '+SUGGEST_MIN+' letras).');return;}
+  if(txt.length<SUGGEST_MIN){toast((contact?'Escribe un poco más':'Cuéntanos un poco más')+' (mínimo '+SUGGEST_MIN+' letras).');return;}
   if(btn){btn.disabled=true;btn.textContent='Enviando…';}
-  const {error}=await MC.submitSuggestion(txt);
+  const {error}=await MC.submitSuggestion(txt,suggestionKind);
   if(error){
     toast((error.message||'').includes('suggestion_rate_limit')
-      ?'Ya nos mandaste varias hoy — gracias. Puedes enviar más mañana.'
-      :pgErrorToast(error,'No se pudo enviar. Intenta de nuevo.'));
+      ?(contact?'Ya enviaste varios mensajes hoy. Te respondemos lo antes posible.':'Ya nos mandaste varias hoy — gracias. Puedes enviar más mañana.')
+      :pgErrorToast(error,contact?'No se pudo enviar tu mensaje. Intenta de nuevo o escríbenos por correo.':'No se pudo enviar. Intenta de nuevo.'));
     if(btn){btn.disabled=false;btn.textContent='Enviar';}
     return;
   }
   closeModal();
-  toast('¡Gracias por tu sugerencia! ✓');
+  toast(contact?'¡Mensaje enviado! Te respondemos en Mensajes ✓':'¡Gracias por tu sugerencia! ✓');
 }
 
 // Weekly prompt: verified accounts only, at most once per 7 days per account
@@ -5721,11 +5754,46 @@ async function maybeShowWeeklySuggestionPrompt(){
   document.getElementById('modal-bg').classList.add('on');
 }
 
-/* ── Admin inbox ── */
+/* ── User inbox: incoming messages only (admin messages + replies) ── */
+async function openMyMessages(){
+  const acct=await MC.currentAccount();
+  if(!acct.signedIn){openAccount();return;}
+  mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Mensajes';
+  document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
+  document.getElementById('modal-bg').classList.add('on');
+  const list=await MC.fetchMyMessages();
+  renderMyMessages(list);
+  // Opening the inbox counts as reading. The "Nuevo" pills stay visible for
+  // this view (list was captured before), and the unread count/popup clear.
+  list.filter(m=>m.unread).forEach(m=>MC.dismissAdminMessage(m.id));
+}
+function renderMyMessages(list){
+  const writeBtn='<button class="submit-btn" style="margin-top:6px" onclick="closeModal();openContactForm()">Escribir a MiCampeche</button>';
+  if(!list.length){
+    document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:26px 10px 18px;color:var(--ink3);font-size:13.5px;line-height:1.5">Aún no tienes mensajes.<br>Cuando MiCampeche te escriba o responda, lo verás aquí.</div>'+writeBtn;
+    return;
+  }
+  document.getElementById('modal-body').innerHTML=list.map(m=>`
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--rs);padding:12px 13px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink3);margin-bottom:6px">
+        <span><b style="color:var(--ink2)">MiCampeche</b> · ${e(m.time)}</span>
+        ${m.unread?'<span style="color:var(--signal);font-weight:700">Nuevo</span>':''}
+      </div>
+      ${m.replyContext?`<div style="font-size:12px;color:var(--ink3);border-left:3px solid var(--line2);padding-left:8px;margin-bottom:8px;line-height:1.4">En respuesta a tu mensaje: «${e(m.replyContext)}»</div>`:''}
+      <div style="font-size:14px;line-height:1.5;white-space:pre-wrap">${e(m.message)}</div>
+    </div>`).join('')
+    +'<div style="font-size:12px;color:var(--ink3);text-align:center;margin:12px 0 4px">¿Quieres escribirnos? Usa Contacto.</div>'+writeBtn;
+}
+
+/* ── Admin inbox (Contacto + Sugerencias, with replies) ── */
 let adminSuggestions=[];
+let adminInboxFilter='all';    // 'all' | 'contacto' | 'sugerencia'
+let adminReplyOpenId=null;     // which card's reply box is open
 async function openAdminSuggestions(){
   mcModalPushView('account');
-  document.getElementById('modal-title').textContent='Sugerencias';
+  adminInboxFilter='all';adminReplyOpenId=null;
+  document.getElementById('modal-title').textContent='Bandeja';
   document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
   document.getElementById('modal-bg').classList.add('on');
   adminSuggestions=await MC.adminFetchSuggestions();
@@ -5735,24 +5803,65 @@ function restoreAdminSuggestions(){
   renderAdminSuggestions();
   MC.adminFetchSuggestions().then(list=>{adminSuggestions=list;renderAdminSuggestions();});
 }
+function setAdminInboxFilter(f){adminInboxFilter=f;adminReplyOpenId=null;renderAdminSuggestions();}
+function openAdminReply(id){
+  adminReplyOpenId=(adminReplyOpenId===id)?null:id;
+  renderAdminSuggestions();
+  const t=document.getElementById('admin-reply-text');
+  if(t)t.focus();
+}
 function renderAdminSuggestions(){
-  document.getElementById('modal-title').textContent='Sugerencias';
-  if(!adminSuggestions.length){
-    document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:30px 10px;color:var(--ink3)">Todavía no hay sugerencias.</div>';
+  document.getElementById('modal-title').textContent='Bandeja';
+  const chips=[['all','Todos'],['contacto','Contacto'],['sugerencia','Sugerencias']]
+    .map(([v,l])=>`<button class="chip${adminInboxFilter===v?' on':''}" onclick="setAdminInboxFilter('${v}')">${l}</button>`).join('');
+  const head=`<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${chips}</div>`;
+  const list=adminSuggestions.filter(s=>adminInboxFilter==='all'||s.kind===adminInboxFilter);
+  if(!list.length){
+    document.getElementById('modal-body').innerHTML=head+'<div style="text-align:center;padding:30px 10px;color:var(--ink3)">Todavía no hay mensajes.</div>';
     return;
   }
-  document.getElementById('modal-body').innerHTML=adminSuggestions.map(s=>`
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--rs);padding:12px 13px;margin-bottom:8px;${s.reviewedAt?'opacity:.6':''}">
-      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink3);margin-bottom:6px">
-        <span><b style="color:var(--ink2)">${e(s.name)}</b> · ${e(s.time)}</span>
-        ${s.reviewedAt?'':'<span style="color:var(--signal);font-weight:700">Nueva</span>'}
+  document.getElementById('modal-body').innerHTML=head+list.map(s=>`
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--rs);padding:12px 13px;margin-bottom:8px;${s.reviewedAt&&adminReplyOpenId!==s.id?'opacity:.7':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--ink3);margin-bottom:6px">
+        <span><b style="color:var(--ink2)">${e(s.name)}</b> · ${e(s.time)}${s.verified?'':' · sin verificar'}</span>
+        <span style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:${s.kind==='contacto'?'var(--wall-dk)':'var(--palm)'}">${s.kind==='contacto'?'Contacto':'Sugerencia'}</span>
+          ${s.reviewedAt?'':'<span style="color:var(--signal);font-weight:700">Nueva</span>'}
+        </span>
       </div>
       <div style="font-size:14px;line-height:1.5;white-space:pre-wrap">${e(s.message)}</div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="chip" onclick="openAdminUserView('${s.profileId}',restoreAdminSuggestions)">Ver usuario</button>
-        ${s.reviewedAt?'':`<button class="chip" onclick="markSuggestionReviewed('${s.id}')">Marcar leída</button>`}
-      </div>
+      ${(s.replies||[]).map(r=>`<div style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--palm);background:var(--paper2);border-radius:0 var(--rs) var(--rs) 0;font-size:13px;line-height:1.45;white-space:pre-wrap"><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">Tu respuesta · ${e(r.time)}</div>${e(r.message)}</div>`).join('')}
+      ${adminReplyOpenId===s.id?`
+        <textarea class="ft" id="admin-reply-text" maxlength="2000" placeholder="Escribe tu respuesta…" style="margin-top:10px"></textarea>
+        <div style="display:flex;gap:8px"><button class="submit-btn" style="flex:1;background:var(--paper2);color:var(--ink);box-shadow:none" onclick="openAdminReply('${s.id}')">Cancelar</button><button class="submit-btn" id="admin-reply-send" style="flex:1" onclick="sendAdminReply('${s.id}')">Enviar respuesta</button></div>`
+      :`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="chip" onclick="openAdminReply('${s.id}')">${(s.replies||[]).length?'Responder de nuevo':'Responder'}</button>
+          <button class="chip" onclick="openAdminUserView('${s.profileId}',restoreAdminSuggestions)">Ver usuario</button>
+          ${s.reviewedAt?'':`<button class="chip" onclick="markSuggestionReviewed('${s.id}')">Marcar leída</button>`}
+        </div>`}
     </div>`).join('');
+}
+async function sendAdminReply(id){
+  const t=document.getElementById('admin-reply-text');
+  const btn=document.getElementById('admin-reply-send');
+  const msg=((t&&t.value)||'').trim();
+  if(!msg){toast('Escribe tu respuesta primero');return;}
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {error}=await MC.adminReplyToMessage(id,msg);
+  if(error){
+    toast(pgErrorToast(error,'No se pudo enviar la respuesta.'));
+    if(btn){btn.disabled=false;btn.textContent='Enviar respuesta';}
+    return;
+  }
+  const s=adminSuggestions.find(x=>x.id===id);
+  if(s){
+    s.repliedAt=new Date().toISOString();
+    if(!s.reviewedAt)s.reviewedAt=s.repliedAt;
+    s.replies=(s.replies||[]).concat([{message:msg,time:'ahora'}]);
+  }
+  adminReplyOpenId=null;
+  renderAdminSuggestions();
+  toast('Respuesta enviada ✓');
 }
 async function markSuggestionReviewed(id){
   const {error}=await MC.adminMarkSuggestionReviewed(id);

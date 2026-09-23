@@ -24,7 +24,7 @@ function assert(cond, msg) {
 // ── Fake Supabase client: a generic chainable + thenable proxy per call,
 // resolving to per-table sample data. Mirrors real supabase-js's fluent
 // query builder closely enough to exercise our actual code paths. ──
-function makeChain(getResult, onEq) {
+function makeChain(getResult, onEq, selectOpts) {
   let single = false;
   const eqs = [];   // captured .eq(field, value) constraints
   const notNulls = []; // fields required non-null via .not(field, 'is', null)
@@ -93,6 +93,12 @@ function makeChain(getResult, onEq) {
             ltes.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] != null && r[f] <= v); });
             neqs.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] !== v); });
             if (rows !== out.data) out = { ...out, data: rows };
+          }
+          // {count:'exact',head:true} — MC.countMyUnreadMessages' shape.
+          // Real supabase-js returns count alongside null data for a head
+          // request; the filtered row count above is exactly what's needed.
+          if (selectOpts && selectOpts.count && selectOpts.head) {
+            out = { ...out, data: null, count: Array.isArray(out.data) ? out.data.length : 0 };
           }
           if (single) out = { ...out, data: Array.isArray(out.data) ? (out.data[0] || null) : out.data };
           return Promise.resolve(out).then(res, rej);
@@ -256,11 +262,15 @@ const SAMPLE = {
   // Inicio's Special Slot — empty by default, matching real production
   // right now (the table has no rows at all yet).
   home_special_slot: [],
-  // Suggestions inbox: sg1 unread (reviewed_at null), sg2 already reviewed —
-  // already in unread-first order here since the fake ignores .order().
+  // Suggestions/Bandeja inbox: sg1 unread sugerencia (reviewed_at null),
+  // sg2 already-reviewed sugerencia, sg3 unread contacto from an UNVERIFIED
+  // account (contacto is allowed for any signed-in account with a phone,
+  // verified or not) — already in unread-first order here since the fake
+  // ignores .order().
   suggestions: [
-    { id: 'sg1', profile_id: 'uid-1', message: 'Deberían agregar un mapa del centro histórico', created_at: NOW.toISOString(), reviewed_at: null, profiles: { display_name: 'Vecino Test' } },
-    { id: 'sg2', profile_id: 'uid-2', message: 'Ya lo revisamos, gracias', created_at: new Date(NOW.getTime() - 3 * 86400000).toISOString(), reviewed_at: NOW.toISOString(), profiles: { display_name: 'Otro Vecino' } },
+    { id: 'sg1', profile_id: 'uid-1', message: 'Deberían agregar un mapa del centro histórico', kind: 'sugerencia', created_at: NOW.toISOString(), reviewed_at: null, replied_at: null, profiles: { display_name: 'Vecino Test', phone_verification_status: 'verified' } },
+    { id: 'sg3', profile_id: 'uid-2', message: 'No puedo verificar mi número, ¿me ayudan?', kind: 'contacto', created_at: new Date(NOW.getTime() - 60000).toISOString(), reviewed_at: null, replied_at: null, profiles: { display_name: 'Otro Vecino', phone_verification_status: 'pending' } },
+    { id: 'sg2', profile_id: 'uid-2', message: 'Ya lo revisamos, gracias', kind: 'sugerencia', created_at: new Date(NOW.getTime() - 3 * 86400000).toISOString(), reviewed_at: NOW.toISOString(), replied_at: null, profiles: { display_name: 'Otro Vecino', phone_verification_status: 'pending' } },
   ],
 };
 
@@ -473,7 +483,7 @@ const fakeClient = {
       };
     }
     return {
-      select: (..._a) => { lastSelect[table] = _a[0]; return makeChain(() => ({ data: SAMPLE[table] || [], error: null })); },
+      select: (..._a) => { lastSelect[table] = _a[0]; return makeChain(() => ({ data: SAMPLE[table] || [], error: null }), undefined, _a[1]); },
       insert: (row) => { lastInsert[table] = row; return makeChain(() => forcedErrors.insert[table]
         ? { data: null, error: forcedErrors.insert[table] }
         : { data: [{ ...row, id: 'new-' + Math.random().toString(36).slice(2) }], error: null }); },
@@ -1274,6 +1284,10 @@ const fakeClient = {
     let cuentaLbls = childLbls(submenuOf('Cuenta'));
     assert(!cuentaLbls.includes('Admin'), 'a non-admin account gets no Admin row in Cuenta at all');
     assert(cuentaLbls.includes('Entrar') && !cuentaLbls.includes('Cerrar sesión'), 'signed out, Cuenta\'s last row reads "Entrar"');
+    assert(!cuentaLbls.some(l => l.startsWith('Mensajes')), 'a guest gets no Mensajes row in Cuenta at all');
+
+    // Contacto now opens the in-app form, not a mailto.
+    assert(topBtn('Contacto').getAttribute('onclick') === 'closeMenu();openContactForm()', 'the Contacto leaf opens the in-app form (openContactForm), not the old mailto');
 
     const savedSession3 = currentSession, savedAdmin3 = currentProfile.is_admin;
     currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
@@ -1283,14 +1297,31 @@ const fakeClient = {
     assert(cuentaLbls.includes('Admin'), 'an admin account gets the Admin row');
     assert(cuentaLbls.includes('Cerrar sesión') && !cuentaLbls.includes('Entrar'), 'signed in, the same row now reads "Cerrar sesión"');
 
+    // "Mensajes" with a real unread-count pill — count comes from
+    // MC.countMyUnreadMessages(), a head+count query the fake answers for
+    // real (see makeChain's {count:'exact',head:true} handling).
+    {
+      const savedAdminMsgsForMenu = SAMPLE.admin_messages.slice();
+      SAMPLE.admin_messages = [
+        { id: 'mp1', profile_id: 'uid-1', message: 'x', sent_by: 'admin-uid', dismissed_at: null, created_at: NOW.toISOString() },
+        { id: 'mp2', profile_id: 'uid-1', message: 'y', sent_by: 'admin-uid', dismissed_at: null, created_at: NOW.toISOString() },
+        { id: 'mp3', profile_id: 'uid-1', message: 'z', sent_by: 'admin-uid', dismissed_at: NOW.toISOString(), created_at: NOW.toISOString() },
+      ];
+      await openMenuSettled(); await toggle('cuenta');
+      const mensajesChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent.startsWith('Mensajes'));
+      assert(!!mensajesChild && mensajesChild.textContent === 'Mensajes 2' && mensajesChild.getAttribute('onclick') === 'closeMenu();openMyMessages()', `a signed-in account sees "Mensajes" with the real unread count in a .menu-pill (got: ${mensajesChild ? mensajesChild.textContent : 'none'})`);
+      assert(!!mensajesChild.querySelector('.menu-pill') && mensajesChild.querySelector('.menu-pill').textContent === '2', 'the count renders inside a real .menu-pill element');
+      SAMPLE.admin_messages = savedAdminMsgsForMenu;
+    }
+
     const adminChild = [...submenuOf('Cuenta').querySelectorAll('.menu-item-child')].find(b => b.textContent === 'Admin');
     assert(!!adminChild && adminChild.getAttribute('onclick') === 'closeMenu();openAdminChooser()',
       'Admin closes the menu itself before opening the chooser — .menu-bg (z-index 240) would otherwise render above .modal-bg (z-index 200) and hide it entirely');
     window.closeMenu(); window.openAdminChooser();
-    assert(doc.getElementById('modal-title').textContent === 'Admin' && text('modal-body').includes('Usuarios') && text('modal-body').includes('Pendiente') && text('modal-body').includes('Sugerencias'), 'Admin opens a small three-option chooser, not another accordion level');
+    assert(doc.getElementById('modal-title').textContent === 'Admin' && text('modal-body').includes('Usuarios') && text('modal-body').includes('Pendiente') && text('modal-body').includes('Bandeja'), 'Admin opens a small three-option chooser, not another accordion level');
     assert(!!doc.querySelectorAll('#modal-body .menu-item')[0].getAttribute('onclick').includes('openAdminUsers()'), 'the chooser\'s first button really opens Usuarios');
     assert(!!doc.querySelectorAll('#modal-body .menu-item')[1].getAttribute('onclick').includes('openPending()'), 'the second really opens Pendiente');
-    assert(!!doc.querySelectorAll('#modal-body .menu-item')[2].getAttribute('onclick').includes('openAdminSuggestions()'), 'the third really opens the Sugerencias inbox');
+    assert(!!doc.querySelectorAll('#modal-body .menu-item')[2].getAttribute('onclick').includes('openAdminSuggestions()'), 'the third really opens the Bandeja (Contacto + Sugerencias)');
     window.closeModal();
 
     // Cerrar sesión really signs out.
@@ -1304,10 +1335,13 @@ const fakeClient = {
     window.closeMenu();
   }
 
-  // ── Suggestions: the menu form (gated on OPEN, not on submit, so nobody
-  //    types something and then loses it behind a sign-in modal), the
-  //    rate-limited insert-only write, the weekly optional prompt, and the
-  //    admin inbox (unread-first, "Marcar leída"). ──
+  // ── Suggestions + Contacto + Bandeja + Mensajes: the menu form (gated on
+  //    OPEN, not on submit, so nobody types something and then loses it
+  //    behind a sign-in modal), Contacto's own looser gate (any signed-in
+  //    account, verified or not — it's the support channel), the
+  //    rate-limited insert-only write (per kind), the weekly optional
+  //    prompt, the admin Bandeja (both kinds, filter chips, replies), the
+  //    reply-aware admin-message popup, and the user's own Mensajes inbox. ──
   {
     const savedSession = currentSession, savedStatus = currentProfile.phone_verification_status, savedAdmin = currentProfile.is_admin;
     const suggInput = () => doc.getElementById('suggestion-text');
@@ -1333,24 +1367,54 @@ const fakeClient = {
     assert(text('toast') === 'Cuéntanos un poco más (mínimo 5 letras).' && !lastInsert.suggestions, 'fewer than 5 characters is blocked client-side and never calls insert');
 
     // valid text: real insert (no chained .select() — RLS has no owner
-    // SELECT), then closes the modal
+    // SELECT), kind 'sugerencia', then closes the modal
     suggInput().value = '  Deberían poner un mapa del centro histórico  ';
     await window.submitSuggestion();
-    assert(JSON.stringify(lastInsert.suggestions) === JSON.stringify({ profile_id: 'uid-1', message: 'Deberían poner un mapa del centro histórico' }), 'a valid suggestion inserts the trimmed message under the real signed-in profile_id, nothing else');
+    assert(JSON.stringify(lastInsert.suggestions) === JSON.stringify({ profile_id: 'uid-1', message: 'Deberían poner un mapa del centro histórico', kind: 'sugerencia' }), 'a valid suggestion inserts the trimmed message under the real signed-in profile_id, with kind sugerencia');
     assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a successful submit closes the modal');
     assert(text('toast') === '¡Gracias por tu sugerencia! ✓', 'and shows the thank-you toast');
 
-    // rate limit: the DB trigger's error surfaces as the friendly toast,
-    // and the form stays open with the typed text intact
+    // rate limit (sugerencia wording): the DB trigger's error surfaces as
+    // the friendly toast, and the form stays open with the typed text intact
     await window.openSuggestionForm('menu');
     suggInput().value = 'Otra sugerencia distinta, también válida';
     forcedErrors.insert.suggestions = { message: 'ERROR: suggestion_rate_limit exceeded (P0001)' };
     await window.submitSuggestion();
-    assert(text('toast') === 'Ya nos mandaste varias hoy — gracias. Puedes enviar más mañana.', 'a rate-limited insert shows the friendly "varias hoy" toast, not the raw Postgres error');
+    assert(text('toast') === 'Ya nos mandaste varias hoy — gracias. Puedes enviar más mañana.', 'a rate-limited suggestion shows the friendly "varias hoy" toast, not the raw Postgres error');
     assert(doc.getElementById('modal-bg').classList.contains('on'), 'the modal stays open on a rate-limit rejection, so the typed text isn\'t lost');
     assert(doc.getElementById('suggestion-submit-btn').disabled === false && doc.getElementById('suggestion-submit-btn').textContent === 'Enviar', 'the submit button re-enables after a failed send');
     delete forcedErrors.insert.suggestions;
     window.closeModal();
+
+    // ── Contacto: a looser gate than Sugerencias — any signed-in account,
+    //    verified or not (the DB policy allows the same; it's the channel
+    //    someone stuck in phone verification needs). ──
+    currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+    await window.openContactForm();
+    assert(text('modal-title') === 'Contacto' && !suggInput() && text('modal-body').includes('Iniciar sesión') && text('modal-body').includes('Escribir por correo'), 'a guest opening Contacto gets the sign-in + email-fallback screen, not the real form');
+    window.closeModal();
+
+    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+    currentProfile.phone_verification_status = 'pending'; // NOT verified — Contacto must still work
+    await window.openContactForm();
+    assert(text('modal-title') === 'Contacto' && !!suggInput(), 'a signed-in account that is NOT phone-verified still gets the real Contacto form');
+
+    delete lastInsert.suggestions;
+    suggInput().value = '  No puedo verificar mi número, ¿me ayudan?  ';
+    await window.submitSuggestion();
+    assert(JSON.stringify(lastInsert.suggestions) === JSON.stringify({ profile_id: 'uid-1', message: 'No puedo verificar mi número, ¿me ayudan?', kind: 'contacto' }), 'submitting Contacto inserts the trimmed message with kind contacto, from the unverified account');
+    assert(text('toast') === '¡Mensaje enviado! Te respondemos en Mensajes ✓', 'a successful Contacto send shows its own thank-you toast, pointing at Mensajes');
+
+    // rate limit (contacto wording differs from sugerencia's)
+    await window.openContactForm();
+    suggInput().value = 'Otro mensaje de soporte distinto';
+    forcedErrors.insert.suggestions = { message: 'ERROR: suggestion_rate_limit exceeded (P0001)' };
+    await window.submitSuggestion();
+    assert(text('toast') === 'Ya enviaste varios mensajes hoy. Te respondemos lo antes posible.', 'a rate-limited Contacto message shows its own friendly toast, distinct from the Sugerencias one');
+    assert(doc.getElementById('suggestion-submit-btn').disabled === false, 'the button re-enables here too');
+    delete forcedErrors.insert.suggestions;
+    window.closeModal();
+    currentProfile.phone_verification_status = 'verified';
 
     // weekly prompt: verified account, no stored timestamp → shows, and
     // writes the per-account localStorage key. anyOverlayOpen() also checks
@@ -1394,24 +1458,109 @@ const fakeClient = {
     window.closeMenu();
     try { window.localStorage.removeItem(promptKey); } catch (_) {}
 
-    // admin inbox: the chooser has the Sugerencias option (already checked
-    // above); the inbox itself renders unread-first with "Nueva"/"Marcar leída"
+    // ── Admin Bandeja: both kinds, unread-first, filter chips, replies. ──
+    // #modal-body's first child is now the filter-chips row, so message
+    // cards start at index 1 — bandejaCards() skips it.
     currentProfile.is_admin = true;
     await window.openAdminSuggestions();
-    assert(text('modal-title') === 'Sugerencias', 'the admin inbox opens with the right title');
-    const suggCards = [...doc.querySelectorAll('#modal-body > div')];
-    assert(suggCards.length === 2, `the inbox renders both fixture suggestions (got ${suggCards.length})`);
-    assert(suggCards[0].textContent.includes('Vecino Test') && suggCards[0].textContent.includes('mapa del centro histórico') && suggCards[0].textContent.includes('Nueva'), 'the unread suggestion shows first, flagged "Nueva"');
-    assert(!!suggCards[0].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'the unread card has a "Marcar leída" action');
-    assert(!suggCards[1].textContent.includes('Nueva') && !suggCards[1].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'the already-reviewed suggestion shows no "Nueva" flag and no "Marcar leída" action');
-    const verUsuarioBtn = suggCards[0].querySelector('button.chip[onclick*="openAdminUserView"]');
+    assert(text('modal-title') === 'Bandeja', 'the admin inbox opens with the right title');
+    const bandejaCards = () => [...doc.querySelectorAll('#modal-body > div')].slice(1);
+    let cards = bandejaCards();
+    assert(cards.length === 3, `the inbox renders all three fixture messages (got ${cards.length})`);
+    assert(cards[0].textContent.includes('Vecino Test') && cards[0].textContent.includes('mapa del centro histórico') && cards[0].textContent.includes('Nueva') && cards[0].textContent.includes('Sugerencia'), 'the first unread message (sg1, a sugerencia) shows "Nueva" and its kind badge');
+    assert(!!cards[0].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'the unread card has a "Marcar leída" action');
+    assert(cards[1].textContent.includes('Otro Vecino') && cards[1].textContent.includes('No puedo verificar') && cards[1].textContent.includes('Contacto') && cards[1].textContent.includes('sin verificar'), 'the second message (sg3, a contacto from an unverified account) shows its kind badge and "sin verificar"');
+    assert(!cards[2].textContent.includes('Nueva') && !cards[2].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'the already-reviewed message (sg2) shows no "Nueva" flag and no "Marcar leída" action');
+
+    // filter chips
+    window.setAdminInboxFilter('contacto');
+    cards = bandejaCards();
+    assert(cards.length === 1 && cards[0].textContent.includes('No puedo verificar'), 'the Contacto filter shows only the contacto message');
+    window.setAdminInboxFilter('sugerencia');
+    cards = bandejaCards();
+    assert(cards.length === 2 && cards.every(c => !c.textContent.includes('No puedo verificar')), 'the Sugerencias filter shows only the two sugerencia messages');
+    window.setAdminInboxFilter('all');
+    cards = bandejaCards();
+    assert(cards.length === 3, 'the Todos filter shows every message again');
+
+    const verUsuarioBtn = cards[0].querySelector('button.chip[onclick*="openAdminUserView"]');
     assert(!!verUsuarioBtn && verUsuarioBtn.getAttribute('onclick').includes('restoreAdminSuggestions'), '"Ver usuario" passes restoreAdminSuggestions as the back-target, so Back returns to this inbox, not the Usuarios list');
 
-    // marking it reviewed re-renders without the "Nueva" flag
-    await window.markSuggestionReviewed('sg1');
-    const cardsAfter = [...doc.querySelectorAll('#modal-body > div')];
-    assert(!cardsAfter[0].textContent.includes('Nueva') && !cardsAfter[0].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'marking a suggestion reviewed removes its "Nueva" flag and its own "Marcar leída" button');
+    // Responder → inline reply box → sendAdminReply
+    assert(!doc.getElementById('admin-reply-text'), 'no reply box is open by default');
+    const responderBtn = cards[0].querySelector('button.chip[onclick*="openAdminReply"]');
+    assert(!!responderBtn && responderBtn.textContent === 'Responder', 'the unread, not-yet-replied-to card offers a "Responder" action');
+    window.openAdminReply('sg1');
+    assert(!!doc.getElementById('admin-reply-text'), 'tapping Responder opens the inline reply textarea');
+
+    // empty reply is blocked client-side and never calls the RPC
+    delete lastRpc.admin_reply_to_message;
+    await window.sendAdminReply('sg1');
+    assert(text('toast') === 'Escribe tu respuesta primero' && !lastRpc.admin_reply_to_message, 'an empty reply is blocked client-side and never calls admin_reply_to_message');
+
+    // a real reply calls the RPC, appears under the message, and clears "Nueva"
+    doc.getElementById('admin-reply-text').value = '  Ya lo agregamos al mapa, gracias por avisar  ';
+    await window.sendAdminReply('sg1');
+    assert(JSON.stringify(lastRpc.admin_reply_to_message) === JSON.stringify({ p_message_id: 'sg1', p_reply: 'Ya lo agregamos al mapa, gracias por avisar' }), 'sending a reply calls admin_reply_to_message with the real message id and the trimmed reply text');
+    assert(text('toast') === 'Respuesta enviada ✓', 'and shows a confirmation toast');
+    cards = bandejaCards();
+    assert(cards[0].textContent.includes('Ya lo agregamos al mapa') && !cards[0].textContent.includes('Nueva') && !cards[0].querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'after replying, the reply text appears under the message and "Nueva" disappears (a reply implies reviewed)');
+    assert(!doc.getElementById('admin-reply-text'), 'the reply box closes after a successful send');
+
+    // Marcar leída still works standalone (sg3 was never replied to)
+    let sg3Card = bandejaCards().find(c => c.textContent.includes('No puedo verificar'));
+    assert(!!sg3Card && sg3Card.textContent.includes('Nueva'), 'set-up: sg3 (contacto) is still unread');
+    await window.markSuggestionReviewed('sg3');
+    sg3Card = bandejaCards().find(c => c.textContent.includes('No puedo verificar'));
+    assert(!!sg3Card && !sg3Card.textContent.includes('Nueva') && !sg3Card.querySelector('button.chip[onclick*="markSuggestionReviewed"]'), 'marking sg3 reviewed (without replying) also removes its "Nueva" flag and action');
     window.closeModal();
+
+    // ── The admin-message popup shows the reply framing when the message
+    //    is a reply (in_reply_to/reply_context set). ──
+    {
+      const am1Row = SAMPLE.admin_messages.find(m => m.id === 'am1'), am2Row = SAMPLE.admin_messages.find(m => m.id === 'am2');
+      const savedAm1Dismissed = am1Row.dismissed_at, savedAm2Dismissed = am2Row.dismissed_at;
+      am1Row.dismissed_at = NOW.toISOString(); am2Row.dismissed_at = NOW.toISOString(); // exclude the plain baseline messages for this check
+      SAMPLE.admin_messages.push({ id: 'am-reply-1', profile_id: 'uid-1', message: 'Ya lo agregamos al mapa, gracias por avisar', sent_by: 'admin-uid', dismissed_at: null, in_reply_to: 'sg1', reply_context: 'Deberían agregar un mapa del centro histórico', created_at: NOW.toISOString() });
+      await window.maybeShowUndismissedMessages();
+      assert(text('modal-title') === 'Respuesta de MiCampeche' && text('modal-body').includes('En respuesta a tu mensaje') && text('modal-body').includes('Deberían agregar un mapa del centro histórico') && text('modal-body').includes('Ya lo agregamos al mapa'), 'a reply (in_reply_to/reply_context set) shows "Respuesta de MiCampeche" and the original-message context line');
+      await window.dismissAdminMessagePopup('am-reply-1');
+      window.closeModal();
+      SAMPLE.admin_messages = SAMPLE.admin_messages.filter(m => m.id !== 'am-reply-1');
+      am1Row.dismissed_at = savedAm1Dismissed; am2Row.dismissed_at = savedAm2Dismissed;
+    }
+
+    // ── Mensajes: the user's own incoming-only inbox. ──
+    {
+      const savedAdminMessages2 = SAMPLE.admin_messages.slice();
+      // Declared newest-first, matching what the real query's own
+      // .order('created_at',{ascending:false}) would return — the fake
+      // doesn't re-sort, same convention used throughout this file.
+      SAMPLE.admin_messages = [
+        { id: 'mm-new', profile_id: 'uid-1', message: 'Ya lo agregamos al mapa', sent_by: 'admin-uid', dismissed_at: null, in_reply_to: 'sg1', reply_context: 'Deberían agregar un mapa del centro histórico', created_at: NOW.toISOString() },
+        { id: 'mm-old', profile_id: 'uid-1', message: 'Mensaje viejo', sent_by: 'admin-uid', dismissed_at: null, created_at: new Date(NOW.getTime() - 5 * 86400000).toISOString() },
+      ];
+      await window.openMyMessages();
+      assert(text('modal-title') === 'Mensajes', 'openMyMessages opens the user inbox with the right title');
+      // Real message cards use background:var(--surface); the trailing
+      // "¿Quieres escribirnos?" note is also a direct <div> child but has
+      // no such style, so this excludes it without relying on position.
+      const myMsgCards = [...doc.querySelectorAll('#modal-body > div')].filter(d => (d.getAttribute('style') || '').includes('var(--surface)'));
+      assert(myMsgCards.length === 2, `both fixture messages render (got ${myMsgCards.length})`);
+      assert(myMsgCards[0].textContent.includes('Ya lo agregamos al mapa'), 'the newest message (mm-new) renders first');
+      assert(myMsgCards[0].textContent.includes('En respuesta a tu mensaje') && myMsgCards[0].textContent.includes('Deberían agregar un mapa del centro histórico'), 'a reply shows the "En respuesta a tu mensaje" context line with the original text');
+      assert(myMsgCards[0].textContent.includes('Nuevo') && myMsgCards[1].textContent.includes('Nuevo'), 'both undismissed messages are flagged "Nuevo"');
+      await new Promise(r => setTimeout(r, 20)); // let openMyMessages' fire-and-forget dismiss calls land
+      assert(!!SAMPLE.admin_messages.find(m => m.id === 'mm-old').dismissed_at && !!SAMPLE.admin_messages.find(m => m.id === 'mm-new').dismissed_at, 'opening the inbox dismisses (rpc dismiss_admin_message) each undismissed message it just showed');
+
+      // empty state
+      SAMPLE.admin_messages = [];
+      await window.openMyMessages();
+      assert(text('modal-body').includes('Aún no tienes mensajes'), 'no messages shows the real empty state, not a blank screen');
+      window.closeModal();
+
+      SAMPLE.admin_messages = savedAdminMessages2;
+    }
 
     currentSession = savedSession; currentProfile.phone_verification_status = savedStatus; currentProfile.is_admin = savedAdmin;
     delete lastInsert.suggestions;

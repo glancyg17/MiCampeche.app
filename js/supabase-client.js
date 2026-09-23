@@ -742,27 +742,50 @@ MC.dismissAdminMessage=async function(id){
   return sb.rpc('dismiss_admin_message',{target_id:id});
 };
 
-/* Suggestions box. RLS only allows a plain insert (no owner SELECT), so
-   this deliberately doesn't chain .select() — the row's real content is
-   never read back, just whether the insert itself succeeded. A trigger
-   caps this at 3/person/24h and raises an exception whose message
-   contains 'suggestion_rate_limit'; the caller matches on that text. */
-MC.submitSuggestion=async function(message){
+MC.submitSuggestion=async function(message,kind){
   const uid=await MC.ready;
-  return sb.from('suggestions').insert({profile_id:uid,message});
+  return sb.from('suggestions').insert({profile_id:uid,message,kind:kind==='contacto'?'contacto':'sugerencia'});
 };
-/* Admin-only. Unread first (reviewed_at nulls first), newest first within
-   that — so a fresh batch surfaces above anything already triaged. */
+/* Admin-only. The admin inbox: both kinds of user message, unread first
+   (reviewed_at nulls first), newest first within that, each with any admin
+   replies attached (admin_messages rows pointing back via in_reply_to). */
 MC.adminFetchSuggestions=async function(){
   const {data,error}=await sb.from('suggestions')
-    .select('id,message,created_at,reviewed_at,profile_id,profiles(display_name)')
+    .select('id,message,kind,created_at,reviewed_at,replied_at,profile_id,profiles(display_name,phone_verification_status)')
     .order('reviewed_at',{ascending:true,nullsFirst:true})
     .order('created_at',{ascending:false}).limit(100);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,message:r.message,createdAt:r.created_at,reviewedAt:r.reviewed_at,profileId:r.profile_id,name:(r.profiles&&r.profiles.display_name)||'Vecino',time:relTimeEs(r.created_at)}));
+  const repliesBy={};
+  const ids=data.map(r=>r.id);
+  if(ids.length){
+    const {data:reps}=await sb.from('admin_messages').select('message,created_at,in_reply_to').in('in_reply_to',ids).order('created_at',{ascending:true});
+    (reps||[]).forEach(m=>{(repliesBy[m.in_reply_to]=repliesBy[m.in_reply_to]||[]).push({message:m.message,time:relTimeEs(m.created_at)});});
+  }
+  return data.map(r=>({id:r.id,message:r.message,kind:r.kind||'sugerencia',createdAt:r.created_at,reviewedAt:r.reviewed_at,repliedAt:r.replied_at,profileId:r.profile_id,name:(r.profiles&&r.profiles.display_name)||'Vecino',verified:!!(r.profiles&&r.profiles.phone_verification_status==='verified'),time:relTimeEs(r.created_at),replies:repliesBy[r.id]||[]}));
 };
 MC.adminMarkSuggestionReviewed=async function(id){
   return sb.from('suggestions').update({reviewed_at:new Date().toISOString()}).eq('id',id);
+};
+/* Admin-only RPC (server checks is_admin): creates the reply as an
+   admin_messages row for the original sender and marks the original
+   replied + reviewed. The recipient's popup/push/inbox all come from that row. */
+MC.adminReplyToMessage=async function(id,reply){
+  return sb.rpc('admin_reply_to_message',{p_message_id:id,p_reply:reply});
+};
+/* The signed-in account's own incoming messages (admin messages + replies),
+   newest first, for the Mensajes inbox. Incoming only — users write to us via Contacto. */
+MC.fetchMyMessages=async function(){
+  const uid=await MC.ready;
+  if(!uid)return [];
+  const {data,error}=await sb.from('admin_messages').select('id,message,created_at,dismissed_at,reply_context,in_reply_to').eq('profile_id',uid).order('created_at',{ascending:false}).limit(50);
+  if(error){console.error(error);return [];}
+  return (data||[]).map(m=>({id:m.id,message:m.message,createdAt:m.created_at,time:relTimeEs(m.created_at),unread:!m.dismissed_at,replyContext:m.reply_context||null}));
+};
+MC.countMyUnreadMessages=async function(){
+  const uid=await MC.ready;
+  if(!uid)return 0;
+  const {count,error}=await sb.from('admin_messages').select('id',{count:'exact',head:true}).eq('profile_id',uid).is('dismissed_at',null);
+  return error?0:(count||0);
 };
 
 /* ── PUSH NOTIFICATIONS ──
