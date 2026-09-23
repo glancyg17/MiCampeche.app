@@ -31,6 +31,7 @@ function makeChain(getResult, onEq) {
   const nullFields = []; // fields required to BE null via .is(field, null) — e.g. MC.fetchCancellationReminders' "unresolved" filter
   const gtes = []; // .gte(field, value) — MC.fetchPendingMandaditoReview's 24h–48h window is the only real consumer
   const ltes = []; // .lte(field, value) — ditto
+  const neqs = []; // .neq(field, value) — MC.adminFetchAllUsers' "registered accounts only" filter
   const proxy = new Proxy({}, {
     get(target, prop) {
       if (prop === 'then') {
@@ -90,6 +91,7 @@ function makeChain(getResult, onEq) {
             // which is all MC.fetchPendingMandaditoReview's created_at window needs.
             gtes.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] != null && r[f] >= v); });
             ltes.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] != null && r[f] <= v); });
+            neqs.forEach(([f, v]) => { rows = rows.filter(r => r && r[f] !== v); });
             if (rows !== out.data) out = { ...out, data: rows };
           }
           if (single) out = { ...out, data: Array.isArray(out.data) ? (out.data[0] || null) : out.data };
@@ -103,6 +105,7 @@ function makeChain(getResult, onEq) {
       if (prop === 'is') return (f, v) => { if (v === null) nullFields.push(f); return proxy; };
       if (prop === 'gte') return (f, v) => { gtes.push([f, v]); return proxy; };
       if (prop === 'lte') return (f, v) => { ltes.push([f, v]); return proxy; };
+      if (prop === 'neq') return (f, v) => { neqs.push([f, v]); return proxy; };
       return (..._args) => proxy; // select/order/limit/in/etc all just chain
     }
   });
@@ -438,7 +441,15 @@ const fakeClient = {
             // other tables here which intentionally ignore filters.
             const wantsPendingOnly = selectStr.includes('created_at');
             const matches = wantsPendingOnly ? (currentProfile.phone_verification_status === 'pending') : true;
-            return { data: matches ? [currentProfile] : [], error: null };
+            // MC.adminFetchAllUsers' exact select shape — inject a fixture
+            // "ghost" row (anonymous visitor, phone NULL) alongside the real
+            // one, so the .not('phone','is',null).neq('phone','') chain this
+            // query applies (honored generically above) can be proven to
+            // actually exclude it, not just silently no-op.
+            const isAdminAllUsersQuery = selectStr === 'id,display_name,phone,phone_verification_status,banned,is_admin,created_at';
+            const rows = matches ? [currentProfile] : [];
+            if (isAdminAllUsersQuery) rows.push({ id: 'ghost-1', display_name: null, phone: null, phone_verification_status: null, banned: false, is_admin: false, created_at: NOW.toISOString() });
+            return { data: rows, error: null };
           });
           return chain;
         },
@@ -648,6 +659,18 @@ const fakeClient = {
   const heroClasses = ['wh-am', 'wh-pm', 'wh-noche'].filter(c => heroEl.classList.contains(c));
   assert(heroClasses.length === 1 && heroClasses[0] === expectedHeroCls, 'the welcome hero carries exactly one wh-am/wh-pm/wh-noche class, matching the real current time-of-day bucket');
   assert((heroEl.innerHTML || '').includes(expectedGreet), 'the hero class matches whichever greeting text is actually showing');
+  // ── Polish pass: the crenel strips are gone, and the hero is now an
+  //    unobstructed photo (.wh-photo) with the greeting on a separate
+  //    overlapping sheet (.wh-sheet), not text painted over the image. ──
+  assert(doc.querySelector('.crenel') === null && doc.querySelector('.welcome-crenel') === null, 'no .crenel or .welcome-crenel element exists anywhere in the DOM after init');
+  {
+    const whPhoto = heroEl.querySelector('.wh-photo');
+    const whSheet = heroEl.querySelector('.wh-sheet');
+    assert(!!whPhoto, 'the welcome hero contains a .wh-photo element');
+    assert(!!whSheet, 'the welcome hero contains a .wh-sheet element');
+    assert(whSheet && whSheet.querySelector('.wh-greet') && whSheet.querySelector('.wh-city') && whSheet.querySelector('.wh-tag'), 'the greeting, city, and tagline all live inside .wh-sheet');
+    assert(whSheet && whSheet.textContent.includes(expectedGreet) && whSheet.textContent.includes('San Francisco de Campeche'), 'the sheet shows the real greeting and city text');
+  }
 
   // ── Below-hero quick-nav row: 4 real shortcuts, in normal document flow
   //    (between the hero and dash-body, not fixed/sticky), each wired to
@@ -2484,6 +2507,15 @@ const fakeClient = {
       // list + search + filters
       await window.openAdminUsers();
       assert(text('modal-title') === 'Usuarios' && text('modal-body').includes('Vecino Test') && text('modal-body').includes('1 negocio'), 'Usuarios lists every account with its business count');
+      // The fixture profiles query also returns a "ghost" anonymous-visitor
+      // row (phone NULL, no display name) alongside the real one —
+      // adminFetchAllUsers' .not('phone','is',null).neq('phone','') filter
+      // (honored for real by the fake, see makeChain's notNulls/neqs
+      // handling) must exclude it, leaving only the 1 registered account
+      // rather than 2 ("Sin nombre"/"Sin teléfono" is how a ghost row would
+      // render if it leaked through).
+      assert(text('admin-users-results').includes('1 usuarios') && !text('admin-users-results').includes('2 usuarios'), 'the phone-less ghost profile is excluded — Usuarios still counts exactly 1 real account');
+      assert(!text('admin-users-results').includes('Sin nombre') && !text('admin-users-results').includes('Sin teléfono'), 'no phone-less ghost row is rendered in the Usuarios list');
       window.setAdminUsersSearch('vecino');
       assert(text('admin-users-results').includes('Vecino Test'), 'search matches a display name (case-insensitive)');
       window.setAdminUsersSearch('9811234567');

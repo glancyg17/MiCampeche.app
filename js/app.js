@@ -948,7 +948,7 @@ const WELCOME_TAGLINES=[
 ];
 /* The hero photo cycles with the same greeting/time-of-day bucket
    computed below — one real photo per part of the day, not an autoplay
-   carousel. See .welcome-hero.wh-* in css/styles.css. */
+   carousel. See .wh-am/.wh-pm/.wh-noche .wh-photo in css/styles.css. */
 function renderWelcomeHero(){
   const hour=new Date().getHours();
   // Buenos días: 3am–11:59am · Buenas tardes: 12pm–6:59pm · Buenas noches: 7pm–2:59am (wraps past midnight)
@@ -959,10 +959,12 @@ function renderWelcomeHero(){
   const hero=document.getElementById('welcome-hero');
   hero.className='welcome-hero '+heroCls;
   hero.innerHTML=`
-    <div class="welcome-greet">${greet} 👋</div>
-    <div class="welcome-city">San Francisco de Campeche</div>
-    <div class="welcome-tag">${tagline}</div>
-    <div class="welcome-crenel"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="wh-photo" role="img" aria-label="San Francisco de Campeche"></div>
+    <div class="wh-sheet">
+      <div class="wh-greet">${greet} 👋</div>
+      <div class="wh-city">San Francisco de Campeche</div>
+      <div class="wh-tag">${tagline}</div>
+    </div>
   `;
 }
 

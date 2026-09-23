@@ -640,7 +640,8 @@ MC.fetchMyPosts=async function(){
    search RPC only if that stops being true. */
 MC.adminFetchAllUsers=async function(){
   const [profilesRes,bizRes]=await Promise.all([
-    sb.from('profiles').select('id,display_name,phone,phone_verification_status,banned,is_admin,created_at'),
+    // anonymous visitors have profiles too; registered = has a phone
+    sb.from('profiles').select('id,display_name,phone,phone_verification_status,banned,is_admin,created_at').not('phone','is',null).neq('phone',''),
     sb.from('businesses').select('id,profile_id,business_name,status,is_premium,is_primary')
   ]);
   if(profilesRes.error){console.error(profilesRes.error);return [];}
