@@ -2167,7 +2167,8 @@ function renderServiciosUtiles(){
 const POST_FORMS={
   eventos:{title:'Publicar un evento',fields:[
     {k:'name',lbl:'Nombre del evento',type:'text',ph:'Ej. Tianguis nocturno'},
-    {k:'cat',lbl:'Categoría',type:'select',opts:['Mercado','Cultura','Deporte','Comunidad','Música','Gastronomía','Religioso','Familiar','Educativo','Otro']},
+    // Must match public.evento_categories() in Supabase (a trigger enforces it; anything else is auto-classified).
+    {k:'cat',lbl:'Categoría',type:'select',opts:['Música','Cultura','Exposición','Infantil y familiar','Comunidad','Deporte','Gastronomía','Mercado','Religioso','Educativo','Negocios y congresos','Otro']},
     {k:'date',lbl:'Fecha',type:'monthcal'},
     {k:'time',lbl:'Hora',type:'time'},
     {k:'loc',lbl:'Lugar',type:'text',ph:'Dirección o punto de referencia'},

@@ -1905,6 +1905,13 @@ const fakeClient = {
     //    CONTENT_PAYLOAD.eventos as event_date. ──
     await window.openPost('eventos');
     assert(!!doc.getElementById('pf-date-cal'), 'the eventos form renders a month-calendar picker, not a native date input');
+
+    // The category select must offer the exact fixed list Supabase now
+    // enforces (public.evento_categories(), via a trigger) — not the old
+    // ad-hoc list, and in the same order the dropdown presents them.
+    const evtCatOpts = [...doc.getElementById('pf-cat').options].map(o => o.value).filter(Boolean);
+    assert(JSON.stringify(evtCatOpts) === JSON.stringify(['Música', 'Cultura', 'Exposición', 'Infantil y familiar', 'Comunidad', 'Deporte', 'Gastronomía', 'Mercado', 'Religioso', 'Educativo', 'Negocios y congresos', 'Otro']),
+      `the eventos form's category select offers exactly the 12 fixed categories, in order (got: ${evtCatOpts.join(' | ')})`);
     window.shiftMonthCal('date', -1); // navigate back a month — guarantees a definitely-PAST day is selectable regardless of today's date
     const prevMonthCells = [...doc.querySelectorAll('#pf-date-cal .mcal-day:not(.empty)')];
     assert(prevMonthCells.length > 0, 'the previous month\'s grid renders real day cells');

@@ -336,19 +336,19 @@ svg{display:block}
 
 /* ═══ INICIO — WELCOME HERO ═══
    A real, unobstructed photograph (no overlay, no filter — as bright as the
-   file is) with the greeting on a sheet overlapping its bottom edge. The
-   time-of-day class (.wh-am/.wh-pm/.wh-noche, set by renderWelcomeHero() in
-   js/app.js) only chooses the photo and its focal point. */
-.welcome-hero{position:relative;flex-shrink:0}
-.wh-photo{height:clamp(230px,40vh,340px);background-size:cover;background-position:var(--wh-pos,50% 50%);background-color:var(--paper3)}
+   file is) — the greeting sits on a translucent dark band anchored to the
+   bottom of the photo; the rest of the photo is untouched. The time-of-day
+   class (.wh-am/.wh-pm/.wh-noche, set by renderWelcomeHero() in js/app.js)
+   only chooses the photo and its focal point. */
+.welcome-hero{position:relative;flex-shrink:0;overflow:hidden}
+.wh-photo{height:clamp(270px,46vh,400px);background-size:cover;background-position:var(--wh-pos,50% 50%);background-color:var(--paper3)}
 .wh-am .wh-photo{background-image:url('/assets/images/MiCampeche-Hero.jpg');--wh-pos:32% 50%}
 .wh-pm .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-2.jpg');--wh-pos:50% 50%}
 .wh-noche .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-3.jpg');--wh-pos:60% 50%}
-.wh-sheet{position:relative;background:var(--surface);padding:18px 20px;border-bottom:1px solid var(--line2)}
-.wh-greet{font-size:12.5px;font-weight:700;color:var(--gulf);letter-spacing:.03em}
-[data-theme="dark"] .wh-greet{color:var(--gulf-soft)}
-.wh-city{font-family:"Fraunces",Georgia,serif;font-size:30px;font-weight:600;letter-spacing:-.015em;line-height:1.12;margin-top:3px;color:var(--ink)}
-.wh-tag{font-size:13px;color:var(--ink2);margin-top:6px;line-height:1.5}
+.wh-sheet{position:absolute;left:0;right:0;bottom:0;background:rgba(0,6,18,.56);padding:14px 20px 16px;color:#fbf8f2}
+.wh-greet{font-size:12.5px;font-weight:700;color:var(--wall-soft);letter-spacing:.03em}
+.wh-city{font-family:"Fraunces",Georgia,serif;font-size:clamp(22px,6.2vw,27px);font-weight:600;letter-spacing:-.015em;line-height:1.15;margin-top:2px;color:#fff}
+.wh-tag{font-size:13px;color:rgba(251,248,242,.9);margin-top:4px;line-height:1.5}
 
 /* Below-hero quick-nav row — 4 equal tiles, normal document flow (scrolls
    away with the page, never fixed/sticky). Icon badge modeled on
