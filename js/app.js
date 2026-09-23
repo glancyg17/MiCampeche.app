@@ -825,6 +825,7 @@ function trackPage(){
   }catch(e){}
 }
 function nav(tab,fromBack){
+  if(searchOpen)closeSearch();
   document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));
   const target=document.getElementById('scr-'+tab);
   if(!target)return;
@@ -883,6 +884,7 @@ function mcTopLayer(){
   if(on('modal-bg'))return 'modal';
   if(on('menu-bg'))return 'menu';
   if(on('wx-lb-bg'))return 'weather';
+  if(on('search-panel'))return 'search';
   if(curScreen!=='inicio')return 'screen';
   return null;
 }
@@ -894,6 +896,7 @@ function mcCloseTopLayer(){
     case 'modal':mcModalBack();return true;   // steps back through nested modal views, then closes
     case 'menu':document.getElementById('menu-bg').classList.remove('on');return true;
     case 'weather':document.getElementById('wx-lb-bg').classList.remove('on');return true;
+    case 'search':closeSearch();return true;
     case 'screen':nav(mcScreenStack.pop()||'inicio',true);return true;
     default:return false;
   }
@@ -927,7 +930,7 @@ function mcBackInit(){
   mcBackWired=mcHistoryOn=true;
   if(!history.state||!history.state.mcTrap)history.replaceState({mcRoot:true},'');
   const obs=new MutationObserver(()=>mcSyncBackTrap());
-  ['modal-bg','menu-bg','wx-lb-bg'].forEach(id=>{
+  ['modal-bg','menu-bg','wx-lb-bg','search-panel'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)obs.observe(el,{attributes:true,attributeFilter:['class']});
   });
@@ -5442,6 +5445,128 @@ async function nudgeAdminVerifications(){
     toast(phone.length===1
       ? '1 cuenta espera verificación por WhatsApp'
       : phone.length+' cuentas esperan verificación por WhatsApp');
+  }
+}
+
+/* ══════════════ GLOBAL SEARCH (header magnifier) ══════════════
+   Searches the arrays the app already loaded (no extra network calls).
+   Deliberately never looks at phone/contact fields — contact info stays
+   behind the sign-in + verified gate. NFKD (not NFD) on purpose: real
+   event titles arrive as Unicode "fancy text" (𝗟𝗼𝘀 𝗣𝗮𝘀𝘁𝗲𝗹𝗲𝘀), which only
+   compatibility normalization folds back to plain letters. */
+let searchOpen=false;
+const searchExpanded={};
+const SEARCH_GROUP_CAP=4;
+const SEARCH_MIN_CHARS=2;
+function searchNorm(s){return String(s==null?'':s).normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase();}
+function searchTokens(q){return searchNorm(q).split(/\s+/).filter(Boolean);}
+// 0 = no match. Every token must appear in title+extras; title hits weigh more.
+function searchScore(tokens,title,extras){
+  const t=searchNorm(title),x=searchNorm((extras||[]).filter(Boolean).join(' '));
+  let score=0;
+  for(const tk of tokens){
+    const inT=t.includes(tk),inX=x.includes(tk);
+    if(!inT&&!inX)return 0;
+    score+=inT?(t.startsWith(tk)?5:3):1;
+  }
+  return score;
+}
+const SEARCH_GROUPS=[
+  {key:'noticias',label:'Noticias',items:()=>NOTICIAS.map(n=>({id:n.id,title:n.title,extras:[n.desc,n.source],sub:n.source}))},
+  {key:'eventos',label:'Eventos',items:()=>EVENTOS.filter(x=>!evtFinished(x)).map(x=>({id:x.id,title:x.name,extras:[x.cat,x.loc,x.colonia,x.desc],sub:x.dateLong+(x.loc?' · '+x.loc:'')}))},
+  {key:'ofertas',label:'Ofertas',items:()=>OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS).map(o=>({id:o.id,title:o.name,extras:[o.seller,o.desc],sub:o.seller+' · $'+o.priceNow}))},
+  {key:'mercado',label:'Mercado',items:()=>TIENDA.filter(x=>x.sellerType==='negocio').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.seller,x.desc,x.colonia],sub:x.seller+(x.price?' · '+x.price:'')}))},
+  {key:'clasificados',label:'Clasificados',items:()=>TIENDA.filter(x=>x.sellerType==='personal').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.desc,x.colonia],sub:[x.price,x.colonia].filter(Boolean).join(' · ')}))},
+  {key:'mandaditos',label:'Mandaditos',items:()=>MANDADITOS.map(m=>({id:m.id,title:m.name,extras:[m.desc,m.vehicle],sub:m.vehicle||'Mandadito'}))},
+  {key:'empleos',label:'Empleos',items:()=>EMPLEOS.map(x=>({id:x.id,title:x.title,extras:[x.co,x.desc,(x.tags||[]).join(' '),x.colonia],sub:[x.co,x.pay].filter(Boolean).join(' · ')}))},
+  {key:'alertas',label:'Alertas',items:()=>ALERTAS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.zone,a.type],sub:[a.type,a.time].filter(Boolean).join(' · ')}))},
+  {key:'avisos',label:'Avisos',items:()=>AVISOS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.cat,a.colonia],sub:a.cat}))},
+  {key:'perdidos',label:'Perdidos y encontrados',items:()=>PERDIDOS.map(x=>({id:x.id,title:x.name,extras:[x.desc,x.loc,x.colonia,x.tag],sub:(x.tag==='perdido'?'Perdido':'Encontrado')+(x.loc?' · '+x.loc:'')}))},
+  {key:'reportes',label:'Reportes',items:()=>REPORTES.map(x=>({id:x.id,title:x.title,extras:[x.desc,x.loc,x.loc_colonia,x.cat],sub:[x.cat,x.loc].filter(Boolean).join(' · ')}))}
+];
+function runSearch(q){
+  const tokens=searchTokens(q);
+  if(String(q).trim().length<SEARCH_MIN_CHARS||!tokens.length)return null;
+  const out=[];
+  for(const g of SEARCH_GROUPS){
+    const hits=[];
+    g.items().forEach((it,i)=>{const s=searchScore(tokens,it.title,it.extras);if(s)hits.push({id:it.id,title:it.title,sub:it.sub,score:s,i});});
+    if(hits.length){hits.sort((a,b)=>b.score-a.score||a.i-b.i);out.push({g,hits});}
+  }
+  return out;
+}
+function renderSearchResults(q){
+  const body=document.getElementById('search-body');
+  if(!body)return;
+  const res=runSearch(q);
+  if(res===null){body.innerHTML='<div class="sr-hint"><b>¿Qué buscas?</b>Noticias, eventos, productos, ofertas, mandaditos, empleos, avisos…</div>';return;}
+  if(!res.length){body.innerHTML='<div class="sr-hint"><b>Sin resultados</b>No encontramos nada para “'+e(String(q).trim())+'”. Prueba con otra palabra.</div>';return;}
+  body.innerHTML=res.map(({g,hits})=>{
+    const open=!!searchExpanded[g.key];
+    const shown=open?hits:hits.slice(0,SEARCH_GROUP_CAP);
+    return '<div class="sr-group"><div class="sr-group-hdr">'+g.label+'<span>'+hits.length+'</span></div>'
+      +shown.map(h=>'<button class="sr-row" onclick="openSearchResult(\''+g.key+'\',\''+e(h.id)+'\')"><span class="sr-row-txt"><span class="sr-row-title">'+e(h.title)+'</span>'+(h.sub?'<span class="sr-row-sub">'+e(h.sub)+'</span>':'')+'</span>'+svgIco('chevronR','sr-row-arr')+'</button>').join('')
+      +(!open&&hits.length>SEARCH_GROUP_CAP?'<button class="sr-more" onclick="expandSearchGroup(\''+g.key+'\')">Ver '+(hits.length-SEARCH_GROUP_CAP)+' más</button>':'')
+      +'</div>';
+  }).join('');
+}
+function onSearchInput(v){
+  Object.keys(searchExpanded).forEach(k=>delete searchExpanded[k]);
+  renderSearchResults(v);
+}
+function expandSearchGroup(key){
+  searchExpanded[key]=true;
+  const inp=document.getElementById('search-input');
+  renderSearchResults(inp?inp.value:'');
+}
+function openSearch(){
+  const inp=document.getElementById('search-input');
+  if(!inp)return;
+  searchOpen=true;
+  document.getElementById('topbar').classList.add('searching');
+  document.getElementById('search-panel').classList.add('on');
+  inp.value='';
+  Object.keys(searchExpanded).forEach(k=>delete searchExpanded[k]);
+  renderSearchResults('');
+  inp.focus();   // same tick as the tap, so iOS raises the keyboard
+}
+function closeSearch(){
+  if(!searchOpen)return;
+  searchOpen=false;
+  document.getElementById('topbar').classList.remove('searching');
+  document.getElementById('search-panel').classList.remove('on');
+  const inp=document.getElementById('search-input');
+  if(inp){inp.blur();inp.value='';}
+}
+// Ofertas/Avisos/Perdidos/Reportes have no detail screen — they live as cards
+// in their tab. Every one of those cards already carries data-adm-rm="table|id"
+// (see admRm()), so we can find it without touching any template.
+function searchJumpTo(table,id){
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const el=document.querySelector('[data-adm-rm="'+table+'|'+String(id).replace(/"/g,'')+'"]');
+    if(!el)return;
+    el.scrollIntoView({block:'center',behavior:'smooth'});
+    el.classList.add('search-flash');
+    setTimeout(()=>el.classList.remove('search-flash'),2200);
+  }));
+}
+function searchResetInput(id){const i=document.getElementById(id);if(i)i.value='';}
+function openSearchResult(kind,id){
+  closeSearch();
+  switch(kind){
+    case 'noticias':showNoticia(id);break;
+    case 'eventos':openEvento(id);break;
+    case 'mercado':openProdView('negocio',id);break;
+    case 'clasificados':openProdView('personal',id);break;
+    case 'mandaditos':openMandaditoView(id);break;
+    case 'empleos':openEmpleo(id);break;
+    case 'alertas':openAlertaDetail(id);break;
+    case 'ofertas':nav('tienda');searchJumpTo('ofertas',id);break;
+    // The next three reset that list's own filters first, so the target card
+    // can't be hidden by a colonia/category filter left over from earlier.
+    case 'avisos':searchResetInput('av-colonia');setAvColonia('');nav('reportar');setReportarMode('avisos');searchJumpTo('avisos',id);break;
+    case 'perdidos':searchResetInput('pf-colonia-filter');setPfColonia('');setPfFilter('all');nav('reportar');setReportarMode('perdidos');searchJumpTo('perdidos',id);break;
+    case 'reportes':searchResetInput('rep-colonia');setRepColonia('');setRepFilter('all');nav('reportar');setReportarMode('reportes');searchJumpTo('reportes',id);break;
   }
 }
 

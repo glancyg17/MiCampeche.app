@@ -88,15 +88,25 @@
 <div class="app" id="app">
 
   <div class="chrome">
-    <div class="topbar">
+    <div class="topbar" id="topbar">
       <div class="brand" onclick="nav('inicio')" role="button" tabindex="0" aria-label="Ir a Inicio">
         <img src="assets/images/MiCampeche-app-logo.png" alt="MiCampeche" class="brand-logo">
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
+      <div class="tb-right">
         <button class="tb-wx" id="tb-weather" onclick="openWeatherLightbox()"></button>
+        <button class="tb-icon" id="tb-search" onclick="openSearch()" aria-label="Buscar">
+          <svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </button>
         <button class="tb-icon" id="tb-icon" onclick="openMenu()" aria-label="Menú">
           <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
+      </div>
+      <div class="tb-search" id="tb-search-bar">
+        <div class="tb-search-field">
+          <svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input id="search-input" type="search" placeholder="Buscar en MiCampeche" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Buscar en MiCampeche" oninput="onSearchInput(this.value)" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape')closeSearch()">
+        </div>
+        <button class="tb-icon" onclick="closeSearch()" aria-label="Cerrar búsqueda"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
     </div>
   </div>
@@ -104,6 +114,7 @@
   <div class="screens">
 
     <div class="pull-indicator" id="pull-indicator"><svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></div>
+    <div class="search-panel" id="search-panel"><div class="search-body" id="search-body"></div></div>
 
     <!-- ═══ INICIO (DASHBOARD / HUB) ═══ -->
     <div class="scr on" id="scr-inicio">

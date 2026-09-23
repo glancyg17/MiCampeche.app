@@ -992,6 +992,69 @@ const fakeClient = {
   window.mcGoBack();
   assert(doc.getElementById('scr-inicio').classList.contains('on'), 'mcGoBack() from Términos y Condiciones returns to Inicio');
 
+  // ── Global search: header magnifier → search bar → grouped live results
+  //    over the arrays already loaded client-side, no new network calls. ──
+  {
+    const tbRightIds = [...doc.querySelectorAll('#topbar .tb-right > *')].map(el => el.id);
+    assert(JSON.stringify(tbRightIds) === JSON.stringify(['tb-weather', 'tb-search', 'tb-icon']), `the header shows weather, search, then menu in that order (got: ${tbRightIds.join(' | ')})`);
+
+    // open/close toggles the two DOM markers the CSS keys off of
+    window.openSearch();
+    assert(doc.getElementById('topbar').classList.contains('searching') && doc.getElementById('search-panel').classList.contains('on'), 'openSearch() turns the header into a search bar and shows the results panel');
+    window.closeSearch();
+    assert(!doc.getElementById('topbar').classList.contains('searching') && !doc.getElementById('search-panel').classList.contains('on'), 'closeSearch() reverts both markers');
+
+    // NFKD (not NFD): real event titles arrive as Unicode "fancy text" —
+    // only compatibility normalization folds that back to plain letters.
+    assert(window.searchNorm('𝗟𝗼𝘀 𝗣𝗮𝘀𝘁𝗲𝗹𝗲𝘀') === 'los pasteles', 'searchNorm folds Unicode mathematical-bold "fancy text" back to plain ASCII (NFKD)');
+    assert(window.searchNorm('Café') === 'cafe', 'searchNorm strips accents and lowercases');
+
+    window.openSearch();
+
+    // a query matching the fixture noticia headline ("Titular de prueba")
+    // renders a real row inside a Noticias group
+    window.onSearchInput('prueba');
+    const noticiasGroup = [...doc.querySelectorAll('#search-body .sr-group')].find(g => (g.querySelector('.sr-group-hdr') || {}).textContent.includes('Noticias'));
+    assert(!!noticiasGroup && noticiasGroup.querySelectorAll('.sr-row').length > 0, 'searching "prueba" (matches the fixture noticia headline) renders at least one row inside a Noticias group');
+
+    // below the minimum length → the hint, not results
+    window.onSearchInput('a');
+    assert(!!doc.querySelector('#search-body .sr-hint') && doc.querySelectorAll('#search-body .sr-row').length === 0, 'a 1-character query is below the minimum and shows the "¿Qué buscas?" hint, not results');
+
+    // no fixture matches anywhere → the empty state
+    window.onSearchInput('zzzznoexistequery');
+    assert(text('search-body').includes('Sin resultados'), 'a nonsense query shows the "Sin resultados" empty state');
+
+    // tapping a result closes search and opens the real detail screen
+    window.onSearchInput('prueba');
+    window.openSearchResult('noticias', 'n1');
+    assert(!doc.getElementById('topbar').classList.contains('searching') && !doc.getElementById('search-panel').classList.contains('on'), 'opening a search result closes the search panel');
+    assert(doc.getElementById('scr-noticia-detail').classList.contains('on'), "openSearchResult('noticias',…) opens the real noticia detail screen");
+    window.nav('inicio');
+
+    // hardware-back layer system: search is a real dismissible layer
+    window.openSearch();
+    assert(window.mcTopLayer() === 'search', 'mcTopLayer() reports "search" as the active layer while the search panel is open');
+    window.closeSearch();
+
+    // switching bottom-nav tabs while search is open closes it first
+    window.openSearch();
+    assert(doc.getElementById('search-panel').classList.contains('on'), 'set-up: search panel open');
+    window.nav('tienda');
+    assert(!doc.getElementById('search-panel').classList.contains('on') && !doc.getElementById('topbar').classList.contains('searching'), 'nav() to a bottom-nav tab closes an open search first');
+    window.nav('inicio');
+
+    // never surfaces phone/contact fields — a broad query that hits several
+    // groups whose underlying fixture rows DO carry a phone (productos,
+    // clasificados, mandaditos) must never leak it into rendered text.
+    window.openSearch();
+    window.onSearchInput('test');
+    const searchHtml = text('search-body') || '';
+    const fixturePhones = ['981 100 2000', '981 300 4000', '981 400 5000', '981 555 1234', '981 200 3000', '9811234567'];
+    assert(fixturePhones.every(p => !searchHtml.includes(p)), 'no rendered search result ever includes a fixture phone number — search never reads phone/contact fields');
+    window.closeSearch();
+  }
+
   // ── Burger menu: single-open accordion (Cuenta/Noticias/Comercio/
   //    Anuncios/Vecinos/Transporte/Contacto/Aviso de privacidad), replacing
   //    the old flat 6-item list. #menu-body is empty until openMenu()/
