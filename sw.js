@@ -4,7 +4,7 @@
 // network. This avoids silently serving stale content the way a
 // cache-everything strategy would.
 // Bump CACHE_NAME whenever app-shell files change so old caches get cleared.
-const CACHE_NAME = 'micampeche-shell-v135';
+const CACHE_NAME = 'micampeche-shell-v136';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -29,7 +29,15 @@ self.addEventListener('install', (event) => {
   // task, and there's nothing for anyone to tap.
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => Promise.all(APP_SHELL.map((path) =>
+        // cache:'reload' skips the browser HTTP cache. cache.addAll() reads through
+        // it, and our JS/CSS are served with a 4h max-age, so addAll could lock a
+        // STALE copy into the brand-new cache (new HTML + old JS after a deploy).
+        fetch(new Request(path, { cache: 'reload' })).then((res) => {
+          if (!res.ok) throw new Error('precache failed: ' + path + ' (' + res.status + ')');
+          return cache.put(path, res);
+        })
+      )))
       .then(() => self.skipWaiting())
   );
 });

@@ -3825,6 +3825,20 @@ const fakeClient = {
     forcedErrors.updateUser = null;
   }
 
+  // ── sw.js: install must bypass the HTTP cache, not read through it.
+  //    cache.addAll() would let a deploy's new HTML precache a STALE
+  //    app.js/styles.css (both served with a 4h max-age) into the brand
+  //    new CACHE_NAME cache — a static source check, since jsdom has no
+  //    real service-worker runtime to execute this against. ──
+  {
+    const swCode = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8');
+    // The literal string "cache.addAll(" still legitimately appears in the
+    // explanatory comment above the fix (explaining what NOT to do and
+    // why) — check for the actual dangerous call, not that bare substring.
+    assert(!swCode.includes('addAll(APP_SHELL)'), 'sw.js no longer precaches the app shell via cache.addAll(APP_SHELL) (which reads through the HTTP cache)');
+    assert(swCode.includes("cache: 'reload'") || swCode.includes('cache:\'reload\''), "sw.js precaches each app-shell file with a cache:'reload' fetch, bypassing the HTTP cache");
+  }
+
   console.log('\n' + (failures === 0 ? `ALL PASSED` : `${failures} FAILURE(S)`));
   process.exit(failures === 0 ? 0 : 1);
 })();
