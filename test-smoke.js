@@ -79,6 +79,10 @@ function makeChain(getResult, onEq) {
               // per-account scoping, so one account's admin_messages never
               // leak into another's popup queue.
               if (f === 'profile_id') rows = rows.filter(r => r && r[f] === v);
+              // MC.fetchHomeSpecialSlot() only wants the row(s) currently
+              // flagged active — real filtering, so an inactive fixture row
+              // never leaks into what Inicio's Special Slot shows.
+              if (f === 'active') rows = rows.filter(r => r && !!r.active === !!v);
             });
             notNulls.forEach(f => { rows = rows.filter(r => r && r[f] != null); });
             nullFields.forEach(f => { rows = rows.filter(r => r && r[f] == null); });
@@ -246,6 +250,9 @@ const SAMPLE = {
     { id: 'am3', profile_id: 'uid-1', message: 'Ya lo vi', sent_by: 'admin-uid', dismissed_at: NOW.toISOString(), created_at: NOW.toISOString() },
     { id: 'am4', profile_id: 'uid-other', message: 'No es para ti', sent_by: 'admin-uid', dismissed_at: null, created_at: NOW.toISOString() },
   ],
+  // Inicio's Special Slot — empty by default, matching real production
+  // right now (the table has no rows at all yet).
+  home_special_slot: [],
 };
 
 // Businesses needs REAL stateful behavior (starts as "no business", becomes
@@ -3006,26 +3013,51 @@ const fakeClient = {
     assert(JSON.stringify(window.activeFeaturedEventIds(1)) === JSON.stringify(['e4']), 'with only 1 active booking, activeFeaturedEventIds(1) returns just that one id');
     assert(JSON.stringify(window.activeFeaturedEventIds(2)) === JSON.stringify(['e4']), 'and activeFeaturedEventIds(2) also returns just that one id — no duplication when fewer bookings exist than requested');
 
-    // renderFeaturedEventoSection(): shows e4's .evt-card on Inicio while
-    // its booking is the sole active one...
-    assert(text('dash-featured-evento').includes('evt-card') && text('dash-featured-evento').includes('Mi evento activo'), 'Inicio shows the currently-featured event in the same .evt-card style');
-    // ...and renders nothing at all once there are no active bookings.
+    // homeEventoPool()/renderHomeEventoSlot(): tier 1 (an active Destacado
+    // booking) resolves to the real event and renders in the merged
+    // Inicio slot, same .evt-card style as before.
+    assert(text('dash-evento-slot').includes('evt-card') && text('dash-evento-slot').includes('Mi evento activo'), 'Inicio\'s merged Evento slot shows the currently-featured event in the same .evt-card style');
+
+    // A today-dated Destacado booking wins the pool ordering over a
+    // non-today one when both are active simultaneously — e4 is booked
+    // but happens 5 days out, e6 is booked AND happens today.
+    SAMPLE.eventos_featured_bookings = [
+      { event_id: 'e4', start_date: ds(-1), end_date: ds(1) },
+      { event_id: 'e6', start_date: ds(-1), end_date: ds(1) },
+    ];
+    await window.refreshContent();
+    const tier1Pool = window.homeEventoPool();
+    assert(tier1Pool.length === 2 && tier1Pool[0].id === 'e6' && tier1Pool[1].id === 'e4', 'a today-dated active Destacado booking sorts ahead of a non-today one in the same pool');
+
+    // Tier 2: no active bookings at all, but real events exist today
+    // (e6/e7/e8) — falls through to today's events rather than going empty.
     SAMPLE.eventos_featured_bookings = [];
     await window.refreshContent();
-    assert(text('dash-featured-evento') === '', 'Inicio\'s featured slot renders nothing when no featured booking is currently active');
+    const tier2Pool = window.homeEventoPool();
+    assert(tier2Pool.length === 3 && ['e6', 'e7', 'e8'].every(id => tier2Pool.some(x => x.id === id)), 'with no active Destacado, the pool falls back to today\'s events');
+    assert(!tier2Pool.some(x => x.id === 'e4'), 'a merely-future event (not today, not booked) is excluded from the tier-2 pool');
+    assert(text('dash-evento-slot').includes('evt-card'), 'the merged slot still renders a card under the tier-2 fallback');
 
-    // renderEventosHoySection(): ALL of today's events show (e6/e7/e8 —
-    // not capped at 2), and with e8 featured (deliberately the LATEST by
-    // clock time, 9pm), it sorts first anyway; the rest fall back to
-    // ascending time (e7 3pm before e6 7pm).
-    SAMPLE.eventos_featured_bookings = [{ event_id: 'e8', start_date: ds(-1), end_date: ds(1) }];
+    // Tier 3: no active bookings AND nothing happening today — falls
+    // through further to any upcoming event (e1/e2/e4 are all future-dated;
+    // e3/e5 are both in the past and must stay excluded).
+    const todaysEventos = SAMPLE.eventos.filter(x => x.event_date === ds(0));
+    SAMPLE.eventos = SAMPLE.eventos.filter(x => x.event_date !== ds(0));
     await window.refreshContent();
-    const hoyHtml = text('dash-eventos-hoy');
-    assert(hoyHtml.includes('Evento de hoy A') && hoyHtml.includes('Evento de hoy B') && hoyHtml.includes('Evento de hoy C'), 'Eventos de hoy shows every one of today\'s events, not a capped sample');
-    const idxA = hoyHtml.indexOf('Evento de hoy A'), idxB = hoyHtml.indexOf('Evento de hoy B'), idxC = hoyHtml.indexOf('Evento de hoy C');
-    assert(idxC < idxA && idxC < idxB, 'the featured-today event (C, 9pm — chronologically LAST) sorts first regardless of its own time');
-    assert(idxB < idxA, 'the remaining events fall back to ascending time order (B at 3pm before A at 7pm)');
-    assert(hoyHtml.includes('dc-evt-thumb'), 'each Eventos de hoy card shows an image thumbnail, not the old date box');
+    const tier3Pool = window.homeEventoPool();
+    assert(tier3Pool.length > 0 && tier3Pool.every(x => x.ds > ds(0)), 'with nothing active and nothing today, the pool falls back to any upcoming event, all future-dated');
+    assert(!tier3Pool.some(x => x.id === 'e3' || x.id === 'e5'), 'past events never enter the pool under any tier');
+    SAMPLE.eventos = SAMPLE.eventos.concat(todaysEventos);
+    await window.refreshContent();
+
+    // True empty edge case: zero events anywhere in the system — the one
+    // case where the merged slot is genuinely allowed to render nothing.
+    const allEventos = SAMPLE.eventos;
+    SAMPLE.eventos = [];
+    await window.refreshContent();
+    assert(window.homeEventoPool().length === 0, 'with zero events in the system, the pool is genuinely empty');
+    assert(text('dash-evento-slot') === '', 'Inicio\'s merged Evento slot renders nothing only in the true empty-system edge case');
+    SAMPLE.eventos = allEventos;
 
     SAMPLE.eventos_featured_bookings = [];
     await window.refreshContent();

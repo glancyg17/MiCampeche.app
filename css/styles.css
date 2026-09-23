@@ -370,6 +370,26 @@ svg{display:block}
 .dc-of-hero-price{font-size:13.5px;font-weight:700;margin-top:4px;text-shadow:0 1px 6px rgba(0,0,0,.4)}
 .dc-of-hero-price span{font-size:12px;font-weight:500;color:rgba(255,255,255,.75);text-decoration:line-through;margin-left:5px}
 
+/* Row 1 (Oferta + Evento) and the paired Noticias row both use this same
+   grid — gap matches .tienda-grid's existing card-gap convention. No
+   padding here: #dash-row1 (placed directly in dash-body, not wrapped by
+   dashSection()) carries its own; the Noticias pair is nested INSIDE a
+   dashSection()'s own .dash-section padding and would double up otherwise. */
+.dash-row-pair{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.dash-row-pair.solo{grid-template-columns:1fr}
+#dash-row1{padding:20px 18px 4px}
+.dc-row-kicker{position:absolute;top:12px;left:12px;background:rgba(0,0,0,.45);color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:4px 8px;border-radius:99px;z-index:1;backdrop-filter:blur(2px)}
+
+/* Special Slot — a single full-width admin-managed card, modeled on
+   .dc-of-hero's photo-with-text-overlay treatment (the closest existing
+   pattern) but full width, and with a solid dark fallback background so
+   it still reads as a deliberate banner on the rare row with no image. */
+.dc-special{position:relative;min-height:180px;background:var(--night)}
+.dc-special-img{position:absolute;inset:0;background-size:cover;background-position:center;background-color:var(--paper2)}
+.dc-special-body{position:absolute;left:0;right:0;bottom:0;padding:16px 18px;background:linear-gradient(180deg,rgba(18,32,29,0) 0%,rgba(18,32,29,.55) 45%,rgba(18,32,29,.92) 100%);color:#fff}
+.dc-special-title{font-family:"Fraunces",Georgia,serif;font-size:20px;font-weight:600;line-height:1.2;text-shadow:0 2px 8px rgba(0,0,0,.4)}
+.dc-special-sub{font-size:13px;margin-top:4px;color:rgba(255,255,255,.85);text-shadow:0 1px 6px rgba(0,0,0,.4)}
+
 /* ═══ NEWS CARDS ═══ */
 .news-list{padding:6px 18px 24px}
 .news-card{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid var(--line);cursor:pointer}

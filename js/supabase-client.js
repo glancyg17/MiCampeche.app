@@ -1041,6 +1041,14 @@ MC.fetchFeaturedBookings=async function(){
   if(error){console.error(error);return [];}
   return data;
 };
+/* Inicio's Special Slot — a single admin-managed full-width card, invisible
+   unless a row is flagged active. Public read (RLS: "active") covers this
+   for a guest too. */
+MC.fetchHomeSpecialSlot=async function(){
+  const {data,error}=await sb.from('home_special_slot').select('*').eq('active',true).order('updated_at',{ascending:false}).limit(1).maybeSingle();
+  if(error){console.error(error);return null;}
+  return data;
+};
 /* Creates the paid booking — only called from checkPaymentReturn() after
    a real Stripe redirect back with ?paid=evento_feature, same pattern as
    MC.submitOferta. The event itself was already submitted for free

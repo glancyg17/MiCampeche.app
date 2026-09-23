@@ -855,6 +855,15 @@ function nav(tab,fromBack){
     }
   }
   curScreen=tab;
+  if(tab!=='tienda')stopDestacadosRotation();
+  // Additional fix beyond the stop-on-leave rule above: renderInicio()
+  // (which itself calls startDestacadosRotation()) only runs on an actual
+  // data load, not on every plain nav('inicio') — so without this, the
+  // carousel would render correctly once, then sit frozen (not actively
+  // rotating) after the very first trip away from Inicio and back, until
+  // the next pull-to-refresh. Cheap and idempotent (stops/re-renders
+  // itself first) even if called redundantly.
+  if(tab==='inicio')startDestacadosRotation();
   mcSyncBackTrap();
   trackPage();
 }
@@ -979,21 +988,40 @@ function activeFeaturedEventIds(count){
   }
   return ids;
 }
-/* ══════════════ EVENTOS ON INICIO — the featured slot + today's full,
-   chronological schedule, both re-rendered every 5 min to pick up the
-   hourly featured rotation reasonably promptly ══════════════ */
+/* ══════════════ EVENTO ON INICIO — one slot, three-tier fallback ══════
+   1. Active Destacado bookings (paid), resolved to their real events and
+      sorted so ones whose event.ds is actually today come first — a
+      booking can be actively running today for an event that itself
+      happens later, and today-dated ones should win the rotation.
+   2. No active Destacado at all → today's events, any.
+   3. No Destacado and nothing today → all upcoming events.
+   Should only ever render empty if literally no event exists in any of
+   the three pools — re-rendered every 5 min to pick up the hourly
+   rotation reasonably promptly, same cadence as before. */
 let eventosRotationTimer=null;
 function startEventosRotation(){
   clearInterval(eventosRotationTimer);
-  eventosRotationTimer=setInterval(()=>{renderFeaturedEventoSection();renderEventosHoySection();},5*60*1000);
+  eventosRotationTimer=setInterval(renderHomeEventoSlot,5*60*1000);
 }
-function renderFeaturedEventoSection(){
-  const slot=document.getElementById('dash-featured-evento');
+function homeEventoPool(){
+  const activeBookings=FEATURED_BOOKINGS.filter(b=>b.start_date<=TODAY_DS&&b.end_date>=TODAY_DS);
+  const seen=new Set();
+  const destacado=activeBookings
+    .map(b=>EVENTOS.find(ev=>String(ev.id)===String(b.event_id)))
+    .filter(ev=>{if(!ev||seen.has(ev.id))return false;seen.add(ev.id);return true;})
+    .sort((a,b)=>(a.ds===TODAY_DS?-1:0)-(b.ds===TODAY_DS?-1:0));
+  if(destacado.length)return destacado;
+  const today=EVENTOS.filter(x=>x.ds===TODAY_DS);
+  if(today.length)return today;
+  return EVENTOS.filter(x=>x.ds>TODAY_DS);
+}
+function renderHomeEventoSlot(){
+  const slot=document.getElementById('dash-evento-slot');
   if(!slot)return;
-  const ids=activeFeaturedEventIds(1);
-  const x=ids.length?EVENTOS.find(ev=>String(ev.id)===ids[0]):null;
-  if(!x){slot.innerHTML='';return;} // nothing currently featured, or the featured event fell outside the fetched EVENTOS window
-  slot.innerHTML=dashSection('eventos','Evento destacado','anuncios', `
+  const pool=homeEventoPool();
+  if(!pool.length){slot.innerHTML='';syncDashRow1Width();return;} // the one true empty case: no events anywhere in the system
+  const x=pool[new Date().getHours()%pool.length];
+  slot.innerHTML=`
     <div class="evt-card" onclick="openEvento('${x.id}')">
       ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
       <div class="evt-body">
@@ -1007,28 +1035,28 @@ function renderFeaturedEventoSection(){
         ${svgIco('chevronR','evt-arr')}
       </div>
     </div>
-  `);
+  `;
+  syncDashRow1Width();
 }
-function renderEventosHoySection(){
-  const slot=document.getElementById('dash-eventos-hoy');
-  if(!slot)return; // Inicio isn't the active screen (or hasn't rendered yet) — nothing to update
-  const today=EVENTOS.filter(x=>x.ds===TODAY_DS);
-  if(!today.length){slot.innerHTML='';return;}
-  const featuredIds=activeFeaturedEventIds(2);
-  // Every one of today's events shows now (not a capped random sample),
-  // chronological by time — except a featured event happening today
-  // jumps to the front regardless of its own time.
-  const sorted=today.slice().sort((a,b)=>{
-    const aFeat=featuredIds.includes(String(a.id)),bFeat=featuredIds.includes(String(b.id));
-    if(aFeat!==bFeat)return aFeat?-1:1;
-    return (a.time||'').localeCompare(b.time||'');
-  });
-  slot.innerHTML=dashSection('eventos','Eventos de hoy','anuncios', sorted.map(x=>`
-    <div class="dash-card dc-evt" onclick="openEvento('${x.id}')">
-      <div class="dc-evt-thumb" style="background-image:url('${x.img}')"></div>
-      <div><div class="dc-evt-name">${e(x.name)}</div><div class="dc-evt-meta">${svgIco('clock')} ${x.time?e(x.time):'Hora por confirmar'}${x.loc?' · '+e(x.loc):''}</div></div>
+
+/* Inicio's Special Slot — a single admin-managed card, invisible unless a
+   row in home_special_slot is flagged active (which it isn't right now —
+   the table is empty). Full-width, sits above everything else. */
+async function renderSpecialSlot(){
+  const el=document.getElementById('dash-special-slot');
+  if(!el)return;
+  const slot=await MC.fetchHomeSpecialSlot();
+  if(!slot){el.innerHTML='';el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="dash-card dc-special"${slot.link_url?` onclick="location.href='${e(slot.link_url)}'"`:''}>
+      ${slot.image_url?`<div class="dc-special-img" style="background-image:url('${e(slot.image_url)}')"></div>`:''}
+      ${(slot.title||slot.subtitle)?`<div class="dc-special-body">
+        ${slot.title?`<div class="dc-special-title">${e(slot.title)}</div>`:''}
+        ${slot.subtitle?`<div class="dc-special-sub">${e(slot.subtitle)}</div>`:''}
+      </div>`:''}
     </div>
-  `).join(''));
+  `;
 }
 
 /* Below-hero row of 4 quick-nav shortcuts — scrolls away with the rest of
@@ -1052,46 +1080,66 @@ function renderInicioQuickNav(){
 }
 
 function renderInicio(){
-  const w=WEATHER;
   renderWelcomeHero();
   renderInicioQuickNav();
   startEventosRotation();
 
   const topNews=NOTICIAS.slice(0,2);
+  const liveOffers=OFERTAS.filter(o=>o.sold<o.total&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
+  const todaysOffers=liveOffers.filter(o=>o.postedDs===TODAY_DS);
+  const offerPool=todaysOffers.length?todaysOffers:liveOffers;
+  const o=offerPool.length?offerPool[Math.floor(Math.random()*offerPool.length)]:null;
 
-  let h='';
+  let h='<div id="dash-special-slot" style="display:none"></div>';
 
-  const availableOffers=OFERTAS.filter(o=>o.sold<o.total&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
-    .sort((a,b)=>(a.tier==='premium'?-1:0)-(b.tier==='premium'?-1:0));
-  if(availableOffers.length){
-    const o=availableOffers[0]; // Inicio shows only the single newest live deal, no carousel — the 3-per-day/carousel redesign is a separate, not-yet-scoped follow-up, deliberately not part of this change
+  h+='<div class="dash-row-pair" id="dash-row1">';
+  if(o){
     const pct=Math.round((1-o.priceNow/o.priceWas)*100);
-    h+=dashSection('tienda','Oferta del día','tienda', `
+    h+=`
       <div class="dash-card dc-of-hero" onclick="nav('tienda')">
         <div class="dc-of-hero-img" style="background-image:url('${o.img}')"></div>
         <span class="dc-of-hero-pct">-${pct}%</span>
+        <span class="dc-row-kicker">Oferta del día</span>
         <div class="dc-of-hero-overlay">
           <div class="dc-of-hero-name">${e(o.name)}</div>
           <div class="dc-of-hero-price">$${o.priceNow} <span>en vez de $${o.priceWas}</span></div>
         </div>
       </div>
-    `);
+    `;
   }
+  h+='<div id="dash-evento-slot"></div>';
+  h+='</div>';
 
-  h+=dashSection('news','Noticias de hoy','noticias', topNews.map(n=>`
+  h+=`<div id="inicio-destacados-wrap" style="display:none">
+    <div class="destacados-hdr">Destacados</div>
+    <div class="tienda-grid" id="inicio-destacados-grid"></div>
+  </div>`;
+
+  h+=dashSection('news','Noticias de hoy','noticias', `<div class="dash-row-pair">${topNews.map(n=>`
     <div class="dash-card dc-news" onclick="showNoticia('${n.id}')">
       <div class="dc-news-thumb" style="background-image:url('${n.img}')"></div>
       <div class="dc-news-body"><div class="dc-news-src">${e(n.source)}</div><div class="dc-news-title">${e(n.title)}</div></div>
     </div>
-  `).join(''));
-
-  h+=`<div id="dash-featured-evento"></div>`;
-  h+=`<div id="dash-eventos-hoy"></div>`;
+  `).join('')}</div>`);
 
   h+=`<div style="height:24px"></div>`;
   document.getElementById('dash-body').innerHTML=h;
-  renderFeaturedEventoSection();
-  renderEventosHoySection();
+  renderSpecialSlot();
+  renderHomeEventoSlot();
+  syncDashRow1Width();
+  startDestacadosRotation();
+}
+/* Row 1 collapses to a single full-width column if only one side ended up
+   with content — o being null (no live offers at all) or homeEventoPool()
+   coming back empty (rare, only when literally no event exists anywhere)
+   are both technically possible. renderHomeEventoSlot() already calls this
+   itself after populating its side; called once more right after Row 1's
+   HTML lands in the DOM in case o was null and that call fired first. */
+function syncDashRow1Width(){
+  const row=document.getElementById('dash-row1');
+  if(!row)return;
+  const filled=[...row.children].filter(c=>c.innerHTML.trim()).length;
+  row.classList.toggle('solo',filled<=1);
 }
 function dashSection(ico,label,goTab,cardsHtml){
   const bgMap={news:'var(--gulf)',eventos:'var(--wall-dk)',tienda:'var(--palm)',empleos:'var(--gulf-dk)',alertas:'var(--signal)',reportar:'var(--signal)'};
@@ -1597,22 +1645,26 @@ function eligibleDestacados(){
     .sort((a,b)=>String(a.id).localeCompare(String(b.id))); // stable order across re-renders/rotations
 }
 function renderDestacadosCarousel(){
-  const wrap=document.getElementById('destacados-wrap');
-  if(!wrap)return;
+  const mounts=[
+    {wrap:document.getElementById('destacados-wrap'),grid:document.getElementById('destacados-grid')},
+    {wrap:document.getElementById('inicio-destacados-wrap'),grid:document.getElementById('inicio-destacados-grid')}
+  ].filter(m=>m.wrap&&m.grid);
+  if(!mounts.length)return;
   const pool=eligibleDestacados();
   if(!pool.length){
-    wrap.style.display='none';
+    mounts.forEach(m=>m.wrap.style.display='none');
     if(destacadosRotationTimer){clearInterval(destacadosRotationTimer);destacadosRotationTimer=null;}
     return;
   }
-  wrap.style.display='block';
   const showN=Math.min(2,pool.length);
   const start=destacadosRotationIndex%pool.length;
   const slice=[];
   for(let i=0;i<showN;i++)slice.push(pool[(start+i)%pool.length]);
-  const grid=document.getElementById('destacados-grid');
-  grid.innerHTML=slice.map(prodCardHtml).join('');
-  wireAdminRemove(grid);
+  mounts.forEach(m=>{
+    m.wrap.style.display='block';
+    m.grid.innerHTML=slice.map(prodCardHtml).join('');
+    wireAdminRemove(m.grid);
+  });
 }
 /* Timer only runs while Mercado is the visible sub-tab (see setTiendaMode
    below), and only when there are actually more than 2 eligible items to
