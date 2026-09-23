@@ -14,11 +14,12 @@
 <meta property="og:url" content="https://micampeche.app">
 <meta property="og:image" content="https://micampeche.app/assets/icons/MiCampeche-app-icon.png">
 <meta name="theme-color" content="#000612">
+<meta name="mc-build" content="30e1a65c45">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png">
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=30e1a65c45">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -532,8 +533,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js"></script>
-<script src="js/app.js"></script>
+<script src="js/supabase-client.js?v=30e1a65c45"></script>
+<script src="js/app.js?v=30e1a65c45"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads
@@ -569,7 +570,8 @@ if(new URLSearchParams(location.search).get('forceupdate')==='1'){
        menu open, nothing focused, not mid Stripe redirect.
    Retried on every foreground, focus, and a 10s tick until it lands.
    reg.update() is polled on foreground + a 15-min timer so an always-open
-   installed PWA still notices new deploys quickly. */
+   installed PWA still notices new deploys quickly. Below that, a build
+   self-heal (see BUILD SELF-HEAL) covers whatever the worker can't. */
 let swReloadPending=false,swReloading=false;
 function swSafeToReload(){
   if(document.hidden)return true;
@@ -587,16 +589,99 @@ function swMaybeReload(){
     window.location.reload();
   }
 }
+/* ══════════════ BUILD SELF-HEAL — the safety net under the service worker ══════════════
+   Every shell file carries the same build id (scripts/stamp.js): the HTML
+   (<meta name="mc-build">), app.js (window.MC_BUILD), supabase-client.js and
+   the CSS (--mc-build). sw.js only caches bytes that match its own build, so
+   a poisoned cache can't form anymore — this is the backstop for everything
+   else (iOS quirks, a CDN serving stale files to a first-time visitor, a
+   worker that never manages to update):
+     1. MIXED BUILDS — if the page's own pieces disagree, the UI is running on
+        a mixture and can be broken. Rebuild from scratch immediately.
+     2. STALE BUILD — /version.json is fetched with a unique URL (so no CDN or
+        browser cache can answer it). If it names a newer build than the one
+        running, ask the worker to update (normal path: worker installs →
+        controllerchange → reload at the next safe moment). If that hasn't
+        landed after 60s, rebuild from scratch at the next safe moment — the
+        exact reset that used to require clearing browsing data by hand.
+   Rebuild = unregister workers + delete caches + reload on a unique URL.
+   Capped at 2 per session, and once per remote build, so it can never loop. */
+const MC_HEAL_KEY='mc_heal_count';
+const MC_HEAL_DELAY=window.__mcHealDelay||60000;
+let mcHealPendingFor=null;
+function mcNavigate(url){location.replace(url);}
+async function mcHealAndReload(reason){
+  let n=0;try{n=parseInt(sessionStorage.getItem(MC_HEAL_KEY)||'0',10)||0;}catch(e){}
+  if(n>=2){console.warn('Self-heal skipped (already tried twice this session):',reason);return;}
+  try{sessionStorage.setItem(MC_HEAL_KEY,String(n+1));}catch(e){}
+  console.warn('Self-heal:',reason);
+  swReloading=true;
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){console.error('Self-heal cleanup failed:',e);}
+  mcNavigate(location.origin+'/?b='+Date.now());
+}
+function mcBuildState(){
+  const meta=(document.querySelector('meta[name="mc-build"]')||{}).content||'';
+  let css='';
+  try{css=(getComputedStyle(document.documentElement).getPropertyValue('--mc-build')||'').replace(/["'\s]/g,'');}catch(e){}
+  return {html:meta,app:window.MC_BUILD||'',client:window.MC_BUILD_CLIENT||'',css};
+}
+// null = consistent (or not stamped yet — can't judge); otherwise a description of the mix.
+function mcBuildsMixed(){
+  const b=mcBuildState();
+  if(!b.html||!b.app)return null;
+  const mixed=b.app!==b.html||(b.client&&b.client!==b.html)||(b.css&&b.css!==b.html);
+  return mixed?('mixed builds: html='+b.html+' app='+b.app+' client='+b.client+' css='+b.css):null;
+}
+function mcHealWhenSafe(remote){
+  const t=setInterval(()=>{
+    if(!swSafeToReload())return;
+    clearInterval(t);
+    try{localStorage.setItem('mc_heal_for',remote);}catch(e){}
+    mcHealAndReload('build '+remote+' was never applied by the service worker (running '+(window.MC_BUILD||'?')+')');
+  },10000);
+}
+async function mcCheckRemoteBuild(reg){
+  if(!navigator.onLine)return;
+  let remote='';
+  try{
+    const r=await fetch('/version.json?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok)return;
+    remote=((await r.json())||{}).build||'';
+  }catch(e){return;}
+  const running=window.MC_BUILD||'';
+  if(!remote||!running||remote===running)return;
+  if(reg)reg.update().catch(()=>{});   // normal path: new worker → controllerchange → swMaybeReload
+  let healed='';try{healed=localStorage.getItem('mc_heal_for')||'';}catch(e){}
+  if(healed===remote||mcHealPendingFor===remote)return;   // already tried for this build
+  mcHealPendingFor=remote;
+  setTimeout(()=>{
+    if((window.MC_BUILD||'')===remote||swReloading){mcHealPendingFor=null;return;}
+    if(swReloadPending){mcHealPendingFor=null;return;}     // the worker DID update; reload is just waiting for a safe moment
+    mcHealWhenSafe(remote);
+  },MC_HEAL_DELAY);
+}
+{ const mixed=mcBuildsMixed(); if(mixed)mcHealAndReload(mixed); }
+
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     const hadController=!!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
-      const check=()=>{ if(navigator.onLine)reg.update().catch(()=>{}); };
+      const check=()=>{ if(navigator.onLine){ reg.update().catch(()=>{}); mcCheckRemoteBuild(reg); } };
       document.addEventListener('visibilitychange',()=>{ if(!document.hidden)check(); swMaybeReload(); });
       window.addEventListener('online',check);
       window.addEventListener('focus',swMaybeReload);
       setInterval(check,15*60*1000);
       setInterval(swMaybeReload,10000);
+      setTimeout(()=>mcCheckRemoteBuild(reg),3000);
     }).catch(err=>console.error('SW registration failed:',err));
 
     navigator.serviceWorker.addEventListener('controllerchange',()=>{
