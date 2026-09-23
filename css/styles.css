@@ -128,9 +128,12 @@ svg{display:block}
 
 /* ═══ TOP CHROME (now just a header, no nav) ═══ */
 .chrome{background:linear-gradient(165deg,var(--night3),var(--night));flex-shrink:0;padding-top:env(safe-area-inset-top);position:relative;z-index:1;box-shadow:0 2px 10px rgba(0,6,18,.22)}
-.topbar{padding:16px 18px 15px;display:flex;align-items:center;justify-content:space-between}
-.brand{display:flex;align-items:center;gap:8px;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.brand-logo{height:26px;width:auto;display:block}
+.topbar{padding:12px 18px;min-height:64px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.brand-logo{height:40px;width:auto;display:block;max-width:100%;object-fit:contain;object-position:left center}
+@media (max-width:399px){.brand-logo{height:36px}}
+@media (max-width:379px){.brand-logo{height:32px}}
+@media (max-width:339px){.brand-logo{height:26px}}
 .menu-hdr .brand-logo{height:24px}
 .tb-icon{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center;color:var(--paper);cursor:pointer;text-decoration:none}
 .tb-badge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 3px;border-radius:99px;background:var(--signal);color:#fff;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;line-height:1;border:1.5px solid var(--night)}
@@ -337,7 +340,7 @@ svg{display:block}
 .wh-am .wh-photo{background-image:url('/assets/images/MiCampeche-Hero.jpg');--wh-pos:32% 50%}
 .wh-pm .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-2.jpg');--wh-pos:50% 50%}
 .wh-noche .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-3.jpg');--wh-pos:60% 50%}
-.wh-sheet{position:relative;margin-top:-24px;background:var(--paper2);border-radius:24px 24px 0 0;padding:20px 20px 4px}
+.wh-sheet{position:relative;background:var(--surface);padding:18px 20px;border-bottom:1px solid var(--line2)}
 .wh-greet{font-size:12.5px;font-weight:700;color:var(--gulf);letter-spacing:.03em}
 [data-theme="dark"] .wh-greet{color:var(--gulf-soft)}
 .wh-city{font-family:"Fraunces",Georgia,serif;font-size:30px;font-weight:600;letter-spacing:-.015em;line-height:1.12;margin-top:3px;color:var(--ink)}
@@ -349,7 +352,7 @@ svg{display:block}
    .dash-hdr-ico since 4 need to fit one row comfortably. Each tile gets
    its own badge color via nth-child, for variety rather than 4 identical
    gray icons — colors pulled from the existing palette, no new tokens. */
-#inicio-quicknav{display:flex;gap:6px;padding:16px 18px 4px}
+#inicio-quicknav{display:flex;gap:6px;padding:18px 18px 4px}
 .qn-tile{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:none;padding:4px 2px;border-radius:var(--r);cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent}
 .qn-tile:active{background:var(--paper2)}
 .qn-tile-ico{width:46px;height:46px;border-radius:14px;background:var(--palm);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
