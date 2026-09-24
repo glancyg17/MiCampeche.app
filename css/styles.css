@@ -1,4 +1,4 @@
-:root{--mc-build:"3397fe2eb5";}
+:root{--mc-build:"69c857e381";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -712,8 +712,21 @@ svg{display:block}
 .photo-upload-btn .ico{width:16px;height:16px}
 .photo-upload-btn-sm{display:flex;align-items:center;justify-content:center;width:72px;height:72px;flex-shrink:0;background:var(--paper2);border:1.5px dashed var(--line2);border-radius:var(--rs);cursor:pointer;color:var(--gulf)}
 .photo-upload-btn-sm .ico{width:20px;height:20px}
-.pv-gallery{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:var(--rs);-webkit-overflow-scrolling:touch}
-.pv-gallery-img{flex:0 0 100%;height:200px;background-size:cover;background-position:center;background-color:var(--paper2);scroll-snap-align:start}
+.pv-carousel{position:relative;border-radius:var(--rs);overflow:hidden;background:var(--paper2)}
+.pv-car-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-x:contain}
+.pv-car-track::-webkit-scrollbar{display:none}
+.pv-car-slide{flex:0 0 100%;scroll-snap-align:center;background:var(--paper2)}
+.pv-car-slide img{display:block;width:100%;aspect-ratio:1/1;max-height:56vh;object-fit:contain;-webkit-user-drag:none;user-select:none}
+.pv-car-count{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;pointer-events:none}
+.pv-car-dots{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:6px;padding:5px 9px;border-radius:99px;background:rgba(0,0,0,.35)}
+.pv-car-dot{width:7px;height:7px;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.55);cursor:pointer}
+.pv-car-dot.on{background:#fff;transform:scale(1.25)}
+.pv-car-nav{display:none;position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.9);color:var(--ink);box-shadow:var(--sh1);align-items:center;justify-content:center;cursor:pointer;padding:0}
+.pv-car-nav svg{width:16px;height:16px}
+.pv-car-nav.prev{left:8px}
+.pv-car-nav.prev svg{transform:scaleX(-1)}
+.pv-car-nav.next{right:8px}
+@media (hover:hover) and (pointer:fine){.pv-car-nav{display:flex}}
 
 /* ═══ POST / SUBMISSION MODAL ═══ */
 .modal-bg{position:fixed;inset:0;background:rgba(18,32,29,.55);z-index:200;display:none;align-items:flex-end;backdrop-filter:blur(2px)}

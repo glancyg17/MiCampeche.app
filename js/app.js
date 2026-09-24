@@ -1,4 +1,4 @@
-window.MC_BUILD='3397fe2eb5';
+window.MC_BUILD='69c857e381';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -644,7 +644,7 @@ function renderPhotoUploadButtonMulti(fieldKey){
   const wrap=document.getElementById('pf-'+fieldKey+'-wrap');
   if(!wrap)return;
   const urls=uploadedImageUrlsMulti[fieldKey]||[];
-  const max=uploadedImageUrlsMultiMax[fieldKey]||3;
+  const max=uploadedImageUrlsMultiMax[fieldKey]||5;
   const thumbs=urls.map((url,i)=>`
     <div style="position:relative;display:inline-block">
       <img src="${url}" style="width:72px;height:72px;object-fit:cover;border-radius:var(--rs);display:block">
@@ -662,7 +662,7 @@ async function handlePhotoSelectMulti(input,fieldKey){
   input.value=''; // lets the same file be re-picked later if removed and re-added
   if(!file)return;
   if(!file.type.startsWith('image/')){toast('Selecciona un archivo de imagen');return;}
-  const max=uploadedImageUrlsMultiMax[fieldKey]||3;
+  const max=uploadedImageUrlsMultiMax[fieldKey]||5;
   const urls=uploadedImageUrlsMulti[fieldKey]||(uploadedImageUrlsMulti[fieldKey]=[]);
   if(urls.length>=max)return; // the add-tile is already hidden at cap; this is just a guard
   const wrap=document.getElementById('pf-'+fieldKey+'-wrap');
@@ -1588,6 +1588,42 @@ function prodCardHtml(x){
   `;
 }
 
+/* Product/Clasificado detail carousel. Real <img> tags with object-fit:contain
+   so the WHOLE photo is always visible (letterboxed on a light background,
+   never cropped). 1 image = same stage, no controls. 2+ = swipeable
+   scroll-snap track + "n / N" counter + dots; arrow buttons appear only on
+   hover-capable (desktop) pointers. */
+function pvCarouselHtml(imgs){
+  if(!imgs||!imgs.length)return '';
+  const n=imgs.length;
+  const slides=imgs.map((u,i)=>`<div class="pv-car-slide"><img src="${e(u)}" alt="" draggable="false" loading="${i?'lazy':'eager'}"></div>`).join('');
+  if(n===1)return `<div class="pv-carousel"><div class="pv-car-track">${slides}</div></div>`;
+  return `<div class="pv-carousel">
+    <div class="pv-car-track" onscroll="pvCarScroll(this)">${slides}</div>
+    <span class="pv-car-count">1 / ${n}</span>
+    <button type="button" class="pv-car-nav prev" onclick="pvCarGo(this,-1)" aria-label="Foto anterior">${svgIco('chevronR')}</button>
+    <button type="button" class="pv-car-nav next" onclick="pvCarGo(this,1)" aria-label="Foto siguiente">${svgIco('chevronR')}</button>
+    <div class="pv-car-dots">${imgs.map((_,i)=>`<button type="button" class="pv-car-dot${i?'':' on'}" onclick="pvCarTo(this,${i})" aria-label="Foto ${i+1}"></button>`).join('')}</div>
+  </div>`;
+}
+function pvCarIdx(track){
+  return Math.max(0,Math.min(track.children.length-1,Math.round(track.scrollLeft/(track.clientWidth||1))));
+}
+function pvCarScroll(track){
+  const root=track.parentElement,i=pvCarIdx(track);
+  const c=root.querySelector('.pv-car-count');
+  if(c)c.textContent=(i+1)+' / '+track.children.length;
+  root.querySelectorAll('.pv-car-dot').forEach((d,k)=>d.classList.toggle('on',k===i));
+}
+function pvCarTo(el,i){
+  const t=el.closest('.pv-carousel').querySelector('.pv-car-track');
+  t.scrollTo({left:i*t.clientWidth,behavior:'smooth'});
+}
+function pvCarGo(el,d){
+  const t=el.closest('.pv-carousel').querySelector('.pv-car-track');
+  pvCarTo(el,Math.max(0,Math.min(t.children.length-1,pvCarIdx(t)+d)));
+}
+
 /* Full listing view — replaces the old "próximamente" stub. Shows the
    description and every transaction detail, then the direct-contact CTAs
    the seller opted into. MiCampeche is never in the loop: WhatsApp / call
@@ -1614,9 +1650,7 @@ function openProdView(sellerType,id){
     cta=`<div class="field-note">Este vendedor no dejó datos de contacto.</div>`;
   }
   const galleryImgs=(x.imgs&&x.imgs.length)?x.imgs:(x.img?[x.img]:[]);
-  const galleryHtml=galleryImgs.length>1
-    ?`<div class="pv-gallery">${galleryImgs.map(u=>`<div class="pv-gallery-img" style="background-image:url('${e(u)}')"></div>`).join('')}</div>`
-    :(galleryImgs.length?`<div class="pv-hero" style="background-image:url('${e(galleryImgs[0])}')"></div>`:'');
+  const galleryHtml=pvCarouselHtml(galleryImgs);
   document.getElementById('modal-title').textContent=x.name;
   document.getElementById('modal-body').innerHTML=`
     ${galleryHtml}
@@ -2217,7 +2251,7 @@ const POST_FORMS={
     {k:'lead_time',lbl:'¿Con cuánta anticipación?',type:'text',ph:'Ej. 2 días',showIf:{field:'availability',val:'pedido'}},
     {k:'fulfillment',lbl:'¿Cómo lo entregas?',type:'seg',opts:[['recoger','Recoger'],['entrega','Entrega a domicilio'],['ambos','Ambos']]},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.'},
-    {k:'photo',lbl:'Fotos del producto',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista — usa buena luz y muestra bien lo que vendes.'},
+    {k:'photo',lbl:'Fotos del producto',type:'imgupload-multi',max:5,note:'Puedes agregar hasta 5 fotos. La primera es la que se ve en la lista — usa buena luz y muestra bien lo que vendes.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, tamaño, disponibilidad...'}
   ]},
   clasificado:{title:'Publicar en Clasificados',note:'Un artículo por persona. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
@@ -2229,7 +2263,7 @@ const POST_FORMS={
     {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',note:'Los interesados te contactarán a este número por los medios que elijas.'},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.'},
-    {k:'photo',lbl:'Fotos del artículo',type:'imgupload-multi',max:3,note:'Puedes agregar hasta 3 fotos. La primera es la que se ve en la lista.'},
+    {k:'photo',lbl:'Fotos del artículo',type:'imgupload-multi',max:5,note:'Puedes agregar hasta 5 fotos. La primera es la que se ve en la lista.'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles, estado, disponibilidad...'}
   ]},
   mandadito:{title:'Registrarme como mandadito',note:'Revisamos cada registro antes de que aparezcas en el directorio. Al enviar este formulario te pediremos, por WhatsApp, una foto de tu identificación, una selfie, la placa de tu vehículo y tu licencia vigente — ten esas fotos a la mano.',fields:[
@@ -2383,7 +2417,7 @@ async function openPost(kind){
   uploadedImageUrlsMultiMax={};
   form.fields.forEach(f=>{
     if(f.type==='imgupload')renderPhotoUploadButton(f.k);
-    else if(f.type==='imgupload-multi'){uploadedImageUrlsMultiMax[f.k]=f.max||3;uploadedImageUrlsMulti[f.k]=[];renderPhotoUploadButtonMulti(f.k);}
+    else if(f.type==='imgupload-multi'){uploadedImageUrlsMultiMax[f.k]=f.max||5;uploadedImageUrlsMulti[f.k]=[];renderPhotoUploadButtonMulti(f.k);}
   });
   applyConditionalRows(form);
   if(kind==='producto'){

@@ -2350,7 +2350,7 @@ const fakeClient = {
     assert(text('modal-title') === 'Publicar un producto', 'once an admin approves the business, Producto opens the real form');
 
     // ── Real multi-image upload (Producto/Clasificado use imgupload-multi,
-    // up to 3, at least one required). Uses a real 2000x1000 JPEG (via
+    // up to 5, at least one required). Uses a real 2000x1000 JPEG (via
     // node-canvas) run through the REAL resize pipeline (FileReader → Image
     // decode → canvas draw → toBlob) — not a bypass — then the real
     // MC.uploadImage() against the fake Storage client. ──
@@ -2370,12 +2370,12 @@ const fakeClient = {
       assert(lastInsert.storageUpload.size < jpegBuffer.length, 'the resized/compressed blob is genuinely smaller than the original 2000x1000 source — the resize step actually did something, not a no-op');
       assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('<img'), 'a real preview thumbnail renders after upload completes');
 
-      // A second photo appends; the add-tile stays available under the cap of 3.
+      // A second photo appends; the add-tile stays available under the cap of 5.
       const c2 = createCanvas(400, 400); c2.getContext('2d').fillRect(0, 0, 400, 400);
       await window.handlePhotoSelectMulti({ files: [new window.File([c2.toBuffer('image/jpeg')], 't2.jpg', { type: 'image/jpeg' })] }, 'photo');
       await new Promise(r => setTimeout(r, 100));
       assert((doc.getElementById('pf-photo-wrap').innerHTML.match(/<img/g) || []).length === 2, 'a second photo appends rather than replacing the first');
-      assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('photo-upload-btn-sm'), 'the add-tile is still shown while under the 3-photo cap');
+      assert(doc.getElementById('pf-photo-wrap').innerHTML.includes('photo-upload-btn-sm'), 'the add-tile is still shown while under the 5-photo cap');
 
       doc.getElementById('pf-name').value = 'Producto con foto';
       window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]')); // pills start unselected now
@@ -2957,9 +2957,10 @@ const fakeClient = {
     {
       window.openProdView('negocio', 'p1');
       assert(text('modal-title') === 'Producto test', 'tapping a product opens its detail view, not a "próximamente" toast');
-      assert(text('modal-body').includes('pv-gallery') && (text('modal-body').match(/pv-gallery-img/g) || []).length === 2
-        && text('modal-body').includes("url('https://example.com/p1-a.jpg')") && text('modal-body').includes("url('https://example.com/p1-b.jpg')"),
-        'a product with 2 image_urls shows the swipeable multi-image gallery, in order');
+      assert(text('modal-body').includes('pv-carousel') && (text('modal-body').match(/pv-car-slide/g) || []).length === 2
+        && text('modal-body').includes('src="https://example.com/p1-a.jpg"') && text('modal-body').includes('src="https://example.com/p1-b.jpg"')
+        && text('modal-body').includes('pv-car-count') && (text('modal-body').match(/class="pv-car-dot(?:"| )/g) || []).length === 2,
+        'a product with 2 image_urls shows the swipeable multi-image carousel, in order, with a counter and dots');
       const links = [...doc.querySelectorAll('#modal-body a')];
       // Contact buttons are gated (guardedContact), so the real URL lives in
       // the onclick, not the href — see the gate tests just below.
@@ -2973,12 +2974,32 @@ const fakeClient = {
         'no contact button exposes the seller\'s number in its href — it only exists inside the gated onclick');
 
       window.openProdView('personal', 'c1');
-      assert(text('modal-body').includes('pv-hero') && !text('modal-body').includes('pv-gallery'),
-        'a clasificado with a single image_urls entry shows the plain hero, not the gallery');
+      assert(text('modal-body').includes('pv-carousel') && (text('modal-body').match(/pv-car-slide/g) || []).length === 1
+        && !text('modal-body').includes('pv-car-count') && !text('modal-body').includes('pv-car-dot'),
+        'a clasificado with a single image_urls entry shows the carousel with one slide and no counter/dots controls');
       const links2 = [...doc.querySelectorAll('#modal-body a')];
       assert(links2.length === 1 && (links2[0].getAttribute('onclick') || '').includes('wa.me') && (links2[0].getAttribute('onclick') || '').includes('529813004000'),
         'a clasificado that only chose WhatsApp shows exactly one contact button, to its own per-post number');
       assert(text('modal-body').includes('Centro'), 'the clasificado detail view shows its zone');
+
+      // ── pvCarouselHtml() as a pure function: empty/1/3 images, and escaping. ──
+      assert(window.pvCarouselHtml([]) === '', 'pvCarouselHtml returns an empty string for zero images');
+      {
+        const one = window.pvCarouselHtml(['https://example.com/a.jpg']);
+        assert((one.match(/pv-car-slide/g) || []).length === 1 && !one.includes('pv-car-dot') && !one.includes('pv-car-count'),
+          'a single image renders one slide with no dots/counter controls');
+      }
+      {
+        const three = window.pvCarouselHtml(['https://example.com/a.jpg', 'https://example.com/b.jpg', 'https://example.com/c.jpg']);
+        assert((three.match(/pv-car-slide/g) || []).length === 3, 'three images render three slides');
+        assert((three.match(/class="pv-car-dot(?:"| )/g) || []).length === 3, 'three images render three dots');
+        assert(/class="pv-car-dot on"/.test(three) && (three.match(/class="pv-car-dot on"/g) || []).length === 1, 'exactly the first dot starts marked "on"');
+        assert(three.includes('1 / 3'), 'the counter starts at "1 / 3"');
+      }
+      {
+        const escaped = window.pvCarouselHtml(['https://example.com/a.jpg?x="><script>alert(1)</script>']);
+        assert(!escaped.includes('"><script>') && !/<script>alert/.test(escaped), 'a URL containing a quote/angle-bracket is escaped, not left able to break out of the src attribute');
+      }
 
       // ── Contact buttons run through the same signed-in + verified gate as
       //    writes. Navigation is a hash-only URL because jsdom can't follow
