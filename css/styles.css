@@ -1,4 +1,4 @@
-:root{--mc-build:"09fcdc7281";}
+:root{--mc-build:"3397fe2eb5";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -413,6 +413,10 @@ svg{display:block}
 .dash-row-pair{display:grid;grid-template-columns:1fr 1fr;gap:13px}
 .dash-row-pair.solo{grid-template-columns:1fr}
 #dash-row1{padding:20px 18px 4px}
+.dash-col{min-width:0}
+.dash-col-hdr{display:flex;flex-direction:column;align-items:flex-start;gap:1px;margin-bottom:8px;padding-left:2px}
+.dash-col-hdr h3{font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.25;white-space:nowrap}
+.dash-col-hdr .dash-more{padding:0;font-size:12px;line-height:1.3}
 .dc-row-kicker{position:absolute;top:12px;left:12px;background:rgba(0,0,0,.45);color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:4px 8px;border-radius:99px;z-index:1;backdrop-filter:blur(2px)}
 
 /* Special Slot — a single full-width admin-managed card, modeled on

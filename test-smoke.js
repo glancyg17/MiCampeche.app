@@ -666,6 +666,20 @@ const fakeClient = {
   assert(dashBody.includes('dc-of-hero-img') && dashBody.includes('dc-of-hero-overlay') && !dashBody.includes('dc-of-img'), 'the Oferta del día card uses the new hero-style classes, not the old 48px-thumbnail ones');
   assert(dashBody.includes('class="dash-card dc-of-hero" onclick="nav(\'tienda\')"'), 'the Oferta del día card still links to Tienda');
 
+  // ── Row 1 leading headers: "Oferta del día" over the left card, "Eventos"
+  //    over the right, each with its own two-line "Ver todo ›" link — scoped
+  //    to #dash-row1's own innerHTML so the Noticias section's unrelated
+  //    "Ver todo" (via dashSection()) isn't miscounted. ──
+  {
+    const row1 = doc.getElementById('dash-row1');
+    const row1Html = row1 ? row1.innerHTML : '';
+    assert((row1Html.match(/dash-col-hdr/g) || []).length === 2, 'both Row 1 columns get a leading dash-col-hdr when an oferta and an event both exist');
+    assert(row1Html.includes('<h3>Oferta del día</h3>') && row1Html.includes('<h3>Eventos</h3>'), 'the two column headers read "Oferta del día" and "Eventos"');
+    assert((row1Html.match(/Ver todo/g) || []).length === 2, 'each column header carries its own "Ver todo" link');
+    assert(row1Html.includes(`onclick="nav('anuncios');setAnunciosMode('eventos')"`), 'the Eventos "Ver todo" link jumps straight to the Eventos sub-tab, matching the quick-nav tile');
+    assert(row1 && !row1.classList.contains('solo'), 'Row 1 is NOT collapsed to solo width when both an oferta and an event exist');
+  }
+
   // ── Oferta del día pool/pick logic (homeOfertaPool/pickHomeOferta): three
   //    tiers (today's real ofertas > any real live oferta > examples), and
   //    a slight 2:1 premium bias when picking within whichever pool. ──
@@ -3617,7 +3631,10 @@ const fakeClient = {
     await window.refreshContent();
     assert(window.homeEventoPool().length === 0, 'with zero events in the system, the pool is genuinely empty');
     assert(text('dash-evento-slot') === '', 'Inicio\'s merged Evento slot renders nothing only in the true empty-system edge case');
+    assert(doc.getElementById('dash-row1').classList.contains('solo'), 'with the Evento column genuinely empty (no header, no card), Row 1 collapses to solo width');
     SAMPLE.eventos = allEventos;
+    await window.refreshContent();
+    assert(!doc.getElementById('dash-row1').classList.contains('solo'), 'Row 1 un-collapses once a real event is available again');
 
     SAMPLE.eventos_featured_bookings = [];
     await window.refreshContent();

@@ -1,4 +1,4 @@
-window.MC_BUILD='09fcdc7281';
+window.MC_BUILD='3397fe2eb5';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1028,6 +1028,11 @@ function homeEventoPool(){
   if(today.length)return today;
   return EVENTOS.filter(x=>x.ds>TODAY_DS);
 }
+/* Leading header for a half-width Row 1 column on Inicio: title on top,
+   "Ver todo ›" beneath (two-line stack — a one-line layout doesn't fit ~155px). */
+function dashColHdr(label,onclick){
+  return `<div class="dash-col-hdr"><h3>${label}</h3><button class="dash-more" onclick="${onclick}">Ver todo${svgIco('chevronR')}</button></div>`;
+}
 function renderHomeEventoSlot(){
   const slot=document.getElementById('dash-evento-slot');
   if(!slot)return;
@@ -1035,10 +1040,10 @@ function renderHomeEventoSlot(){
   if(!pool.length){slot.innerHTML='';syncDashRow1Width();return;} // the one true empty case: no events anywhere in the system
   const x=pool[new Date().getHours()%pool.length];
   slot.innerHTML=`
+    ${dashColHdr('Eventos',"nav('anuncios');setAnunciosMode('eventos')")}
     <div class="dash-card dc-ev-hero" onclick="openEvento('${x.id}')">
       ${x.img?`<div class="dc-ev-hero-img" style="background-image:url('${x.img}')"></div>`:''}
       <span class="dc-ev-hero-date"><b>${x.day}</b><i>${e(x.mon)}</i></span>
-      <span class="dc-row-kicker">Evento</span>
       <div class="dc-ev-hero-overlay">
         <div class="dc-ev-hero-name">${e(x.name)}</div>
         <div class="dc-ev-hero-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
@@ -1122,17 +1127,20 @@ function renderInicio(){
   if(o){
     const pct=o.priceWas>o.priceNow?Math.round((1-o.priceNow/o.priceWas)*100):0;
     h+=`
-      <div class="dash-card dc-of-hero" onclick="nav('tienda')">
-        <div class="dc-of-hero-img" style="background-image:url('${o.img}')"></div>
-        <span class="dc-row-kicker">${o.isExample?'Ejemplo':'Oferta del día'}</span>
-        <div class="dc-of-hero-overlay">
-          <div class="dc-of-hero-name">${e(o.name)}</div>
-          <div class="dc-of-hero-price">$${o.priceNow}${pct>0?`<em class="dc-of-hero-pct">-${pct}%</em>`:''}${o.priceWas>o.priceNow?`<span>en vez de $${o.priceWas}</span>`:''}</div>
+      <div class="dash-col">
+        ${dashColHdr('Oferta del día',"nav('tienda')")}
+        <div class="dash-card dc-of-hero" onclick="nav('tienda')">
+          <div class="dc-of-hero-img" style="background-image:url('${o.img}')"></div>
+          ${o.isExample?'<span class="dc-row-kicker">Ejemplo</span>':''}
+          <div class="dc-of-hero-overlay">
+            <div class="dc-of-hero-name">${e(o.name)}</div>
+            <div class="dc-of-hero-price">$${o.priceNow}${pct>0?`<em class="dc-of-hero-pct">-${pct}%</em>`:''}${o.priceWas>o.priceNow?`<span>en vez de $${o.priceWas}</span>`:''}</div>
+          </div>
         </div>
       </div>
     `;
   }
-  h+='<div id="dash-evento-slot"></div>';
+  h+='<div id="dash-evento-slot" class="dash-col"></div>';
   h+='</div>';
 
   h+=`<div id="inicio-destacados-wrap" style="display:none">
