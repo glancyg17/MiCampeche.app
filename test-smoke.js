@@ -665,6 +665,73 @@ const fakeClient = {
   const dashBody = text('dash-body') || '';
   assert(dashBody.includes('dc-of-hero-img') && dashBody.includes('dc-of-hero-overlay') && !dashBody.includes('dc-of-img'), 'the Oferta del día card uses the new hero-style classes, not the old 48px-thumbnail ones');
   assert(dashBody.includes('class="dash-card dc-of-hero" onclick="nav(\'tienda\')"'), 'the Oferta del día card still links to Tienda');
+
+  // ── Oferta del día pool/pick logic (homeOfertaPool/pickHomeOferta): three
+  //    tiers (today's real ofertas > any real live oferta > examples), and
+  //    a slight 2:1 premium bias when picking within whichever pool. ──
+  {
+    // pickHomeOferta is pure — no fixture data needed, just a controllable rand.
+    assert(window.pickHomeOferta([]) === null, 'pickHomeOferta returns null for an empty pool');
+    const biasPool = [{ id: 'free', tier: 'free' }, { id: 'premium', tier: 'premium' }];
+    assert(window.pickHomeOferta(biasPool, () => 0.1).id === 'free', 'with weights 1:2 (free:premium), a low rand() picks the free (lower-weight) oferta');
+    assert(window.pickHomeOferta(biasPool, () => 0.5).id === 'premium', 'with weights 1:2, a mid rand() crosses into the premium (higher-weight) share');
+
+    // homeOfertaPool reads the live OFERTAS array populated by the real fetch
+    // pipeline — swap SAMPLE.ofertas for a controlled fixture per tier, call
+    // the real refreshContent() to re-fetch/re-render, then restore it.
+    const originalOfertas = SAMPLE.ofertas;
+    const baseOferta = (id, over) => Object.assign({
+      id, business_id: 'biz-t', business_name_snapshot: 'Negocio Test', seller_phone: '981 000 0000',
+      title: 'Oferta ' + id, price_was: 100, price_now: 50, quantity_total: 5, quantity_sold: 0,
+      is_premium: false, is_example: false, image_url: '', status: 'published', submitted_by: 'uid-t',
+      created_at: NOW.toISOString()
+    }, over);
+
+    // Tier 1: a real oferta posted TODAY beats an older (but still live/unexpired) real one.
+    SAMPLE.ofertas = [
+      baseOferta('t-today', { created_at: new Date(ds(0) + 'T12:00:00').toISOString() }),
+      baseOferta('t-yesterday', { created_at: new Date(ds(-1) + 'T12:00:00').toISOString() }),
+    ];
+    await window.refreshContent();
+    {
+      const pool = window.homeOfertaPool();
+      assert(pool.length === 1 && pool[0].id === 't-today', 'tier 1: only today\'s real live oferta is pooled, the older real one is excluded');
+    }
+
+    // Tier 2: no oferta went live today — fall back to any real live oferta,
+    // still excluding examples while a real one exists.
+    SAMPLE.ofertas = [
+      baseOferta('t-real-old', { created_at: new Date(ds(-2) + 'T12:00:00').toISOString() }),
+      baseOferta('t-example', { is_example: true, created_at: new Date(ds(-10) + 'T12:00:00').toISOString() }),
+    ];
+    await window.refreshContent();
+    {
+      const pool = window.homeOfertaPool();
+      assert(pool.length === 1 && pool[0].id === 't-real-old', 'tier 2: with no oferta live today, real (non-example) live ofertas are pooled and examples are excluded');
+    }
+
+    // Tier 3: no real oferta at all — examples fill the slot, exempt from the
+    // 7-day lifespan (matching the Ofertas tab), but a sold-out example is
+    // still excluded.
+    SAMPLE.ofertas = [
+      baseOferta('t-ex-live', { is_example: true, created_at: new Date(ds(-30) + 'T12:00:00').toISOString() }),
+      baseOferta('t-ex-soldout', { is_example: true, quantity_sold: 5, quantity_total: 5, created_at: new Date(ds(-1) + 'T12:00:00').toISOString() }),
+    ];
+    await window.refreshContent();
+    {
+      const pool = window.homeOfertaPool();
+      assert(pool.length === 1 && pool[0].id === 't-ex-live', 'tier 3: with zero real ofertas, a live example fills the slot and a sold-out example is excluded');
+    }
+
+    // Empty OFERTAS entirely — the slot must stay empty, not throw.
+    SAMPLE.ofertas = [];
+    await window.refreshContent();
+    assert(window.pickHomeOferta(window.homeOfertaPool()) === null, 'with zero ofertas anywhere, pickHomeOferta(homeOfertaPool()) is null');
+
+    SAMPLE.ofertas = originalOfertas;
+    await window.refreshContent(); // restore real fixture state for every later test
+  }
+
   // Computed from the REAL current hour, the same way renderWelcomeHero()
   // itself buckets it — no mocking the Date global, matching how ds()
   // elsewhere in this file already derives fixture dates from real time.
@@ -3508,8 +3575,8 @@ const fakeClient = {
 
     // homeEventoPool()/renderHomeEventoSlot(): tier 1 (an active Destacado
     // booking) resolves to the real event and renders in the merged
-    // Inicio slot, same .evt-card style as before.
-    assert(text('dash-evento-slot').includes('evt-card') && text('dash-evento-slot').includes('Mi evento activo'), 'Inicio\'s merged Evento slot shows the currently-featured event in the same .evt-card style');
+    // Inicio slot, using the half-width .dc-ev-hero overlay card.
+    assert(text('dash-evento-slot').includes('dc-ev-hero') && text('dash-evento-slot').includes('Mi evento activo'), 'Inicio\'s merged Evento slot shows the currently-featured event in the .dc-ev-hero card style');
 
     // A today-dated Destacado booking wins the pool ordering over a
     // non-today one when both are active simultaneously — e4 is booked
@@ -3529,7 +3596,7 @@ const fakeClient = {
     const tier2Pool = window.homeEventoPool();
     assert(tier2Pool.length === 3 && ['e6', 'e7', 'e8'].every(id => tier2Pool.some(x => x.id === id)), 'with no active Destacado, the pool falls back to today\'s events');
     assert(!tier2Pool.some(x => x.id === 'e4'), 'a merely-future event (not today, not booked) is excluded from the tier-2 pool');
-    assert(text('dash-evento-slot').includes('evt-card'), 'the merged slot still renders a card under the tier-2 fallback');
+    assert(text('dash-evento-slot').includes('dc-ev-hero'), 'the merged slot still renders a card under the tier-2 fallback');
 
     // Tier 3: no active bookings AND nothing happening today — falls
     // through further to any upcoming event (e1/e2/e4 are all future-dated;

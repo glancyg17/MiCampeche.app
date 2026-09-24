@@ -1,4 +1,4 @@
-window.MC_BUILD='30e1a65c45';
+window.MC_BUILD='09fcdc7281';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1035,17 +1035,13 @@ function renderHomeEventoSlot(){
   if(!pool.length){slot.innerHTML='';syncDashRow1Width();return;} // the one true empty case: no events anywhere in the system
   const x=pool[new Date().getHours()%pool.length];
   slot.innerHTML=`
-    <div class="evt-card" onclick="openEvento('${x.id}')">
-      ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
-      <div class="evt-body">
-        <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
-        <div class="evt-info">
-          <div class="evt-cat">${e(x.cat)}</div>
-          <div class="evt-name">${e(x.name)}</div>
-          <div class="evt-meta">${svgIco('clock')} ${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
-          ${x.price?`<div class="evt-price">${e(x.price)}</div>`:''}
-        </div>
-        ${svgIco('chevronR','evt-arr')}
+    <div class="dash-card dc-ev-hero" onclick="openEvento('${x.id}')">
+      ${x.img?`<div class="dc-ev-hero-img" style="background-image:url('${x.img}')"></div>`:''}
+      <span class="dc-ev-hero-date"><b>${x.day}</b><i>${e(x.mon)}</i></span>
+      <span class="dc-row-kicker">Evento</span>
+      <div class="dc-ev-hero-overlay">
+        <div class="dc-ev-hero-name">${e(x.name)}</div>
+        <div class="dc-ev-hero-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
       </div>
     </div>
   `;
@@ -1092,30 +1088,46 @@ function renderInicioQuickNav(){
     +tile('bell','Avisos',`nav('reportar');setReportarMode('avisos')`);
 }
 
+/* Oferta del día on Inicio — three tiers, never empty unless no ofertas exist:
+   1. real live ofertas that went live today; 2. any real live oferta;
+   3. examples (exempt from the 7-day lifespan, same as the Ofertas tab).
+   Random within the tier, slight bias (2:1) toward premium sellers. */
+function homeOfertaPool(){
+  const live=o=>o.sold<o.total;
+  const real=OFERTAS.filter(o=>!o.isExample&&live(o)&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
+  const todays=real.filter(o=>o.postedDs===TODAY_DS);
+  if(todays.length)return todays;
+  if(real.length)return real;
+  return OFERTAS.filter(o=>o.isExample&&live(o));
+}
+function pickHomeOferta(pool,rand=Math.random){
+  if(!pool.length)return null;
+  const w=o=>o.tier==='premium'?2:1;
+  let r=rand()*pool.reduce((s,o)=>s+w(o),0);
+  for(const o of pool){r-=w(o);if(r<0)return o;}
+  return pool[pool.length-1];
+}
+
 function renderInicio(){
   renderWelcomeHero();
   renderInicioQuickNav();
   startEventosRotation();
 
   const topNews=NOTICIAS.slice(0,2);
-  const liveOffers=OFERTAS.filter(o=>o.sold<o.total&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
-  const todaysOffers=liveOffers.filter(o=>o.postedDs===TODAY_DS);
-  const offerPool=todaysOffers.length?todaysOffers:liveOffers;
-  const o=offerPool.length?offerPool[Math.floor(Math.random()*offerPool.length)]:null;
+  const o=pickHomeOferta(homeOfertaPool());
 
   let h='<div id="dash-special-slot" style="display:none"></div>';
 
   h+='<div class="dash-row-pair" id="dash-row1">';
   if(o){
-    const pct=Math.round((1-o.priceNow/o.priceWas)*100);
+    const pct=o.priceWas>o.priceNow?Math.round((1-o.priceNow/o.priceWas)*100):0;
     h+=`
       <div class="dash-card dc-of-hero" onclick="nav('tienda')">
         <div class="dc-of-hero-img" style="background-image:url('${o.img}')"></div>
-        <span class="dc-of-hero-pct">-${pct}%</span>
-        <span class="dc-row-kicker">Oferta del día</span>
+        <span class="dc-row-kicker">${o.isExample?'Ejemplo':'Oferta del día'}</span>
         <div class="dc-of-hero-overlay">
           <div class="dc-of-hero-name">${e(o.name)}</div>
-          <div class="dc-of-hero-price">$${o.priceNow} <span>en vez de $${o.priceWas}</span></div>
+          <div class="dc-of-hero-price">$${o.priceNow}${pct>0?`<em class="dc-of-hero-pct">-${pct}%</em>`:''}${o.priceWas>o.priceNow?`<span>en vez de $${o.priceWas}</span>`:''}</div>
         </div>
       </div>
     `;
