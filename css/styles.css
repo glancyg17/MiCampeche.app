@@ -1,4 +1,4 @@
-:root{--mc-build:"69c857e381";}
+:root{--mc-build:"71e18b9cfa";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -528,15 +528,18 @@ svg{display:block}
 .pv-row{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--ink2)}
 .pv-row b{color:var(--ink);text-align:right}
 
-/* ═══ PERDIDOS (full page) ═══ */
+/* ═══ PERDIDOS / MASCOTAS (full page — this card shape is now shared by Vecinos ▸ Mascotas) ═══ */
 .pf-list{padding:0 18px 40px;display:flex;flex-direction:column;gap:11px}
 .pf-card{display:flex;gap:13px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);padding:12px;box-shadow:var(--sh1)}
-.pf-img{width:68px;height:68px;border-radius:var(--rs);background-size:cover;background-position:center;background-color:var(--paper2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--ink3)}
+.pf-img{position:relative;width:68px;height:68px;border-radius:var(--rs);background-size:cover;background-position:center;background-color:var(--paper2);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--ink3)}
 .pf-img .ico{width:22px;height:22px}
 .pf-body{flex:1;min-width:0}
 .pf-tag{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:99px;margin-bottom:6px}
 .pf-tag.perdido{background:var(--signal-bg);color:var(--signal)}
 .pf-tag.encontrado{background:var(--palm-bg);color:var(--palm)}
+.pf-tag.adopcion{background:var(--gulf-bg,var(--paper2));color:var(--gulf)}
+.pf-tag.campana{background:var(--wall-bg,var(--paper2));color:var(--wall-dk)}
+.ms-count{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;font-weight:700;line-height:1;padding:3px 6px;border-radius:99px}
 .pf-name{font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:3px}
 .pf-desc{font-size:12px;color:var(--ink2);line-height:1.4}
 .pf-loc{font-size:11px;color:var(--ink3);margin-top:6px;display:flex;align-items:center;gap:5px}

@@ -1,4 +1,4 @@
-window.MC_BUILD='69c857e381';
+window.MC_BUILD='71e18b9cfa';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -8,6 +8,7 @@ const ICO={
   eventos:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
   tienda:'<path d="M4 8l1.5-4h13L20 8"/><path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8z"/><path d="M9 12a3 3 0 0 0 6 0"/>',
   perdidos:'<path d="M12 21s-7-4.6-9.3-9A5 5 0 0 1 12 6a5 5 0 0 1 9.3 6c-2.3 4.4-9.3 9-9.3 9z"/>',
+  paw:'<circle cx="6.5" cy="10" r="1.8"/><circle cx="10" cy="6.2" r="1.8"/><circle cx="14" cy="6.2" r="1.8"/><circle cx="17.5" cy="10" r="1.8"/><path d="M12 12c-2.6 0-5 2.6-5 4.6 0 1.6 1.4 2.4 2.8 2.4 1 0 1.5-.4 2.2-.4s1.2.4 2.2.4c1.4 0 2.8-.8 2.8-2.4 0-2-2.4-4.6-5-4.6z"/>',
   alertas:'<path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/>',
   bus:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M3 12h18"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M6 4v4M18 4v4"/>',
   empleos:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/>',
@@ -206,10 +207,10 @@ async function renderMenuBody(){
         child(`closeMenu();nav('anuncios');setAnunciosMode('empleos')`,'Empleos'),
         child(`closeMenu();nav('anuncios');setAnunciosMode('alertas')`,'Alertas')
       ].join(''))
-    + parent('vecinos',svgIco('reportar'),'var(--signal)','Vecinos','Avisos, reportes y perdidos',[
+    + parent('vecinos',svgIco('reportar'),'var(--signal)','Vecinos','Avisos, reportes y mascotas',[
         child(`closeMenu();nav('reportar');setReportarMode('avisos')`,'Avisos'),
         child(`closeMenu();nav('reportar');setReportarMode('reportes')`,'Reportes'),
-        child(`closeMenu();nav('reportar');setReportarMode('perdidos')`,'Perdidos')
+        child(`closeMenu();nav('reportar');setReportarMode('mascotas')`,'Mascotas')
       ].join(''))
     + leaf(svgIco('bus'),'var(--gulf)',"Transporte (Ko'ox)",'Rutas, tarifas y apps en tiempo real','goToKoox()')
     + leaf('<svg class="ico" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>','var(--palm)','Sugerencias','Cuéntanos qué mejorar',`closeMenu();openSuggestionForm('menu')`)
@@ -699,7 +700,7 @@ let NOTICIAS=[];
 let EVENTOS=[];
 let FEATURED_BOOKINGS=[]; // raw {event_id,start_date,end_date} rows with an active or upcoming window — see activeFeaturedEventIds()
 let TIENDA=[];
-let PERDIDOS=[];
+let MASCOTAS=[];
 let ALERTAS=[];
 let EMPLEOS=[];
 let REPORTES=[];
@@ -757,11 +758,11 @@ function shuffleTiendaForDisplay(list){
 }
 async function loadAllData(){
   await MC.ready;
-  const [noticias,eventos,tienda,ofertas,perdidos,alertas,empleos,reportes,avisos,booked,featuredBookings,mandaditos]=await Promise.all([
-    MC.fetchNoticias(),MC.fetchEventos(),MC.fetchTienda(),MC.fetchOfertas(),MC.fetchPerdidos(),
+  const [noticias,eventos,tienda,ofertas,mascotas,alertas,empleos,reportes,avisos,booked,featuredBookings,mandaditos]=await Promise.all([
+    MC.fetchNoticias(),MC.fetchEventos(),MC.fetchTienda(),MC.fetchOfertas(),MC.fetchMascotas(),
     MC.fetchAlertas(),MC.fetchEmpleos(),MC.fetchReportes(),MC.fetchAvisos(),MC.fetchBookedDates(),MC.fetchFeaturedBookings(),MC.fetchMandaditos()
   ]);
-  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=shuffleTiendaForDisplay(tienda);OFERTAS=ofertas;PERDIDOS=perdidos;MANDADITOS=mandaditos;
+  NOTICIAS=noticias;EVENTOS=eventos;TIENDA=shuffleTiendaForDisplay(tienda);OFERTAS=ofertas;MASCOTAS=mascotas;MANDADITOS=mandaditos;
   ALERTAS=alertas;EMPLEOS=empleos;REPORTES=reportes;AVISOS=avisos;bookedDates=booked;FEATURED_BOOKINGS=featuredBookings;
   alertasExpanded=false; // a fresh data load (incl. pull-to-refresh) collapses Alertas back to the top 10
   REPORTES.forEach(r=>{
@@ -1261,19 +1262,19 @@ const SECTION_TIPS={
      'Envíalo: otros vecinos lo confirman para darle peso.'],
     'Reportar un problema',"openPost('reportar')"],
   avisos:['message','Avísale a tu colonia',
-    'Se busca a un familiar, junta vecinal, cuidado con un perro suelto…',
+    'Se busca a un familiar, junta vecinal, cuidado con un perro suelto, objetos perdidos…',
     ['Toca el botón <b>+</b> abajo a la derecha.',
      'Elige el tipo de aviso y escribe tu mensaje.',
      'Deja un número de contacto.',
      'Envíalo: un aviso por persona al día, revisado antes de publicarse.'],
     'Publicar un aviso',"openPost('avisos')"],
-  perdidos:['perdidos','¿Perdiste o encontraste algo?',
-    'Una mascota, unas llaves, una cartera… tus vecinos te ayudan.',
+  mascotas:['paw','Mascotas en Campeche',
+    'Adopciones, mascotas perdidas o encontradas, campañas de esterilización y negocios para tu mascota — todo en un lugar.',
     ['Toca el botón <b>+</b> abajo a la derecha.',
-     'Elige <b>Perdido</b> o <b>Encontrado</b>.',
-     'Describe qué es y en qué zona, con una foto si puedes.',
-     'Envíalo: aparece aquí para que la ciudad esté atenta.'],
-    'Reportar perdido o encontrado',"openPost('perdidos')"],
+     'Elige <b>Adopción</b>, <b>Perdido</b>, <b>Encontrado</b> o <b>Campaña</b>.',
+     'Agrega fotos y describe a la mascota, con la zona donde está.',
+     'Envíalo: lo revisamos y aparece aquí. Las adopciones son siempre gratuitas.'],
+    'Publicar en Mascotas',"openPost('mascotas')"],
   mandaditos:['tienda','¿Tienes moto y quieres hacer mandados?',
     'Regístrate como mandadito y aparece en el directorio para que vecinos y negocios te contacten.',
     ['Completa tu perfil: foto, vehículo y zona que cubres.',
@@ -2010,34 +2011,108 @@ function openEmpleo(id){
   document.getElementById('modal-bg').classList.add('on');
 }
 
-/* ══════════════ RENDER: PERDIDOS (full page) ══════════════ */
-let pfFilter='all';
-let pfColonia='';
-function setPfColonia(v){pfColonia=v.trim();renderPerdidos();}
-function renderPfChips(){
-  const opts=[['all','Todos'],['perdido','Perdidos'],['encontrado','Encontrados']];
-  document.getElementById('pf-chips').innerHTML=opts.map(([v,l])=>
-    `<button class="chip${v===pfFilter?' on':''}" onclick="setPfFilter('${v}')">${l}</button>`
-  ).join('');
+/* ══════════════ RENDER: MASCOTAS (Vecinos ▸ Mascotas) ══════════════
+   One section for everything pet-related: adoption, lost/found pets, campaigns
+   (community posts, table `mascotas`) + a "Negocios" chip that shows Mercado
+   products in the 'Mascotas' category (vets, groomers, pet stores). */
+const MASCOTA_TYPE_LABEL={adopcion:'Adopción',perdido:'Perdido',encontrado:'Encontrado',campana:'Campaña'};
+const MASCOTA_SPECIES_LABEL={perro:'Perro',gato:'Gato',otro:'Otro'};
+const MS_CHIPS=[['all','Todos'],['adopcion','Adopción'],['perdido','Perdidos'],['encontrado','Encontrados'],['campana','Campañas'],['negocios','Negocios']];
+let msFilter='all';
+let msColonia='';
+function mascotaVisible(x){
+  if(x.resolvedAt)return false;                                   // adopted / found / resolved by its owner
+  if(x.type==='campana'&&x.eventDate&&x.eventDate<TODAY_DS)return false; // campaign already happened
+  return true;
 }
-function setPfFilter(v){pfFilter=v;renderPfChips();renderPerdidos();}
-function renderPerdidos(){
-  const list=PERDIDOS.filter(x=>(pfFilter==='all'||x.tag===pfFilter)&&(!pfColonia||x.colonia===pfColonia));
-  const el=document.getElementById('pf-list');
-  if(!list.length){el.innerHTML=emptyState('perdidos','Nada por aquí todavía','No hay reportes en esta categoría por ahora.');return;}
-  el.innerHTML=list.map(x=>`
-    <div class="pf-card" ${admRm('perdidos',x.id,x.name)}>
-      <div class="pf-img" style="${x.img?`background-image:url('${x.img}')`:''}">${!x.img?svgIco('pin'):''}</div>
+function mascotaMeta(x){
+  const b=[];
+  if(x.species)b.push(MASCOTA_SPECIES_LABEL[x.species]||x.species);
+  if(x.sex)b.push(x.sex==='macho'?'Macho':'Hembra');
+  if(x.age)b.push(x.age);
+  if(x.type==='adopcion'&&x.sterilized===true)b.push('Esterilizado');
+  if(x.type==='adopcion'&&x.sterilized===false)b.push('Sin esterilizar');
+  return b.join(' · ');
+}
+function renderMsChips(){
+  const el=document.getElementById('ms-chips');
+  if(!el)return;
+  el.innerHTML=MS_CHIPS.map(([v,l])=>`<button class="chip${v===msFilter?' on':''}" onclick="setMsFilter('${v}')">${l}</button>`).join('');
+  const row=document.getElementById('ms-colonia-row');
+  if(row)row.style.display=msFilter==='negocios'?'none':'';
+}
+function setMsFilter(v){msFilter=v;renderMsChips();renderMascotas();}
+function setMsColonia(v){msColonia=v.trim();renderMascotas();}
+function goToMercadoCategory(cat){
+  nav('tienda');setTiendaMode('mercado');
+  mktFilter=cat;
+  const sel=document.getElementById('mkt-cat-select');
+  if(sel)sel.value=cat;
+  renderMercado();
+}
+function renderMascotasNegocios(){
+  const wrap=document.getElementById('ms-negocios');
+  if(!wrap)return;
+  const list=TIENDA.filter(x=>x.sellerType==='negocio'&&x.cat==='Mascotas');
+  const hdr=`<div class="of-hdr"><div class="of-hdr-txt">Veterinarias, estéticas y tiendas de mascotas · de Mercado</div></div>`;
+  if(!list.length){
+    wrap.innerHTML=hdr+emptyState('tienda','Aún no hay negocios de mascotas','¿Tienes una veterinaria, estética canina o tienda? Publica tus productos o servicios en Mercado con la categoría Mascotas.')
+      +`<div style="padding:0 18px 40px"><button class="submit-btn" onclick="openPost('producto')">Publicar en Mercado</button></div>`;
+    return;
+  }
+  wrap.innerHTML=hdr+`<div class="tienda-grid">${list.map(prodCardHtml).join('')}</div>`
+    +`<div style="padding:6px 18px 40px"><button class="chip" onclick="goToMercadoCategory('Mascotas')">Ver todo en Mercado${svgIco('chevronR')}</button></div>`;
+  wireAdminRemove(wrap);
+}
+function renderMascotas(){
+  const el=document.getElementById('ms-list');
+  const neg=document.getElementById('ms-negocios');
+  if(!el||!neg)return;
+  if(msFilter==='negocios'){el.style.display='none';neg.style.display='block';renderMascotasNegocios();return;}
+  neg.style.display='none';el.style.display='';
+  let list=MASCOTAS.filter(mascotaVisible).filter(x=>(msFilter==='all'||x.type===msFilter)&&(!msColonia||x.colonia===msColonia));
+  if(msFilter==='campana')list=[...list].sort((a,b)=>String(a.eventDate).localeCompare(String(b.eventDate))); // soonest first
+  if(!list.length){
+    const emptyMsg={adopcion:'Aún no hay mascotas en adopción.',perdido:'No hay mascotas perdidas por ahora.',encontrado:'No hay mascotas encontradas por ahora.',campana:'No hay campañas próximas por ahora.'};
+    el.innerHTML=emptyState('paw','Nada por aquí todavía',msColonia?'No hay publicaciones en esta colonia por ahora.':(emptyMsg[msFilter]||'Sé el primero en publicar en Mascotas.'));
+    return;
+  }
+  el.innerHTML=list.map(x=>{
+    const meta=mascotaMeta(x);
+    const where=x.type==='campana'&&x.eventDate?dsToLongEs(x.eventDate):(x.loc||x.colonia);
+    return `
+    <div class="pf-card" style="cursor:pointer" onclick="if(!event.target.closest('.contact-cta-row'))openMascotaView('${e(String(x.id))}')" ${admRm('mascotas',x.id,x.name)}>
+      <div class="pf-img" style="${x.img?`background-image:url('${e(x.img)}')`:''}">${!x.img?svgIco('paw'):''}${x.imgs.length>1?`<span class="ms-count">${x.imgs.length}</span>`:''}</div>
       <div class="pf-body">
-        <span class="pf-tag ${x.tag}">${x.tag==='perdido'?'Perdido':'Encontrado'}</span>
+        <span class="pf-tag ${x.type}">${MASCOTA_TYPE_LABEL[x.type]||x.type}</span>${x.isExample?'<span class="example-pill">Ejemplo</span>':''}
         <div class="pf-name">${e(x.name)}</div>
-        <div class="pf-desc">${e(x.desc)}</div>
-        <div class="pf-loc">${svgIco('pin')} ${e(x.loc)}</div>
-        ${contactCtaRow(x,`Hola, vi tu reporte "${x.name}" en MiCampeche.`)}
+        ${meta?`<div class="pf-desc" style="font-weight:600">${e(meta)}</div>`:''}
+        ${x.desc?`<div class="pf-desc">${e(x.desc)}</div>`:''}
+        ${where?`<div class="pf-loc">${svgIco(x.type==='campana'?'clock':'pin')} ${e(where)}</div>`:''}
+        ${contactCtaRow(x,`Hola, vi tu publicación "${x.name}" en MiCampeche.`)}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
   wireAdminRemove(el);
+}
+function openMascotaView(id){
+  const x=MASCOTAS.find(m=>String(m.id)===String(id));
+  if(!x)return;
+  const meta=mascotaMeta(x);
+  const rows=[];
+  if(x.type==='campana'&&x.eventDate)rows.push(['Fecha',dsToLongEs(x.eventDate)]);
+  if(x.loc)rows.push([x.type==='campana'?'Lugar':'Punto de referencia',x.loc]);
+  if(x.colonia)rows.push(['Colonia',x.colonia]);
+  document.getElementById('modal-title').textContent=x.name;
+  document.getElementById('modal-body').innerHTML=`
+    ${pvCarouselHtml(x.imgs)}
+    <div><span class="pf-tag ${x.type}">${MASCOTA_TYPE_LABEL[x.type]||x.type}</span>${x.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+    ${meta?`<div style="font-size:14px;font-weight:700">${e(meta)}</div>`:''}
+    ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${e(x.desc)}</div>`:''}
+    ${rows.length?`<div class="pv-rows">${rows.map(r=>`<div class="pv-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>`:''}
+    ${contactCtaRow(x,`Hola, vi tu publicación "${x.name}" en MiCampeche.`)}
+  `;
+  document.getElementById('modal-bg').classList.add('on');
 }
 
 /* ══════════════ RENDER: REPORTAR (Reportes ⇄ Alertas) ══════════════ */
@@ -2047,7 +2122,7 @@ function setReportarMode(mode){
   document.querySelectorAll('#scr-reportar .subtog-btn').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
   document.getElementById('reportar-reportes').style.display=mode==='reportes'?'block':'none';
   document.getElementById('reportar-avisos').style.display=mode==='avisos'?'block':'none';
-  document.getElementById('reportar-perdidos').style.display=mode==='perdidos'?'block':'none';
+  document.getElementById('reportar-mascotas').style.display=mode==='mascotas'?'block':'none';
   if(curScreen==='reportar'){maybeShowTipGate(mode);trackPage();}
 }
 let repFilter='all';
@@ -2137,9 +2212,12 @@ async function toggleResolveVote(id){
   }
 }
 let avColonia='';
+let avFilter='all';
 function setAvColonia(v){avColonia=v.trim();renderAvisos();}
+function renderAvChips(){const el=document.getElementById('av-chips');if(!el)return;const cats=['all',...new Set(AVISOS.map(a=>a.cat))];if(avFilter!=='all'&&!cats.includes(avFilter))avFilter='all';el.innerHTML=cats.map(c=>`<button class="chip${c===avFilter?' on':''}" onclick="setAvFilter('${e(c)}')">${c==='all'?'Todos':e(c)}</button>`).join('');}
+function setAvFilter(c){avFilter=c;renderAvChips();renderAvisos();}
 function renderAvisos(){
-  const list=AVISOS.filter(a=>!avColonia||a.colonia===avColonia);
+  const list=AVISOS.filter(a=>(avFilter==='all'||a.cat===avFilter)&&(!avColonia||a.colonia===avColonia));
   const el=document.getElementById('av-list');
   if(!list.length){el.innerHTML=emptyState('reportar','Nada por aquí todavía',avColonia?'No hay avisos en esta colonia por ahora.':'Sé el primero en publicar un aviso para tus vecinos.');return;}
   el.innerHTML=list.map(a=>`
@@ -2271,13 +2349,19 @@ const POST_FORMS={
     {k:'photo',lbl:'Tu foto',type:'imgupload',note:'Que se vea tu cara centrada y de frente, de los hombros hacia arriba, con buena luz — así se ve bien en tu tarjeta aunque la recortemos.'},
     {k:'desc',lbl:'Cuéntale a la gente sobre ti (opcional)',type:'textarea',ph:'Cuánto tiempo llevas haciendo mandados, qué tipo de cosas puedes mover...'}
   ]},
-  perdidos:{title:'Reportar perdido o encontrado',fields:[
-    {k:'tag',lbl:'Tipo de reporte',type:'seg',opts:[['perdido','Perdido'],['encontrado','Encontrado']]},
-    {k:'name',lbl:'¿Qué se perdió / encontró?',type:'text',ph:'Ej. Gato atigrado'},
-    {k:'loc',lbl:'Punto de referencia',type:'text',ph:'Ej. Cerca del parque, frente a la tienda...'},
+  mascotas:{title:'Publicar en Mascotas',note:'Todas las publicaciones se revisan antes de mostrarse.',fields:[
+    {k:'tipo',lbl:'¿Qué vas a publicar?',type:'seg',opts:[['adopcion','Adopción'],['perdido','Perdido'],['encontrado','Encontrado'],['campana','Campaña']]},
+    {k:'adopt_note',type:'note',text:'Las adopciones son siempre gratuitas. No se permite vender animales: si piden dinero por el animal, la publicación se rechaza.',showIf:{field:'tipo',val:'adopcion'}},
+    {k:'name',lbl:'Nombre o título',type:'text',ph:'Ej. Cachorro mestizo en adopción, Gato atigrado perdido, Campaña de esterilización'},
+    {k:'species',lbl:'Especie',type:'seg',opts:[['perro','Perro'],['gato','Gato'],['otro','Otro']],showIf:{field:'tipo',val:['adopcion','perdido','encontrado']}},
+    {k:'sex',lbl:'Sexo',type:'seg',opts:[['','No sé'],['macho','Macho'],['hembra','Hembra']],showIf:{field:'tipo',val:['adopcion','perdido','encontrado']}},
+    {k:'age',lbl:'Edad (aprox.)',type:'text',ph:'Ej. 3 meses, 2 años',showIf:{field:'tipo',val:'adopcion'}},
+    {k:'sterilized',lbl:'¿Está esterilizado?',type:'seg',opts:[['nose','No sé'],['si','Sí'],['no','No']],showIf:{field:'tipo',val:'adopcion'}},
+    {k:'cdate',lbl:'Fecha de la campaña',type:'monthcal',showIf:{field:'tipo',val:'campana'}},
+    {k:'loc',lbl:'Punto de referencia / lugar',type:'text',ph:'Ej. Cerca del parque, o dirección de la campaña',showIf:{field:'tipo',val:['perdido','encontrado','campana']}},
     {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
-    {k:'photo',lbl:'Foto',type:'imgupload'},
-    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Detalles que ayuden a identificarlo...'},
+    {k:'photo',lbl:'Fotos',type:'imgupload-multi',max:5,note:'Hasta 5 fotos. La primera es la que se ve en la lista.'},
+    {k:'desc',lbl:'Descripción',type:'textarea',ph:'Carácter, vacunas, señas que ayuden a identificarlo, requisitos de la campaña...'},
     {k:'want_contact',lbl:'¿Dejar un número para que te contacten?',type:'seg',opts:[['si','Sí, que me contacten'],['no','No hace falta']]},
     {k:'contact_phone',lbl:'Tu número de contacto (WhatsApp)',type:'tel',ph:'981 000 0000',showIf:{field:'want_contact',val:'si'},note:'Quien lo vea te contactará por los medios que elijas.'},
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.',showIf:{field:'want_contact',val:'si'}}
@@ -2300,8 +2384,8 @@ const POST_FORMS={
     {k:'photo',lbl:'Foto del problema',type:'imgupload'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntanos más sobre el problema...'}
   ]},
-  avisos:{title:'Publicar un aviso',note:'Un aviso por persona al día. Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
-    {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Mascotas','Eventos vecinales','Otro']},
+  avisos:{title:'Publicar un aviso',note:'Un aviso por persona al día (los de Perdido y Encontrado no cuentan). Todas las publicaciones se revisan antes de mostrarse a los demás.',fields:[
+    {k:'cat',lbl:'Tipo de aviso',type:'select',opts:['Comunidad','Seguridad','Perdido','Encontrado','Eventos vecinales','Otro']},
     {k:'colonia',lbl:'Colonia',type:'colonia',ph:'Escribe tu colonia...'},
     {k:'title',lbl:'Título breve',type:'text',ph:'Ej. Buscamos a un familiar'},
     {k:'photo',lbl:'Foto (opcional)',type:'imgupload'},
@@ -2426,10 +2510,10 @@ async function openPost(kind){
   if(kind==='oferta'){
     applyOfertaBusinessHints(postBusinessOptions.find(b=>String(b.id)===String(selectedPostBusinessId)));
   }
-  if(kind==='clasificado'||kind==='avisos'||kind==='perdidos'||kind==='empleos'){
+  if(kind==='clasificado'||kind==='avisos'||kind==='mascotas'||kind==='empleos'){
     // Prefill the contact number from the account so a signed-in poster
     // doesn't retype it (they can still overwrite it for this one post).
-    // For avisos/perdidos/empleos the "¿dejar un número?" toggle still
+    // For avisos/mascotas/empleos the "¿dejar un número?" toggle still
     // decides whether it's actually attached; this only pre-fills the field.
     if(acct.signedIn&&acct.phone){
       const cp=document.getElementById('pf-contact_phone');
@@ -2772,15 +2856,17 @@ function segPick(el){
 function multiPick(el){el.classList.toggle('on');}
 
 /* Rows flagged with showIf:{field,val} appear only while the controlling
-   seg holds that value, and re-sync whenever it changes. Safe to call for
-   any form — a no-op when nothing is conditional. */
+   seg holds that value (val may be a single value or an array of values),
+   and re-sync whenever it changes. Safe to call for any form — a no-op
+   when nothing is conditional. */
 function applyConditionalRows(form){
   const conds=(form.fields||[]).filter(f=>f.showIf);
   if(!conds.length)return;
   const sync=()=>conds.forEach(f=>{
     const on=document.querySelector(`#pf-${f.showIf.field} .seg-btn.on`);
     const row=document.getElementById('row-'+f.k);
-    if(row)row.style.display=(on&&on.dataset.v===f.showIf.val)?'':'none';
+    const vals=[].concat(f.showIf.val);
+    if(row)row.style.display=(on&&vals.includes(on.dataset.v))?'':'none';
   });
   sync();
   [...new Set(conds.map(f=>f.showIf.field))].forEach(fk=>{
@@ -2793,7 +2879,7 @@ function digitsOnly(p){return String(p||'').replace(/\D/g,'');}
 /* Direct WhatsApp / call / SMS buttons from a phone + the channels the
    poster opted into ('whatsapp' | 'llamada' | 'sms' — same vocabulary as
    Tienda's contact_methods). Inline pill style, shared by the Avisos /
-   Empleos / Perdidos cards. Returns '' when there's no usable number or no
+   Empleos / Mascotas cards. Returns '' when there's no usable number or no
    selected method, so callers can fall back to the legacy contact_info. */
 function contactCtaButtons(phone,methods,messageText){
   const num=digitsOnly(phone);
@@ -4340,8 +4426,9 @@ function setMyPostsTypeFilter(t){myPostsTypeFilter=t||null;renderMyPosts();}
    same boundary the daily cleanup-expired-eventos job uses (falls back
    to event_date for single-day events), so a finished event sits in the
    new Finalizado tab for the same ~7-day window before that job deletes
-   it. Only eventos has a natural "finished" state; every other
-   self-editable table only ever buckets into pending or active. */
+   it. Eventos and Mascotas are the two self-editable tables with a
+   natural "finished" state; every other one only ever buckets into
+   pending or active. */
 function isEventoFinished(raw){
   if(!raw)return false;
   const end=raw.end_date||raw.event_date;
@@ -4352,6 +4439,7 @@ function isEventoFinished(raw){
    (a rejected one gets the extra Editar/Descartar actions below). */
 function myPostBucket(p){
   if(p.status==='pending'||p.status==='rejected')return 'pending';
+  if(p.table==='mascotas'&&p.raw&&(p.raw.resolved_at||(p.raw.type==='campana'&&p.raw.event_date&&p.raw.event_date<TODAY_DS)))return 'finished';
   if(p.table==='eventos'&&isEventoFinished(p.raw))return 'finished';
   return 'active';
 }
@@ -4403,9 +4491,11 @@ function renderMyPosts(){
     document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${emptyMsgs[myPostsTab]}</div>`;
     return;
   }
+  const MASCOTA_RESOLVE_LABEL={adopcion:'Marcar como adoptado',perdido:'Ya apareció',encontrado:'Ya lo recogieron'};
   document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+list.map(p=>{
     const isRejected=p.status==='rejected';
     const editable=!!MY_POST_EDIT[p.table]&&!isRejected;
+    const showMascotaResolve=p.table==='mascotas'&&p.status==='published'&&p.raw&&p.raw.type!=='campana';
     return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px${editable?';cursor:pointer':''}"${editable?` onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')"`:''}>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <span style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(p.label)}</span>
@@ -4420,8 +4510,17 @@ function renderMyPosts(){
       ${isRejected?`<div style="display:flex;gap:8px;margin-top:10px">
         <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px" onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')">Editar y reenviar</button>
       </div>`:''}
+      ${showMascotaResolve?`<div style="display:flex;gap:8px;margin-top:10px">
+        <button class="submit-btn" style="margin-top:0;flex:1;padding:9px;font-size:13px" onclick="event.stopPropagation();resolveMascota('${e(String(p.id))}',${p.raw.resolved_at?'false':'true'})">${p.raw.resolved_at?'Reactivar':(MASCOTA_RESOLVE_LABEL[p.raw.type]||'Marcar como resuelto')}</button>
+      </div>`:''}
     </div>`;
   }).join('');
+}
+async function resolveMascota(id,resolved){
+  const {error}=await MC.setMascotaResolved(id,resolved);
+  if(error){toast(pgErrorToast(error,'No se pudo actualizar.'));return;}
+  toast(resolved?'Listo — ya no aparece en Mascotas ✓':'Publicación reactivada ✓');
+  refreshContent();refreshMyPosts();
 }
 /* Look the item up by table+id rather than passing its title through the
    onclick chain — titles are free text and may contain a single quote
@@ -4467,11 +4566,12 @@ const MY_POST_EDIT={
     seg:{want_contact:r.contact_phone?'si':'no'},
     multi:{contact_methods:r.contact_methods}
   })},
-  perdidos:{form:'perdidos',fill:r=>({
-    input:{name:r.title,loc:r.location,colonia:r.colonia||'',desc:r.description,contact_phone:r.contact_phone},
-    seg:{tag:r.report_type||'perdido',want_contact:r.contact_phone?'si':'no'},
+  mascotas:{form:'mascotas',fill:r=>({
+    input:{name:r.title,desc:r.description,age:r.age_text||'',loc:r.location||'',colonia:r.colonia||'',contact_phone:r.contact_phone},
+    seg:{tipo:r.type,species:r.species||'perro',sex:r.sex||'',sterilized:r.sterilized===true?'si':(r.sterilized===false?'no':'nose'),want_contact:r.contact_phone?'si':'no'},
     multi:{contact_methods:r.contact_methods},
-    img:{photo:r.image_url}
+    imgMulti:{photo:r.image_urls||[]},
+    monthcal:{cdate:r.event_date}
   })},
   eventos:{form:'eventos',fill:r=>({
     input:{name:r.title,cat:r.category,time:r.event_time,loc:r.location,colonia:r.colonia||'',price:r.price_text,website:r.website,phone:r.contact_phone,desc:r.description},
@@ -5007,7 +5107,7 @@ async function openPremiumPrompt(context){
 
 const SUBMIT_HANDLERS={
   eventos:MC.submitEvento, producto:MC.submitProducto, clasificado:MC.submitClasificado, mandadito:MC.submitMandadito,
-  perdidos:MC.submitPerdido, empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
+  mascotas:MC.submitMascota, empleos:MC.submitEmpleo, reportar:MC.submitReporte, avisos:MC.submitAviso
 };
 
 async function submitPost(kind){
@@ -5045,12 +5145,17 @@ async function submitPost(kind){
   if(kind==='clasificado'&&!(data.colonia||'').trim()){stop();toast('Elige tu colonia');return;}
   if(kind==='clasificado'&&!(data.contact_phone||'').trim()){stop();toast('Escribe tu número de contacto');return;}
   if(kind==='oferta'&&!data.photo){stop();toast('Agrega una foto para publicar tu oferta');return;}
-  if((kind==='avisos'||kind==='perdidos'||kind==='empleos')&&data.want_contact==='si'){
+  if((kind==='avisos'||kind==='mascotas'||kind==='empleos')&&data.want_contact==='si'){
     if(!(data.contact_phone||'').trim()){stop();toast('Escribe tu número o elige "No hace falta"');return;}
     if(!Array.isArray(data.contact_methods)||!data.contact_methods.length){stop();toast('Elige al menos una forma de contacto');return;}
   }
-  if((kind==='eventos'||kind==='perdidos'||kind==='empleos'||kind==='avisos'||kind==='reportar')&&!(data.colonia||'').trim()){
+  if((kind==='eventos'||kind==='mascotas'||kind==='empleos'||kind==='avisos'||kind==='reportar')&&!(data.colonia||'').trim()){
     stop();toast('Elige tu colonia');return;
+  }
+  if(kind==='mascotas'){
+    if(!(data.name||'').trim()){stop();toast('Escribe un título');return;}
+    if(data.tipo==='adopcion'&&(!Array.isArray(data.photo)||!data.photo.length)){stop();toast('Agrega al menos una foto para la adopción');return;}
+    if(data.tipo==='campana'&&!data.cdate){stop();toast('Elige la fecha de la campaña');return;}
   }
 
   // Self-edit: same form, same validation (above), routed to an UPDATE of
@@ -5372,8 +5477,8 @@ async function refreshContent(){
   renderNoticias();
   refreshOfertaPostCta();
   renderMktChips();renderMercado();renderDestacadosCarousel();renderClasChips();renderClasificados();renderOfertas();renderMandaditos();
-  renderEvtChips();renderEventos();renderPfChips();renderPerdidos();renderEmpleos();
-  renderRepChips();renderReportes();renderAvisos();renderAlertas();renderServiciosUtiles();
+  renderEvtChips();renderEventos();renderMsChips();renderMascotas();renderEmpleos();
+  renderRepChips();renderReportes();renderAvChips();renderAvisos();renderAlertas();renderServiciosUtiles();
   refreshPendingBadge();
   refreshHeaderAccount();
   loadWeather(); // fire-and-forget; re-renders the header (and the lightbox if open) when it lands
@@ -5549,12 +5654,17 @@ const SEARCH_PAGES=[
   {id:'eventos',t:'Eventos',s:'Anuncios · qué pasa en la ciudad',k:'conciertos fiestas agenda calendario',ico:'eventos',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('eventos');}},
   {id:'empleos',t:'Empleos',s:'Anuncios · vacantes en Campeche',k:'trabajo vacantes chamba',ico:'empleos',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('empleos');}},
   {id:'alertas',t:'Alertas',s:'Anuncios · avisos oficiales',k:'clima agua cfe protección civil emergencia',ico:'alertas',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('alertas');}},
-  {id:'vecinos',t:'Vecinos',s:'Avisos, reportes y perdidos',k:'comunidad',ico:'reportar',bg:'var(--signal)',go:()=>nav('reportar')},
+  {id:'vecinos',t:'Vecinos',s:'Avisos, reportes y mascotas',k:'comunidad',ico:'reportar',bg:'var(--signal)',go:()=>nav('reportar')},
   {id:'avisos',t:'Avisos',s:'Vecinos · avisos de la comunidad',k:'comunidad juntas',ico:'reportar',bg:'var(--signal)',go:()=>{nav('reportar');setReportarMode('avisos');}},
   {id:'reportes',t:'Reportes',s:'Vecinos · baches, fugas, alumbrado',k:'infraestructura bache fuga luz alumbrado basura calle',ico:'reportar',bg:'var(--signal)',go:()=>{nav('reportar');setReportarMode('reportes');}},
-  {id:'perdidos',t:'Perdidos y encontrados',s:'Vecinos · mascotas, objetos, personas',k:'extraviado extraviada mascota perro gato cartera',ico:'perdidos',bg:'var(--signal)',go:()=>{setPfFilter('all');nav('reportar');setReportarMode('perdidos');}},
-  {id:'perdidos-p',t:'Perdidos',s:'Vecinos · lo que alguien perdió',k:'extraviado busco',ico:'perdidos',bg:'var(--signal)',go:()=>{searchResetInput('pf-colonia-filter');setPfColonia('');setPfFilter('perdido');nav('reportar');setReportarMode('perdidos');}},
-  {id:'perdidos-e',t:'Encontrados',s:'Vecinos · lo que alguien encontró',k:'hallado',ico:'perdidos',bg:'var(--signal)',go:()=>{searchResetInput('pf-colonia-filter');setPfColonia('');setPfFilter('encontrado');nav('reportar');setReportarMode('perdidos');}},
+  {id:'mascotas',t:'Mascotas',s:'Vecinos · adopción, perdidos, campañas y negocios',k:'perro gato mascota animal adopcion adoptar perdida extraviado encontrado veterinario veterinaria estetica canina esterilizacion castracion vacuna alimento',ico:'paw',bg:'var(--signal)',go:()=>{searchResetInput('ms-colonia-filter');setMsColonia('');setMsFilter('all');nav('reportar');setReportarMode('mascotas');}},
+  {id:'mascotas-adopcion',t:'Adopción de mascotas',s:'Mascotas · perros y gatos que buscan hogar',k:'adoptar adopcion perrito gatito cachorro rescate',ico:'paw',bg:'var(--signal)',go:()=>{setMsColonia('');setMsFilter('adopcion');nav('reportar');setReportarMode('mascotas');}},
+  {id:'mascotas-perdidos',t:'Mascotas perdidas',s:'Mascotas · lo que alguien perdió',k:'perdi perro gato extraviado busco',ico:'paw',bg:'var(--signal)',go:()=>{setMsColonia('');setMsFilter('perdido');nav('reportar');setReportarMode('mascotas');}},
+  {id:'mascotas-encontrados',t:'Mascotas encontradas',s:'Mascotas · lo que alguien encontró',k:'encontre hallado perro gato',ico:'paw',bg:'var(--signal)',go:()=>{setMsColonia('');setMsFilter('encontrado');nav('reportar');setReportarMode('mascotas');}},
+  {id:'mascotas-campanas',t:'Campañas de esterilización y vacunación',s:'Mascotas · campañas',k:'esterilizacion castracion vacunacion campana gratis jornada',ico:'paw',bg:'var(--signal)',go:()=>{setMsColonia('');setMsFilter('campana');nav('reportar');setReportarMode('mascotas');}},
+  {id:'mascotas-negocios',t:'Veterinarias, estéticas y tiendas de mascotas',s:'Mascotas · negocios',k:'veterinaria veterinario estetica canina peluqueria alimento croquetas accesorios',ico:'paw',bg:'var(--signal)',go:()=>{setMsFilter('negocios');nav('reportar');setReportarMode('mascotas');}},
+  {id:'objetos-perdidos',t:'Objetos perdidos',s:'Avisos · lo que alguien perdió',k:'cartera llaves celular extraviado objeto',ico:'reportar',bg:'var(--signal)',go:()=>{searchResetInput('av-colonia');setAvColonia('');setAvFilter('Perdido');nav('reportar');setReportarMode('avisos');}},
+  {id:'objetos-encontrados',t:'Objetos encontrados',s:'Avisos · lo que alguien encontró',k:'encontre hallado cartera llaves objeto',ico:'reportar',bg:'var(--signal)',go:()=>{searchResetInput('av-colonia');setAvColonia('');setAvFilter('Encontrado');nav('reportar');setReportarMode('avisos');}},
   {id:'koox',t:"Transporte (Ko'ox)",s:'Rutas, tarifas y apps en tiempo real',k:'koox camión autobús transporte ruta urbano',ico:'bus',bg:'var(--gulf)',go:()=>goToKoox()},
   {id:'clima',t:'Clima',s:'Pronóstico de hoy',k:'tiempo temperatura lluvia calor pronóstico',ico:'sun',bg:'var(--gulf)',go:()=>openWeatherLightbox()},
   {id:'perfil',t:'Mi perfil',s:'Tu cuenta',k:'cuenta entrar iniciar sesión registrarme crear cuenta',ico:'account',bg:'var(--night)',go:()=>openAccount()},
@@ -5572,7 +5682,8 @@ const SEARCH_PAGES=[
   {id:'pub-empleo',t:'Publicar una vacante',s:'Acción · Anuncios',k:'empleo trabajo contratar crear',ico:'empleos',bg:'var(--wall-dk)',go:()=>openPost('empleos')},
   {id:'pub-aviso',t:'Publicar un aviso',s:'Acción · Vecinos',k:'crear comunidad',ico:'reportar',bg:'var(--signal)',go:()=>openPost('avisos')},
   {id:'pub-reporte',t:'Hacer un reporte',s:'Acción · Vecinos',k:'reportar bache fuga luz alumbrado problema crear',ico:'reportar',bg:'var(--signal)',go:()=>openPost('reportar')},
-  {id:'pub-perdido',t:'Reportar algo perdido o encontrado',s:'Acción · Vecinos',k:'extraviado mascota objeto crear',ico:'perdidos',bg:'var(--signal)',go:()=>openPost('perdidos')},
+  {id:'pub-mascota',t:'Publicar en Mascotas',s:'Acción · Vecinos',k:'adopcion perdido encontrado campana mascota crear publicar',ico:'paw',bg:'var(--signal)',go:()=>openPost('mascotas')},
+  {id:'pub-objeto-perdido',t:'Reportar un objeto perdido o encontrado',s:'Acción · Vecinos',k:'extraviado cartera llaves objeto crear',ico:'reportar',bg:'var(--signal)',go:()=>openPost('avisos')},
   {id:'ser-mandadito',t:'Ser mandadito',s:'Acción · Comercio',k:'registrarme trabajar repartir mensajero',ico:'mandaditos',bg:'var(--gulf)',go:()=>openMandaditoSignup()},
   {id:'verificar-negocio',t:'Verificar mi negocio',s:'Acción · Comercio',k:'registrar negocio dar de alta vender',ico:'checkBadge',bg:'var(--palm)',go:()=>{editingBusinessId=null;openPost('negocio_verificar');}}
 ];
@@ -5607,7 +5718,7 @@ const SEARCH_GROUPS=[
   {key:'empleos',label:'Empleos',ico:'empleos',items:()=>EMPLEOS.map(x=>({id:x.id,title:x.title,extras:[x.co,x.desc,(x.tags||[]).join(' '),x.colonia],sub:[x.co,x.pay].filter(Boolean).join(' · ')}))},
   {key:'alertas',label:'Alertas',ico:'alertas',items:()=>ALERTAS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.zone,a.type],sub:[a.type,a.time].filter(Boolean).join(' · ')}))},
   {key:'avisos',label:'Avisos',ico:'reportar',items:()=>AVISOS.map(a=>({id:a.id,title:a.title,extras:[a.desc,a.cat,a.colonia],sub:a.cat,img:a.img}))},
-  {key:'perdidos',label:'Perdidos y encontrados',ico:'perdidos',items:()=>PERDIDOS.map(x=>({id:x.id,title:x.name,extras:[x.desc,x.loc,x.colonia,x.tag],sub:(x.tag==='perdido'?'Perdido':'Encontrado')+(x.loc?' · '+x.loc:''),img:x.img}))},
+  {key:'mascotas',label:'Mascotas',ico:'paw',items:()=>MASCOTAS.filter(mascotaVisible).map(x=>({id:x.id,title:x.name,extras:[x.desc,x.loc,x.colonia,x.species,MASCOTA_TYPE_LABEL[x.type]],sub:[MASCOTA_TYPE_LABEL[x.type],mascotaMeta(x)].filter(Boolean).join(' · '),img:x.img}))},
   {key:'reportes',label:'Reportes',ico:'pin',items:()=>REPORTES.map(x=>({id:x.id,title:x.title,extras:[x.desc,x.loc,x.loc_colonia,x.cat],sub:[x.cat,x.loc].filter(Boolean).join(' · '),img:x.img}))}
 ];
 function runSearch(q){
@@ -5672,9 +5783,11 @@ function closeSearch(){
   const inp=document.getElementById('search-input');
   if(inp){inp.blur();inp.value='';}
 }
-// Ofertas/Avisos/Perdidos/Reportes have no detail screen — they live as cards
-// in their tab. Every one of those cards already carries data-adm-rm="table|id"
-// (see admRm()), so we can find it without touching any template.
+// Ofertas/Avisos/Reportes have no detail screen — they live as cards in their
+// tab. Every one of those cards already carries data-adm-rm="table|id" (see
+// admRm()), so we can find it without touching any template. Mascotas cards
+// are jumped to the same way AND also have their own detail modal
+// (openMascotaView), reached separately from search-result rows.
 function searchJumpTo(table,id){
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     const el=document.querySelector('[data-adm-rm="'+table+'|'+String(id).replace(/"/g,'')+'"]');
@@ -5708,8 +5821,8 @@ function openSearchResult(kind,id){
     case 'ofertas':nav('tienda');searchJumpTo('ofertas',id);break;
     // The next three reset that list's own filters first, so the target card
     // can't be hidden by a colonia/category filter left over from earlier.
-    case 'avisos':searchResetInput('av-colonia');setAvColonia('');nav('reportar');setReportarMode('avisos');searchJumpTo('avisos',id);break;
-    case 'perdidos':searchResetInput('pf-colonia-filter');setPfColonia('');setPfFilter('all');nav('reportar');setReportarMode('perdidos');searchJumpTo('perdidos',id);break;
+    case 'avisos':searchResetInput('av-colonia');setAvColonia('');setAvFilter('all');nav('reportar');setReportarMode('avisos');searchJumpTo('avisos',id);break;
+    case 'mascotas':searchResetInput('ms-colonia-filter');setMsColonia('');setMsFilter('all');nav('reportar');setReportarMode('mascotas');searchJumpTo('mascotas',id);break;
     case 'reportes':searchResetInput('rep-colonia');setRepColonia('');setRepFilter('all');nav('reportar');setReportarMode('reportes');searchJumpTo('reportes',id);break;
   }
 }

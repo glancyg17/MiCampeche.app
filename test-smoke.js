@@ -158,7 +158,50 @@ const SAMPLE = {
     // still expect present/untouched.
     { id: 'e11', title: 'Evento sincronizado del calendario', category: 'Cultura', event_date: ds(2), event_time: '5:00 PM', location: 'Centro', source: 'sync', status: 'pending' },
   ],
-  productos: [{ id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_urls: ['https://example.com/p1-a.jpg', 'https://example.com/p1-b.jpg'], featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] }],
+  productos: [
+    { id: 'p1', business_name_snapshot: 'Negocio Test', title: 'Producto test', category: 'Comida', price_mxn: 150, price_text: null, image_urls: ['https://example.com/p1-a.jpg', 'https://example.com/p1-b.jpg'], featured: true, status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 2000', contact_methods: ['whatsapp', 'llamada'] },
+    // p2: a business selling in the 'Mascotas' category — feeds the
+    // Vecinos ▸ Mascotas "Negocios" chip (vets/groomers/pet stores shown
+    // straight from Mercado, not a separate mascotas-table row).
+    { id: 'p2', business_name_snapshot: 'Veterinaria Test', title: 'Consulta veterinaria', category: 'Mascotas', price_mxn: 250, price_text: null, image_urls: ['https://example.com/p2.jpg'], status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: '981 100 3000', contact_methods: ['whatsapp'] },
+  ],
+  // Vecinos ▸ Mascotas — adoption/lost/found/campaign community posts.
+  // m1-m7 are public (someone else's); m8-m10 are owned by the test user
+  // (uid-1), replacing perdidos' pf2/pf3's old role in the Mis-publicaciones
+  // tests now that mascotas (not perdidos) is self-editable.
+  mascotas: [
+    // m1: adoption, 3 photos, fully filled out — drives the carousel
+    // (2+ images) test on the detail view.
+    { id: 'm1', type: 'adopcion', title: 'Cachorro mestizo en adopción', description: 'Muy juguetón, ya tiene sus vacunas.', species: 'perro', sex: 'macho', age_text: '3 meses', sterilized: true, image_urls: ['https://example.com/m1-a.jpg', 'https://example.com/m1-b.jpg', 'https://example.com/m1-c.jpg'], location: null, colonia: 'Centro', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // m2: lost pet, one photo, no contact info left.
+    { id: 'm2', type: 'perdido', title: 'Gato atigrado perdido', description: 'Se perdió cerca del parque.', species: 'gato', sex: 'hembra', image_urls: ['https://example.com/m2.jpg'], location: 'Cerca del parque', colonia: 'San Román', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // m3: found pet, WITH a contact number — drives the "card with a
+    // contact number renders a call/WhatsApp button" test.
+    { id: 'm3', type: 'encontrado', title: 'Perrito encontrado', description: 'Andaba solo por la calle.', species: 'perro', image_urls: [], location: 'Frente a la tienda', colonia: 'Centro', contact_phone: '981 600 7000', contact_methods: ['whatsapp', 'llamada'], status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // m4/m5: two campaigns, both in the future — m5 is SOONER than m4, so
+    // the Campañas chip's soonest-first sort must show m5 before m4.
+    { id: 'm4', type: 'campana', title: 'Campaña de esterilización — zona norte', description: 'Jornada gratuita.', event_date: ds(20), location: 'Centro de salud', colonia: 'Centro', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    { id: 'm5', type: 'campana', title: 'Campaña de vacunación — zona sur', description: 'Jornada gratuita.', event_date: ds(5), location: 'Parque central', colonia: 'San Román', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // m6: a campaign that already happened — must be excluded from the
+    // visible list (mascotaVisible()'s past-campaign check).
+    { id: 'm6', type: 'campana', title: 'Campaña ya pasada', description: 'Ya sucedió.', event_date: ds(-5), location: 'Centro', colonia: 'Centro', status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // m7: a resolved adoption (already adopted) — must be excluded from
+    // the visible list (mascotaVisible()'s resolved_at check).
+    { id: 'm7', type: 'adopcion', title: 'Gatito ya adoptado', description: 'Ya encontró hogar.', species: 'gato', image_urls: [], location: null, colonia: 'Centro', resolved_at: NOW.toISOString(), status: 'published', submitted_by: 'uid-other', created_at: NOW.toISOString() },
+    // m8: the test user's own still-pending post — the Mis-publicaciones
+    // "pending" bucket / discard+edit-tap coverage perdidos' pf2 used to carry.
+    { id: 'm8', type: 'perdido', title: 'Mi mascota perdida (pendiente)', description: 'x', species: 'perro', location: 'Centro', colonia: 'Centro', image_urls: [], status: 'pending', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    // m9: the test user's own REJECTED post with rejection_reason left
+    // NULL — the admin-"Quitar"-without-a-typed-message case perdidos' pf3
+    // used to carry (drives the "N no aprobadas" count).
+    { id: 'm9', type: 'adopcion', title: 'Mi mascota rechazada sin motivo', description: 'x', species: 'perro', image_urls: [], location: null, colonia: 'Centro', status: 'rejected', rejection_reason: null, submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    // m10: the test user's own PUBLISHED, unresolved adoption post — Activo
+    // bucket coverage + the "Marcar como adoptado" resolve-button test.
+    { id: 'm10', type: 'adopcion', title: 'Mi cachorro en adopción', description: 'x', species: 'perro', image_urls: [], location: null, colonia: 'Centro', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() },
+    // m11: an example row — must still render (with the "Ejemplo" pill),
+    // exempt from every other filter.
+    { id: 'm11', type: 'adopcion', title: 'Ejemplo: gato en adopción', description: 'x', species: 'gato', image_urls: [], location: null, colonia: 'Centro', status: 'published', is_example: true, created_at: NOW.toISOString() },
+  ],
   clasificados: [{ id: 'c1', title: 'Artículo test', category: 'Hogar', price_mxn: 300, price_text: null, image_urls: ['https://example.com/c1.jpg'], status: 'published', profiles: { display_name: 'Ricardo T.' }, item_condition: 'usado', fulfillment: 'ambos', zone: 'Centro', contact_phone: '981 300 4000', contact_methods: ['whatsapp'] }],
   ofertas: [
     { id: 'o1', business_id: 'biz-1', business_name_snapshot: 'Negocio Oferta', seller_phone: '981 200 3000', title: 'Oferta test', price_was: 200, price_now: 100, quantity_total: 5, quantity_sold: 2, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: ds(0) }] },
@@ -863,8 +906,107 @@ const fakeClient = {
   // WhatsApp contact link — a directory, no task/job state.
   assert(text('mandaditos-list') && text('mandaditos-list').includes('Mandadito Test') && text('mandaditos-list').includes('Motocicleta'), 'a published mandadito renders in the directory list');
   assert(text('mandaditos-list').includes('wa.me/529814005000') && text('mandaditos-list').includes('Contactar por WhatsApp'), 'the mandadito card carries a direct WhatsApp contact link to that person');
-  assert(text('pf-list') && text('pf-list').includes('Gato test'), 'Perdidos rendered real fetched data');
-  assert(text('pf-list').includes('tel:+529815550000'), 'a Perdidos report with a contact number shows a call button');
+  assert(text('ms-list') && text('ms-list').includes('Gato atigrado perdido'), 'Mascotas rendered real fetched data');
+  assert(text('ms-list').includes('tel:+529816007000'), 'a Mascotas post with a contact number shows a call button');
+  // ── Mascotas: visibility, chip filters, Negocios chip, detail carousel. ──
+  {
+    assert(!text('ms-list').includes('Campaña ya pasada'), 'a campaign whose event_date already passed is excluded from the visible Mascotas list');
+    assert(!text('ms-list').includes('Gatito ya adoptado'), 'a resolved (already-adopted) post is excluded from the visible Mascotas list');
+    assert(text('ms-list').includes('Cachorro mestizo en adopción'), 'a normal live adoption post IS shown');
+    assert(text('ms-list').includes('example-pill') && text('ms-list').includes('Ejemplo: gato en adopción'), 'an is_example row still renders, carrying the "Ejemplo" pill');
+    assert(text('ms-list').includes('<span class="ms-count">3</span>'), 'a post with 2+ photos shows a photo-count badge on its thumbnail');
+
+    window.setMsFilter('adopcion');
+    assert(text('ms-list').includes('Cachorro mestizo en adopción') && !text('ms-list').includes('Gato atigrado perdido'), 'the Adopción chip filters out non-adopción posts');
+
+    window.setMsFilter('campana');
+    const camText = text('ms-list');
+    assert(camText.includes('Campaña de vacunación') && camText.includes('Campaña de esterilización') && !camText.includes('Campaña ya pasada'), 'the Campañas chip shows only live (not-yet-happened) campaigns');
+    assert(camText.indexOf('Campaña de vacunación') < camText.indexOf('Campaña de esterilización'), 'the Campañas chip sorts soonest-first (m5, event_date sooner, before m4)');
+
+    window.setMsFilter('negocios');
+    assert(doc.getElementById('ms-list').style.display === 'none' && doc.getElementById('ms-negocios').style.display !== 'none', 'the Negocios chip hides the community list and shows the Mercado-backed negocios panel');
+    assert(text('ms-negocios').includes('Consulta veterinaria') && text('ms-negocios').includes('Veterinaria Test'), 'the Negocios chip shows Mercado products in the Mascotas category');
+    assert(!text('ms-negocios').includes('Producto test'), 'a non-Mascotas-category Mercado product is excluded from the Negocios chip');
+
+    // Empty state: with no Mascotas-category product at all, it offers "Publicar en Mercado".
+    const originalProductos = SAMPLE.productos;
+    SAMPLE.productos = originalProductos.filter(p => p.category !== 'Mascotas');
+    await window.refreshContent();
+    window.setMsFilter('negocios');
+    assert(text('ms-negocios').includes('Aún no hay negocios de mascotas') && text('ms-negocios').includes('Publicar en Mercado'), 'with no Mascotas-category product, the Negocios chip shows its own empty state offering to publish in Mercado');
+    SAMPLE.productos = originalProductos;
+    await window.refreshContent();
+    window.setMsFilter('all'); // restore the default filter for every later test
+
+    // Detail view: 2+ images render the swipeable carousel.
+    window.openMascotaView('m1');
+    assert(text('modal-title') === 'Cachorro mestizo en adopción', 'opening a Mascotas card shows its detail modal');
+    assert(text('modal-body').includes('pv-carousel') && (text('modal-body').match(/pv-car-slide/g) || []).length === 3 && text('modal-body').includes('1 / 3'), 'a Mascotas post with 3 images shows the full carousel with a counter');
+    assert(text('modal-body').includes('Perro') && text('modal-body').includes('Macho') && text('modal-body').includes('3 meses') && text('modal-body').includes('Esterilizado'), 'the detail view shows the species/sex/age/sterilized meta line');
+    window.closeModal();
+  }
+
+  // ── applyConditionalRows: showIf.val may now be an array (Mascotas needs
+  //    "show for adopción OR perdido OR encontrado"), not just a single value. ──
+  {
+    const arrayForm = { fields: [
+      { k: 'trigger', type: 'seg', opts: [['a', 'A'], ['b', 'B'], ['c', 'C']] },
+      { k: 'multiShown', type: 'text', showIf: { field: 'trigger', val: ['a', 'b'] } },
+    ] };
+    doc.body.insertAdjacentHTML('beforeend', `<div id="array-showif-test" style="display:none">
+      <div class="seg" id="pf-trigger"><div class="seg-btn on" data-v="a">A</div><div class="seg-btn" data-v="b">B</div><div class="seg-btn" data-v="c">C</div></div>
+      <div id="row-multiShown"></div>
+    </div>`);
+    window.applyConditionalRows(arrayForm);
+    assert(doc.getElementById('row-multiShown').style.display !== 'none', 'showIf with an array value shows the row when the current seg value is IN the array (trigger=a)');
+    // jsdom is loaded with runScripts:'outside-only' (see the note near the
+    // real-form tests below), so an inline onclick="..." attribute never
+    // fires from a real .click() — update the value via segPick() directly,
+    // then dispatch a real bubbling click so applyConditionalRows' own
+    // addEventListener('click',sync) listener (a real JS listener, not an
+    // inline attribute) actually re-evaluates the row.
+    const trigC = doc.querySelector('#pf-trigger .seg-btn[data-v="c"]');
+    window.segPick(trigC);
+    trigC.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert(doc.getElementById('row-multiShown').style.display === 'none', 'showIf with an array value hides the row when the current seg value is NOT in the array (trigger=c)');
+    doc.getElementById('array-showif-test').remove();
+  }
+
+  // ── Avisos: category chips filter the list (the form's own category
+  //    select — Perdido/Encontrado in, Mascotas out — is checked later,
+  //    once a real signed-in openPost('avisos') is already in flight). ──
+  {
+    window.setAvFilter('Seguridad');
+    assert(text('av-list').includes('Mi aviso publicado') && !text('av-list').includes('Aviso test'), 'the Avisos category chips filter the list (Seguridad shows av2, hides the Comunidad-category av1)');
+    window.setAvFilter('all');
+  }
+
+  // ── myPostBucket: a resolved mascota and a past-dated campaña both
+  //    bucket as 'finished', same as a past-dated evento. ──
+  {
+    assert(window.myPostBucket({ status: 'published', table: 'mascotas', raw: { type: 'adopcion', resolved_at: NOW.toISOString() } }) === 'finished', 'myPostBucket buckets a resolved mascota as finished');
+    assert(window.myPostBucket({ status: 'published', table: 'mascotas', raw: { type: 'campana', event_date: ds(-3) } }) === 'finished', 'myPostBucket buckets a past-dated campaña as finished');
+    assert(window.myPostBucket({ status: 'published', table: 'mascotas', raw: { type: 'campana', event_date: ds(3) } }) === 'active', 'myPostBucket keeps a future-dated campaña active');
+    assert(window.myPostBucket({ status: 'published', table: 'mascotas', raw: { type: 'adopcion', resolved_at: null } }) === 'active', 'myPostBucket keeps an unresolved adopción active');
+  }
+
+  // ── Search: "veterinaria" finds the Mascotas Negocios search-page entry
+  //    through the real runSearch() pipeline. SEARCH_PAGES/POST_FORMS/
+  //    CONTENT_PAYLOAD are all top-level `const` bindings in app.js/
+  //    supabase-client.js, which (unlike `function` declarations) are NOT
+  //    exposed on `window` under this test's indirect-eval setup, so they
+  //    can't be introspected directly here — covered indirectly instead:
+  //    a leftover 'perdidos' search page would surface as a stale result
+  //    for a query real Mascotas/Avisos copy no longer uses. ──
+  {
+    const results = window.runSearch('veterinaria');
+    const pagesGroup = results && results.find(r => r.g.key === 'paginas');
+    assert(!!pagesGroup && pagesGroup.hits.some(h => h.id === 'mascotas-negocios'), 'searching "veterinaria" finds the Mascotas Negocios search-page entry');
+    const oldResults = window.runSearch('perdidos y encontrados');
+    const oldPagesGroup = oldResults && oldResults.find(r => r.g.key === 'paginas');
+    assert(!oldPagesGroup || !oldPagesGroup.hits.some(h => h.id === 'perdidos'), 'the old "Perdidos y encontrados" search-page entry is gone');
+  }
   assert(text('alert-list') && text('alert-list').includes('Corte de agua'), 'Alertas rendered real fetched data');
   assert(text('alert-list').includes('alert-headline') && text('alert-list').includes('Corte de agua programado en Zona Norte'), 'an alerta renders its title as a real headline line');
   assert(text('alert-list').includes('class="alert-zone">Zona test<'), 'the zone still renders, now as a secondary line');
@@ -1318,7 +1460,7 @@ const fakeClient = {
 
     // …and Vecinos has its own real children too.
     await toggle('vecinos');
-    assert(JSON.stringify(childLbls(submenuOf('Vecinos'))) === JSON.stringify(['Avisos', 'Reportes', 'Perdidos']), 'Vecinos expands to Avisos/Reportes/Perdidos');
+    assert(JSON.stringify(childLbls(submenuOf('Vecinos'))) === JSON.stringify(['Avisos', 'Reportes', 'Mascotas']), 'Vecinos expands to Avisos/Reportes/Mascotas');
     await toggle('vecinos');
 
     // A child's onclick really closes the menu AND navigates — checked
@@ -2236,6 +2378,12 @@ const fakeClient = {
     // optimistic-UI rollback), so worth testing deliberately. ──
     forcedErrors.insert.avisos = { code: '23505', message: 'duplicate key value violates unique constraint "one_aviso_per_person_per_day"' };
     await window.openPost('avisos');
+    // The Avisos category select now offers Perdido/Encontrado (lost/found
+    // OBJECTS moved here) and no longer offers Mascotas (pets moved to
+    // their own Vecinos section).
+    const avCatOpts = [...doc.querySelectorAll('#pf-cat option')].map(o => o.textContent);
+    assert(avCatOpts.includes('Perdido') && avCatOpts.includes('Encontrado'), 'the Avisos form category select includes Perdido and Encontrado');
+    assert(!avCatOpts.includes('Mascotas'), 'the Avisos form category select no longer includes Mascotas — pets have their own section now');
     doc.getElementById('pf-title').value = 'Segundo aviso';
     doc.getElementById('pf-colonia').value = 'San Román';
     await window.submitPost('avisos');
@@ -2243,29 +2391,89 @@ const fakeClient = {
     assert(text('toast') === 'Ya publicaste un aviso hoy — puedes publicar otro mañana.', 'duplicate-submission error (through the REAL MC.submitAviso) maps to the correct friendly Spanish toast, not a generic one');
     forcedErrors.insert.avisos = null;
 
-    // Perdidos: the contact toggle defaults to "sí" and the number is
-    // pre-filled from the account; the contact-method pills now start
-    // unselected, so the poster picks the channels they want.
-    await window.openPost('perdidos');
-    doc.getElementById('pf-name').value = 'Gato perdido de prueba';
+    // Mascotas: defaults to type Adopción, with the pet-specific rows
+    // (species/sex/age/sterilized) visible and the campaign-date row
+    // hidden; switching tipo to Campaña flips that. The contact toggle
+    // defaults to "sí" and the number is pre-filled from the account; the
+    // contact-method pills start unselected, so the poster picks the
+    // channels they want.
+    await window.openPost('mascotas');
+    const rowVisible = (k) => doc.getElementById('row-' + k).style.display !== 'none';
+    assert(doc.querySelector('#pf-tipo .seg-btn.on').dataset.v === 'adopcion', 'Mascotas: defaults to type Adopción');
+    assert(rowVisible('species') && rowVisible('sex') && rowVisible('age') && rowVisible('sterilized'), 'Mascotas: species/sex/age/sterilized rows are visible by default (type Adopción)');
+    assert(!rowVisible('cdate'), 'Mascotas: the campaign-date row is hidden by default');
+    // jsdom runs with runScripts:'outside-only', so the inline
+    // onclick="segPick(this)" attribute never fires from a real click —
+    // update the value via segPick() directly, then dispatch a real
+    // bubbling click so applyConditionalRows' addEventListener('click',sync)
+    // listener (a real JS listener, not an inline attribute) re-evaluates
+    // which rows should show.
+    const tipoCampana = doc.querySelector('#pf-tipo .seg-btn[data-v="campana"]');
+    window.segPick(tipoCampana);
+    tipoCampana.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert(rowVisible('cdate') && !rowVisible('species') && !rowVisible('sex') && !rowVisible('age') && !rowVisible('sterilized'), 'Mascotas: switching tipo to Campaña shows the date row and hides the pet-specific rows');
+
+    // Validation: a campaña post with no date is blocked client-side.
+    // (want_contact defaults to "sí" with the phone pre-filled but no
+    // channel picked yet — toggle it off first so THAT check doesn't fire
+    // ahead of the date check this is actually testing.)
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
+    doc.getElementById('pf-name').value = 'Campaña de prueba';
     doc.getElementById('pf-colonia').value = 'San Román';
-    assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 0, 'Perdidos: contact-method pills start unselected');
-    doc.querySelectorAll('#pf-contact_methods .mchip').forEach(c => window.multiPick(c)); // pick all three
-    delete lastInsert.perdidos;
-    await window.submitPost('perdidos');
+    delete lastInsert.mascotas;
+    await window.submitPost('mascotas');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.perdidos && lastInsert.perdidos.contact_phone === '+529811234567', 'Perdidos: with the contact toggle at its "sí" default, the report carries the account phone (pre-filled)');
-    assert(Array.isArray(lastInsert.perdidos.contact_methods) && lastInsert.perdidos.contact_methods.length === 3, 'Perdidos: the three contact channels the poster picked are all attached');
+    assert(text('toast') === 'Elige la fecha de la campaña', 'Mascotas: a campaña post with no date is blocked client-side');
+    assert(!lastInsert.mascotas, 'Mascotas: the date-less campaña never reached Supabase');
+
+    // Back to Adopción for the contact-toggle + photo-required coverage below.
+    await window.openPost('mascotas');
+    doc.getElementById('pf-name').value = 'Cachorro de prueba';
+    doc.getElementById('pf-colonia').value = 'San Román';
+    assert(doc.querySelectorAll('#pf-contact_methods .mchip.on').length === 0, 'Mascotas: contact-method pills start unselected');
+    doc.querySelectorAll('#pf-contact_methods .mchip').forEach(c => window.multiPick(c)); // pick all three
+    doc.getElementById('pf-age').value = '3 meses';
+    window.segPick(doc.querySelector('#pf-sterilized .seg-btn[data-v="si"]'));
+
+    // Validation: an adopción post with no photo is blocked client-side.
+    delete lastInsert.mascotas;
+    await window.submitPost('mascotas');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('toast') === 'Agrega al menos una foto para la adopción', 'Mascotas: an adopción post with no photo is blocked client-side');
+    assert(!lastInsert.mascotas, 'Mascotas: the photo-less adopción never reached Supabase');
+
+    await attachListingPhoto(); // real upload pipeline, default field key 'photo'
+    delete lastInsert.mascotas;
+    await window.submitPost('mascotas');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.mascotas && lastInsert.mascotas.contact_phone === '+529811234567', 'Mascotas: with the contact toggle at its "sí" default, the post carries the account phone (pre-filled)');
+    assert(Array.isArray(lastInsert.mascotas.contact_methods) && lastInsert.mascotas.contact_methods.length === 3, 'Mascotas: the three contact channels the poster picked are all attached');
+    assert(lastInsert.mascotas.age_text === '3 meses' && lastInsert.mascotas.sterilized === true && lastInsert.mascotas.event_date === null, 'Mascotas: an adopción submission carries age_text/sterilized and nulls event_date (CONTENT_PAYLOAD.mascotas mapping)');
+
+    // A campaña submission, conversely, nulls every pet-specific field and
+    // carries the chosen date.
+    await window.openPost('mascotas');
+    window.segPick(doc.querySelector('#pf-tipo .seg-btn[data-v="campana"]'));
+    window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]')); // sidestep the contact-methods check — not what this test is checking
+    doc.getElementById('pf-name').value = 'Campaña de vacunación de prueba';
+    doc.getElementById('pf-colonia').value = 'San Román';
+    window.pickMonthCalDay('cdate', ds(10));
+    delete lastInsert.mascotas;
+    await window.submitPost('mascotas');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastInsert.mascotas && lastInsert.mascotas.type === 'campana' && lastInsert.mascotas.event_date === ds(10), 'Mascotas: a campaña submission carries the chosen event_date');
+    assert(lastInsert.mascotas && lastInsert.mascotas.species === null && lastInsert.mascotas.sex === null && lastInsert.mascotas.age_text === null && lastInsert.mascotas.sterilized === null, 'Mascotas: a campaña submission nulls every pet-specific field (CONTENT_PAYLOAD.mascotas mapping)');
 
     // …but toggling it off attaches no contact at all.
-    await window.openPost('perdidos');
-    doc.getElementById('pf-name').value = 'Reporte sin contacto';
+    await window.openPost('mascotas');
+    doc.getElementById('pf-name').value = 'Otro cachorro de prueba';
     doc.getElementById('pf-colonia').value = 'San Román';
     window.segPick(doc.querySelector('#pf-want_contact .seg-btn[data-v="no"]'));
-    delete lastInsert.perdidos;
-    await window.submitPost('perdidos');
+    await attachListingPhoto();
+    delete lastInsert.mascotas;
+    await window.submitPost('mascotas');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.perdidos && lastInsert.perdidos.contact_phone === null && lastInsert.perdidos.contact_methods === null, 'Perdidos: choosing "No hace falta" attaches neither number nor channels, even though the field was pre-filled');
+    assert(lastInsert.mascotas && lastInsert.mascotas.contact_phone === null && lastInsert.mascotas.contact_methods === null, 'Mascotas: choosing "No hace falta" attaches neither number nor channels, even though the field was pre-filled');
 
     // Empleos: company name is optional now (anonymity).
     await window.openPost('empleos');
@@ -3104,7 +3312,7 @@ const fakeClient = {
       assert(text('modal-body').includes('Sus negocios') && text('modal-body').includes("Taquería d'Ana") && text('modal-body').includes('Negocio verificado'), 'the user page lists their businesses with the shared status label');
       delete currentProfile.banned;
       assert(doc.querySelectorAll('#admin-posts-section .tienda-grid').length === 1, 'personal publications render as a grid, not the owner\'s list rows');
-      assert(text('admin-posts-section').includes('Mi reporte pendiente') && text('admin-posts-section').includes('La descripción no es clara'), 'the Pendiente tab shows real pending + rejected posts, including the rejection reason');
+      assert(text('admin-posts-section').includes('Mi mascota perdida (pendiente)') && text('admin-posts-section').includes('La descripción no es clara'), 'the Pendiente tab shows real pending + rejected posts, including the rejection reason');
       window.setAdminPostsTab('active');
       assert(text('admin-posts-section').includes('Mi evento activo') && text('admin-posts-section').includes('Mi aviso publicado'), 'the Activo tab shows published posts');
       window.setAdminPostsTab('finished');
@@ -3813,7 +4021,7 @@ const fakeClient = {
     await window.openPending();
     window.setPendingTab('cancellations');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (30)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
+    assert(text('modal-title') === 'Pendiente (42)', 'the modal title stays "Pendiente (N)" (N = approvals) regardless of the active tab');
     assert(text('modal-body').includes('Cancelaciones (2)'), 'the Cancelaciones tab chip carries the real unresolved count');
     const crBody = text('modal-body');
     assert(crBody.includes('Negocio Cerrado') && crBody.includes('Negocio eliminado'), 'a business_removed reminder shows its business name and the Spanish reason label');
@@ -3839,7 +4047,7 @@ const fakeClient = {
 
     await window.openPending();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') === 'Pendiente (30)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test, the one mandaditos row (md1) added for the Mandaditos directory tests, and the three ofertas rows (o3/o4/o5 — scheduled/rejected/pending) added for the Ofertas Pendientes-tab tests — the mock\'s bare status=pending filter is unfiltered by design, so every ofertas fixture row counts here regardless of its actual status) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
+    assert(text('modal-title') === 'Pendiente (42)', 'queue aggregates pending items across the content tables (incl. the extra eventos duplicate-check row, one alerta, the four extra owner-tagged perdidos/avisos rows, the two extra owner-tagged eventos rows the Mis-publicaciones tests add, the extra public past-eventos row the Pasados-filter test adds, the extra empleos row the openEmpleo test adds, the three extra public today-eventos rows the Eventos-de-hoy redesign test adds, the two extra dedicated automated rows (e11, al2) the reject-reason-per-row test adds, the second ofertas row (o2) added for the fetchMyActiveOfertas ownership-scoping test, the one mandaditos row (md1) added for the Mandaditos directory tests, the three ofertas rows (o3/o4/o5 — scheduled/rejected/pending) added for the Ofertas Pendientes-tab tests, the eleven mascotas rows (m1-m11) added for the Vecinos ▸ Mascotas tests, and the extra Mascotas-category producto (p2) added for the Mascotas Negocios-chip test — the mock\'s bare status=pending filter is unfiltered by design, so every fixture row in these tables counts here regardless of its actual status) plus business verification requests (phone/password requests from earlier tests are already resolved by this point)');
 
     // ══════════════ Reject-reason requirement: checks the actual row's
     //    submitted_by, not a hardcoded table name — the old check keyed
@@ -3969,7 +4177,7 @@ const fakeClient = {
     assert(text('toast') === 'Rechazado — el motivo quedó guardado', 'a real rejection reason succeeds with a toast confirming it was saved');
     assert(lastUpdate.avisos && lastUpdate.avisos.status === 'rejected' && lastUpdate.avisos.rejection_reason === 'La foto no es clara', 'the actual typed reason is sent to Supabase on the same row, not discarded');
     window.renderPendingQueue(); // reject auto-advanced into the next item's detail; re-render the list to check the count
-    assert(text('modal-title') === 'Pendiente (29)', 'rejected item is removed from the queue and the count updates');
+    assert(text('modal-title') === 'Pendiente (41)', 'rejected item is removed from the queue and the count updates');
 
     // Approve, now via the detail screen (not the list). Noticias gets a
     // bespoke moderation view instead of the generic field dump — real
@@ -4033,7 +4241,7 @@ const fakeClient = {
     await window.openAccount();
     await new Promise(r => setTimeout(r, 20)); // the "N no aprobadas" count loads after the view paints, then re-renders
     assert(text('modal-body').includes('Mis publicaciones'), 'the account view has a "Mis publicaciones" entry for every signed-in resident');
-    assert(text('modal-body').includes('2 no aprobadas'), 'it flags the count of rejected posts inline — now includes pf3, a rejected report with rejection_reason left null (e.g. an admin "Quitar" with no typed message), which used to be undercounted');
+    assert(text('modal-body').includes('2 no aprobadas'), 'it flags the count of rejected posts inline — now includes m9, a rejected mascota post with rejection_reason left null (e.g. an admin "Quitar" with no typed message), which used to be undercounted');
     assert(!text('modal-body').includes('La descripción no es clara'), 'the full rejection reason is no longer duplicated inline in the account view — it lives in the Mis publicaciones view now');
 
     // ── Mis publicaciones: the resident-facing sibling of the admin
@@ -4045,14 +4253,14 @@ const fakeClient = {
     await window.openMyPosts();
     await new Promise(r => setTimeout(r, 20));
     const mp = () => text('modal-body');
-    assert(/^Mis publicaciones \(6\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, pf2 (pending) + pf3 (rejected, no reason) in perdidos, e3 (finished) + e4 (active) in eventos');
+    assert(/^Mis publicaciones \(7\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, m8 (pending) + m9 (rejected, no reason) + m10 (published) in mascotas, e3 (finished) + e4 (active) in eventos');
     // Default tab is Pendiente, and it buckets rejected alongside true
     // pending — neither is currently live, both need the submitter's attention.
-    assert(mp().includes('Pendiente (3)') && mp().includes('Activo (2)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + pf2 (pending) + pf3 (rejected) in Pendiente, av2 + e4 in Activo, e3 in Finalizado');
+    assert(mp().includes('Pendiente (3)') && mp().includes('Activo (3)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + m8 (pending) + m9 (rejected) in Pendiente, av2 + e4 + m10 in Activo, e3 in Finalizado');
     assert(mp().includes('Aviso test') && mp().includes('No aprobado') && mp().includes('La descripción no es clara'), 'a rejected post shows the "No aprobado" badge with the rejection reason inline');
-    assert(mp().includes('Mi reporte pendiente') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
+    assert(mp().includes('Mi mascota perdida (pendiente)') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
     assert(!mp().includes('Mi aviso publicado'), 'a published (active) post does not show up in the default Pendiente tab');
-    assert(!mp().includes('Reporte de otra persona'), 'another user\'s post never appears — fetchMyPosts is scoped to the owner');
+    assert(!mp().includes('Cachorro mestizo en adopción'), 'another user\'s post never appears — fetchMyPosts is scoped to the owner');
     assert(!mp().includes('Corte de agua programado en Zona Norte'), 'alertas (owner-less) is excluded from Mis publicaciones entirely');
     // A rejected post keeps its explicit "Editar y reenviar" action. The
     // old separate "Descartar" text button is gone — discard is now a
@@ -4061,12 +4269,14 @@ const fakeClient = {
     // policy (previously rejected-only).
     assert(mp().includes('Editar y reenviar'), 'a rejected post\'s card still shows "Editar y reenviar"');
     assert(mp().includes("confirmDiscardMyPost('avisos','av1')"), 'a rejected post\'s card carries the universal discard (trash icon) action, targeting its own table/id');
-    assert(mp().includes("confirmDiscardMyPost('perdidos','pf2')"), 'a non-rejected (pending) post\'s card ALSO carries the discard action, now that the DB allows discarding any status');
-    assert(mp().includes("openMyPostEdit('perdidos','pf2')"), 'a plain pending (non-rejected, non-rejected-styled) post is still whole-card tappable into edit, same as before');
+    assert(mp().includes("confirmDiscardMyPost('mascotas','m8')"), 'a non-rejected (pending) post\'s card ALSO carries the discard action, now that the DB allows discarding any status');
+    assert(mp().includes("openMyPostEdit('mascotas','m8')"), 'a plain pending (non-rejected, non-rejected-styled) post is still whole-card tappable into edit, same as before');
 
     // Switch to Activo: the published aviso shows up here instead, with
     // no "Editar y reenviar" (that stays rejected-only) but it DOES still
-    // get the universal discard action.
+    // get the universal discard action. m10 (published, unresolved
+    // adopción) is here too, with its own "Marcar como adoptado" resolve
+    // button — campaña posts and non-mascotas tables never get this button.
     window.setMyPostsTab('active');
     assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'a published post shows the "Publicado" badge, now under the Activo tab');
     assert(mp().includes('Mi evento activo'), 'the future-dated eventos row appears under Activo');
@@ -4074,6 +4284,7 @@ const fakeClient = {
     assert(!mp().includes('Editar y reenviar'), 'a non-rejected item never shows the rejected-specific "Editar y reenviar" action');
     assert(mp().includes("confirmDiscardMyPost('avisos','av2')"), 'a published (active) post still carries the universal discard action');
     assert(mp().includes("openMyPostEdit('avisos','av2')"), 'a published, still-editable row is tappable straight into its edit form');
+    assert(mp().includes('Mi cachorro en adopción') && mp().includes("resolveMascota('m10',true)") && mp().includes('Marcar como adoptado'), 'a published, unresolved adopción post shows a "Marcar como adoptado" resolve button');
 
     // Switch to Finalizado: only the past-dated event, correctly relabeled
     // even though its raw DB status is still 'published'.

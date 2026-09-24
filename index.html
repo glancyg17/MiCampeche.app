@@ -14,12 +14,12 @@
 <meta property="og:url" content="https://micampeche.app">
 <meta property="og:image" content="https://micampeche.app/assets/icons/MiCampeche-app-icon.png">
 <meta name="theme-color" content="#000612">
-<meta name="mc-build" content="69c857e381">
+<meta name="mc-build" content="71e18b9cfa">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png">
-<link rel="stylesheet" href="css/styles.css?v=69c857e381">
+<link rel="stylesheet" href="css/styles.css?v=71e18b9cfa">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -54,7 +54,7 @@
       <div class="gate-feature">
         <span class="gate-feature-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2.5 17a1.6 1.6 0 0 0 1.4 2.4h16.2a1.6 1.6 0 0 0 1.4-2.4L13.7 3.9a1.6 1.6 0 0 0-2.8 0z"/></svg></span>
         <h3>Vecinos</h3>
-        <p>Avisos de la comunidad, reportes de tu calle y objetos perdidos — vecino a vecino.</p>
+        <p>Avisos de la comunidad, reportes de tu calle y mascotas — vecino a vecino.</p>
       </div>
     </section>
 
@@ -247,7 +247,7 @@
       <button class="fab" id="anuncios-fab" onclick="openPost(anunciosMode==='empleos'?'empleos':'eventos')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
 
-    <!-- ═══ VECINOS (Avisos ⇄ Reportes ⇄ Perdidos) ═══ -->
+    <!-- ═══ VECINOS (Avisos ⇄ Reportes ⇄ Mascotas) ═══ -->
     <div class="scr" id="scr-reportar">
       <div class="pad">
         <div class="sec-title">Vecinos</div>
@@ -256,12 +256,13 @@
       <div class="subtog subtog3">
         <button class="subtog-btn on" data-v="avisos" onclick="setReportarMode('avisos')">Avisos</button>
         <button class="subtog-btn" data-v="reportes" onclick="setReportarMode('reportes')">Reportes</button>
-        <button class="subtog-btn" data-v="perdidos" onclick="setReportarMode('perdidos')">Perdidos</button>
+        <button class="subtog-btn" data-v="mascotas" onclick="setReportarMode('mascotas')">Mascotas</button>
       </div>
       <div id="reportar-avisos">
         <div class="of-hdr">
-          <div class="of-hdr-txt">Avisos de la comunidad · un aviso por persona al día</div>
+          <div class="of-hdr-txt">Avisos de la comunidad · un aviso por persona al día (los de Perdido y Encontrado no cuentan)</div>
         </div>
+        <div class="chiprow" id="av-chips"></div>
         <div class="filter-row">
           <input class="fi" id="av-colonia" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setAvColonia(this.value)">
         </div>
@@ -274,14 +275,15 @@
         </div>
         <div class="rep-list" id="rep-list"></div>
       </div>
-      <div id="reportar-perdidos" style="display:none">
-        <div class="chiprow" id="pf-chips"></div>
-        <div class="filter-row">
-          <input class="fi" id="pf-colonia-filter" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setPfColonia(this.value)">
+      <div id="reportar-mascotas" style="display:none">
+        <div class="chiprow" id="ms-chips"></div>
+        <div class="filter-row" id="ms-colonia-row">
+          <input class="fi" id="ms-colonia-filter" type="text" list="colonia-datalist" autocomplete="off" placeholder="Filtrar por colonia..." oninput="setMsColonia(this.value)">
         </div>
-        <div class="pf-list" id="pf-list"></div>
+        <div class="pf-list" id="ms-list"></div>
+        <div id="ms-negocios" style="display:none"></div>
       </div>
-      <button class="fab" id="reportar-fab" onclick="openPost(reportarMode==='reportes'?'reportar':(reportarMode==='perdidos'?'perdidos':'avisos'))"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="fab" id="reportar-fab" onclick="openPost(reportarMode==='reportes'?'reportar':(reportarMode==='mascotas'?'mascotas':'avisos'))"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
 
     <!-- ═══ PAGAR SERVICIOS (reached via hamburger menu, not a tab) ═══ -->
@@ -533,8 +535,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js?v=69c857e381"></script>
-<script src="js/app.js?v=69c857e381"></script>
+<script src="js/supabase-client.js?v=71e18b9cfa"></script>
+<script src="js/app.js?v=71e18b9cfa"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads

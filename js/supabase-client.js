@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='69c857e381';
+window.MC_BUILD_CLIENT='71e18b9cfa';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -432,6 +432,7 @@ const CONTENT_TABLES=[
   {table:'clasificados',label:'Clasificado',titleField:'title',ownerField:'submitted_by'},
   {table:'ofertas',label:'Oferta',titleField:'title',ownerField:'submitted_by'},
   {table:'perdidos',label:'Perdido/Encontrado',titleField:'title',ownerField:'submitted_by'},
+  {table:'mascotas',label:'Mascota',titleField:'title',ownerField:'submitted_by'},
   {table:'empleos',label:'Empleo',titleField:'title',ownerField:'submitted_by'},
   {table:'reportes',label:'Reporte',titleField:'title',ownerField:'submitted_by'},
   {table:'avisos',label:'Aviso',titleField:'title',ownerField:'submitted_by'},
@@ -450,6 +451,7 @@ const MODERATION_DETAIL_FIELDS={
   clasificados:[['title','Artículo'],['category','Categoría'],['item_condition','Estado'],['price_text','Precio'],['price_mxn','Precio (MXN)'],['colonia','Colonia'],['fulfillment','Entrega'],['description','Descripción'],['image_urls','Imágenes'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   ofertas:[['title','Oferta'],['business_name_snapshot','Negocio'],['description','Descripción'],['terms','Condiciones'],['price_was','Precio normal'],['price_now','Precio con descuento'],['quantity_total','Cantidad disponible'],['image_url','Imagen']],
   perdidos:[['title','Título'],['report_type','Tipo'],['location','Zona'],['colonia','Colonia'],['description','Descripción'],['image_url','Imagen'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
+  mascotas:[['title','Título'],['type','Tipo'],['species','Especie'],['sex','Sexo'],['age_text','Edad'],['sterilized','Esterilizado'],['event_date','Fecha de la campaña'],['location','Zona'],['colonia','Colonia'],['description','Descripción'],['image_urls','Imágenes'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   empleos:[['title','Puesto'],['company','Negocio'],['pay','Pago'],['colonia','Colonia'],['description','Descripción'],['tags','Etiquetas'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto']],
   reportes:[['title','Título'],['category','Categoría'],['location_text','Ubicación'],['colonia','Colonia'],['description','Descripción'],['image_url','Imagen']],
   avisos:[['title','Título'],['category','Categoría'],['colonia','Colonia'],['description','Mensaje'],['contact_info','Contacto'],['contact_phone','Tel. de contacto'],['contact_methods','Formas de contacto'],['anonymous','Anónimo']],
@@ -569,7 +571,7 @@ MC.fetchWeather=async function(){
    it here too would just duplicate it), and noticias/ofertas (no
    resident self-edit path). Every row in "Mis publicaciones" is therefore
    tappable straight into an edit form. */
-const SELF_EDIT_TABLES=['eventos','productos','clasificados','perdidos','empleos','reportes','avisos','mandaditos'];
+const SELF_EDIT_TABLES=['eventos','productos','clasificados','mascotas','empleos','reportes','avisos','mandaditos'];
 const MY_POST_TABLES=CONTENT_TABLES.filter(t=>t.ownerField&&SELF_EDIT_TABLES.includes(t.table));
 
 /* So a rejection reason isn't just stored and forgotten — a submitter can
@@ -1108,12 +1110,16 @@ MC.submitEventoFeature=async function(eventId,startDs){
   return sb.from('eventos_featured_bookings').insert({event_id:eventId,start_date:startDs});
 };
 
-MC.fetchPerdidos=async function(){
-  const {data,error}=await sb.from('perdidos').select('*')
-    .eq('status','published').order('created_at',{ascending:false}).limit(60);
+MC.fetchMascotas=async function(){
+  const {data,error}=await sb.from('mascotas').select('*')
+    .eq('status','published').order('created_at',{ascending:false}).limit(80);
   if(error){console.error(error);return [];}
-  return data.map(r=>({id:r.id,tag:r.report_type,name:r.title,desc:r.description||'',loc:r.location||'',colonia:r.colonia||'',img:r.image_url||'',
-    contact:r.contact_info||'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[]}));
+  return data.map(r=>({id:r.id,type:r.type,name:r.title,desc:r.description||'',
+    species:r.species||'',sex:r.sex||'',age:r.age_text||'',sterilized:r.sterilized,
+    eventDate:r.event_date||'',loc:r.location||'',colonia:r.colonia||'',
+    imgs:r.image_urls||[],img:(r.image_urls&&r.image_urls[0])||'',
+    contact:'',contactPhone:r.contact_phone||'',contactMethods:r.contact_methods||[],
+    resolvedAt:r.resolved_at||null,isExample:!!r.is_example,createdAt:r.created_at}));
 };
 
 /* Fallback thumbnail per alert_type — alertas has no image column at all
@@ -1201,7 +1207,7 @@ MC.fetchAvisos=async function(){
 
 /* ══════════════ SUBMIT: writes real rows, always as status='pending' by table default ══════════════ */
 
-/* Contact is opt-in on Avisos / Empleos / Perdidos: the "¿dejar un número?"
+/* Contact is opt-in on Avisos / Empleos / Mascotas: the "¿dejar un número?"
    toggle (d.want_contact) decides whether anything is attached. When it's
    on, the poster also picks which channels they're reachable by — same
    contact_phone (text) + contact_methods (text[]) shape Productos and
@@ -1235,7 +1241,21 @@ const CONTENT_PAYLOAD={
   }),
   avisos:(d)=>({category:d.cat||null,colonia:d.colonia||null,title:d.title,description:d.desc||null,image_url:d.photo||null,...optContactFields(d),anonymous:d.anon==='si'}),
   empleos:(d)=>({title:d.title,company:(d.co||'').trim()||null,pay:d.pay||null,colonia:d.colonia||null,description:d.desc||null,...optContactFields(d)}),
-  perdidos:(d)=>({report_type:d.tag||'perdido',title:d.name,location:d.loc||null,colonia:d.colonia||null,description:d.desc||null,image_url:d.photo||null,...optContactFields(d)}),
+  mascotas:(d)=>{
+    const type=d.tipo||'adopcion';
+    const pet=type!=='campana';
+    return {
+      type,title:d.name,description:d.desc||null,
+      species:pet?(d.species||null):null,
+      sex:pet?(d.sex||null):null,
+      age_text:type==='adopcion'?((d.age||'').trim()||null):null,
+      sterilized:type==='adopcion'?(d.sterilized==='si'?true:d.sterilized==='no'?false:null):null,
+      event_date:type==='campana'?(d.cdate||null):null,
+      location:d.loc||null,colonia:d.colonia||null,
+      image_urls:Array.isArray(d.photo)?d.photo:[],
+      ...optContactFields(d)
+    };
+  },
   reportes:(d)=>({category:d.cat||null,title:d.title,location_text:d.loc||null,colonia:d.colonia||null,description:d.desc||null,image_url:d.photo||null}),
   productos:(d)=>{
     const onOrder=d.availability==='pedido';
@@ -1299,9 +1319,9 @@ MC.submitMandadito=async function(d){
   return sb.from('mandaditos').insert({...CONTENT_PAYLOAD.mandaditos(d),submitted_by:uid}).select('id').single();
 };
 
-MC.submitPerdido=async function(d){
+MC.submitMascota=async function(d){
   const uid=await MC.ready;
-  return sb.from('perdidos').insert({...CONTENT_PAYLOAD.perdidos(d),submitted_by:uid});
+  return sb.from('mascotas').insert({...CONTENT_PAYLOAD.mascotas(d),submitted_by:uid});
 };
 
 MC.submitEmpleo=async function(d){
@@ -1351,6 +1371,12 @@ MC.updatePost=async function(table,id,d){
    blocks it outright. */
 MC.deleteMyPost=async function(table,id){
   return sb.from(table).delete().eq('id',id);
+};
+
+/* Owner marks their own mascota listing as resolved (adopted / found / owner located) or reopens it.
+   The DB trigger lets a resolved_at-only change through WITHOUT sending the row back to moderation. */
+MC.setMascotaResolved=async function(id,resolved){
+  return sb.from('mascotas').update({resolved_at:resolved?new Date().toISOString():null}).eq('id',id);
 };
 
 /* Ofertas is two writes: the deal itself, then either a booking (day free)
