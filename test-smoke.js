@@ -3496,45 +3496,63 @@ const fakeClient = {
       assert(Array.from(gotBytes).every((b, i) => b === expectedBytes[i]), 'every decoded byte matches an independent base64 decode, not just the length');
       assert(gotBytes[0] === 4, 'the decoded key starts with 0x04 — the uncompressed-point prefix a real VAPID key must have');
 
+      // pushPref()/setPushPref() are pure localStorage helpers — testable
+      // directly regardless of Push API support, same spirit as the
+      // urlBase64ToUint8Array check above.
+      window.localStorage.removeItem('mc_push_enabled');
+      assert(window.pushPref() === true, 'with no stored preference yet, pushPref() defaults to true — push is opt-out, not opt-in');
+      window.setPushPref(false);
+      assert(window.pushPref() === false, 'setPushPref(false) is read back as false');
+      window.setPushPref(true);
+      assert(window.pushPref() === true, 'setPushPref(true) is read back as true — same key, not a one-way switch');
+      window.setPushPref(false);
+      assert(window.pushPref() === false, 'the same stored value is returned on a later, independent call, not recomputed from a live check — the literal point of this change');
+      window.setPushPref(true); // restore the default for the rendering assertions below
+
       // MC is a top-level `const` in supabase-client.js, so — unlike the
-      // plain `function`-declared names (openAccount, togglePushSubscription,
-      // urlBase64ToUint8Array, …) — it never attaches to `window` and isn't
-      // reachable from here directly. hasPushSubscription()/subscribeToPush()
-      // are instead exercised for real through the window-exposed functions
-      // that actually call them (refreshPushToggleRow / togglePushSubscription),
-      // below — that's real integration coverage, not a workaround.
+      // plain `function`-declared names (openPreferences, setPushEnabled,
+      // reconcilePushState, urlBase64ToUint8Array, …) — it never attaches
+      // to `window` and isn't reachable from here directly.
+      // hasPushSubscription()/subscribeToPush() are instead exercised for
+      // real through the window-exposed functions that actually call
+      // them, below.
       const settle = () => new Promise(r => setTimeout(r, 20));
+      const savedSession = currentSession;
 
-      // admin: the row appears, starts "checking", settles to "unsupported"
-      // (real, since this environment has no Push API) and is not tappable there
-      currentProfile.is_admin = true;
-      await window.openAccount();
+      // Signed-in account: Preferencias shows the push block (any
+      // signed-in account now, not admin-only), settles to "not
+      // supported" — real, since this environment has no Push API at
+      // all — and the reconciler doesn't throw when called directly.
+      // openPreferences() reads the cached lastFetchedAccount when one
+      // already exists (same pattern as the real menu flow, where it was
+      // just refreshed moments earlier) — refreshPendingBadge() is the
+      // real function that keeps that cache honest after a session change
+      // (doSignOut() itself calls it), so it's used here the same way
+      // other tests already force a fresh re-fetch after reassigning
+      // currentSession directly.
+      currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+      await window.refreshPendingBadge();
+      await window.openPreferences();
       await settle();
-      const row = doc.getElementById('push-toggle-row');
-      assert(!!row, 'an admin sees the "Notificaciones push" row in the account menu');
-      assert(row.getAttribute('data-push-state') === 'unsupported' && text('push-toggle-row').includes('No disponibles en este navegador'),
-        'once the async check resolves, the row settles to "unsupported" in a browser without the Push API');
-      assert(!row.getAttribute('onclick'), 'the row is not tappable while unsupported — no onclick wired up at all, so a tap genuinely cannot do anything');
-
-      // non-admin: no row, no trace of the feature at all — same gate as
-      // Usuarios/Pendiente, not merely hidden by CSS
-      currentProfile.is_admin = false;
-      await window.openAccount();
-      await settle();
-      assert(!doc.getElementById('push-toggle-row') && !text('modal-body').includes('Notificaciones push'),
-        'a non-admin account never sees the push-notifications row at all');
-      currentProfile.is_admin = true; // restore for later tests
-
-      // A stray call to the handler itself (can't happen via a real tap,
-      // since there's no onclick while unsupported) must still fail safely
-      // rather than leaving the row stuck on "Comprobando…" or throwing.
-      await window.openAccount();
-      await settle();
-      let toggleThrew = false;
-      try { await window.togglePushSubscription(); } catch (_) { toggleThrew = true; }
-      assert(!toggleThrew, 'calling the toggle handler directly while unsupported does not throw');
-      assert(doc.getElementById('push-toggle-row').getAttribute('data-push-state') === 'unsupported', 'and settles back to "unsupported", never stuck mid-toggle');
+      assert(text('modal-body').includes('Notificaciones push'), 'a signed-in account sees the "Notificaciones push" block in Preferencias');
+      assert(text('modal-body').includes('No disponibles en este navegador'), 'and it honestly reports unsupported in a browser without the Push API, rather than a fake on/off toggle');
+      let reconcileThrew = false;
+      try { await window.reconcilePushState(); } catch (_) { reconcileThrew = true; }
+      assert(!reconcileThrew, 'calling the reconciler directly in an unsupported environment does not throw');
       window.closeModal();
+
+      // Signed-out (anonymous) session: no trace of the feature at all —
+      // the same "entirely absent, not merely hidden" gate Mensajes
+      // already uses.
+      currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
+      await window.refreshPendingBadge();
+      await window.openPreferences();
+      await settle();
+      assert(!text('modal-body').includes('Notificaciones push'), 'a signed-out session never sees the push-notifications block at all');
+      window.closeModal();
+
+      currentSession = savedSession; // restore for later tests
+      await window.refreshPendingBadge(); // and re-sync the cached account so later tests aren't left on the anonymous one
     }
 
     // Premium free-slot-per-billing-cycle for Ofertas: when the DB (via

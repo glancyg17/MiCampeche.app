@@ -1,4 +1,4 @@
-window.MC_BUILD='0ae3a46f78';
+window.MC_BUILD='cc701d56ae';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1301,6 +1301,19 @@ let tipGateShownThisSession=new Set();
 function tipsEnabled(){
   try{return localStorage.getItem('mc_tips_enabled')!=='0';}catch(_){return true;}
 }
+/* Push notification preference — same device-level pattern as
+   tipsEnabled()/themePref(): defaults to true (opt-out, not opt-in) and
+   only ever changes via an explicit tap in Preferencias, so the toggle
+   reads back the same choice on every load instead of being re-derived
+   from a live PushManager check each time — that live-check approach is
+   what made the old admin-only version look like it "reset" the user's
+   choice. */
+function pushPref(){
+  try{return localStorage.getItem('mc_push_enabled')!=='0';}catch(_){return true;}
+}
+function setPushPref(on){
+  try{localStorage.setItem('mc_push_enabled',on?'1':'0');}catch(_){}
+}
 function themePref(){
   try{return localStorage.getItem('mc_theme')||'light';}catch(_){return 'light';}
 }
@@ -1349,13 +1362,16 @@ function dismissTipGate(key){
   try{localStorage.setItem('mc_onboard_'+key,'1');}catch(_){}
   document.getElementById('tip-gate').classList.remove('on');
 }
-function openPreferences(){
+async function openPreferences(){
   closeMenu();
+  const acct=lastFetchedAccount||await MC.currentAccount();
+  lastFetchedAccount=acct;
   document.getElementById('modal-title').textContent='Preferencias';
-  document.getElementById('modal-body').innerHTML=renderPreferencesBody();
+  document.getElementById('modal-body').innerHTML=renderPreferencesBody(acct);
   document.getElementById('modal-bg').classList.add('on');
+  if(acct.signedIn)reconcilePushState();
 }
-function renderPreferencesBody(){
+function renderPreferencesBody(acct=lastFetchedAccount){
   const on=tipsEnabled();
   const theme=themePref();
   return `
@@ -1374,12 +1390,78 @@ function renderPreferencesBody(){
         <button class="chip${on?'':' on'}" onclick="setTipsEnabled(false)">Desactivados</button>
       </div>
     </div>
+    ${acct&&acct.signedIn?renderPushPrefBlock():''}
     ${isStandalone()?'':`
       <button class="menu-item" onclick="triggerInstall()" style="border:1.5px solid var(--line2);justify-content:center;margin-top:6px">
         <span class="menu-item-lbl">Instalar la app</span>
       </button>
     `}
   `;
+}
+/* Push notification preference block in Preferencias — shown to every
+   signed-in account (not admin-only anymore: the mechanism itself was
+   never admin-specific, only which events trigger a send was — see the
+   v11 Codex Push Notifications section). Renders instantly from the
+   stored preference (pushPref()), never from a live PushManager check. */
+function renderPushPrefBlock(){
+  const supported=('Notification' in window)&&('PushManager' in window)&&('serviceWorker' in navigator);
+  if(!supported){
+    return `<div style="margin-bottom:14px">
+      <div class="fl" style="margin-bottom:8px">Notificaciones push</div>
+      <div class="field-note">No disponibles en este navegador.</div>
+    </div>`;
+  }
+  const on=pushPref();
+  const blocked=on&&Notification.permission==='denied';
+  return `<div style="margin-bottom:14px">
+    <div class="fl" style="margin-bottom:8px">Notificaciones push</div>
+    <div style="display:flex;gap:8px" id="push-pref-chips">
+      <button class="chip${on?' on':''}" onclick="setPushEnabled(true)">Activadas</button>
+      <button class="chip${on?'':' on'}" onclick="setPushEnabled(false)">Desactivadas</button>
+    </div>
+    <div class="field-note" id="push-pref-note">${blocked?'Bloqueadas en la configuración de tu navegador — actívalas ahí para recibirlas de nuevo.':''}</div>
+  </div>`;
+}
+/* An explicit tap. Writes the preference FIRST (so it's remembered even
+   if what follows fails), reflects it immediately, then tries to make
+   the real subscription match. A permission denial is the one case the
+   stored preference changes on its own — it's a direct result of THIS
+   tap, not something flipping quietly later. */
+async function setPushEnabled(on){
+  setPushPref(on);
+  document.getElementById('modal-body').innerHTML=renderPreferencesBody();
+  if(on){
+    if(await MC.hasPushSubscription())return;
+    const {error}=await MC.subscribeToPush();
+    if(error==='permission_denied'){
+      setPushPref(false);
+      document.getElementById('modal-body').innerHTML=renderPreferencesBody();
+      toast('Bloqueaste las notificaciones — actívalas en la configuración del sitio de tu navegador para intentarlo de nuevo');
+    }else if(error){
+      toast('No se pudieron activar las notificaciones — intenta de nuevo');
+    }else{
+      toast('Notificaciones activadas ✓');
+    }
+  }else{
+    MC.unsubscribeFromPush().catch(()=>{}); // best-effort; the stored preference is already off regardless
+    toast('Notificaciones desactivadas');
+  }
+}
+/* Runs once when Preferencias opens for a signed-in account. Makes the
+   real subscription match the ALREADY-stored preference — it never
+   changes that preference itself. Non-blocking; never delays the
+   initial paint. */
+async function reconcilePushState(){
+  if(!(('Notification' in window)&&('PushManager' in window)&&('serviceWorker' in navigator)))return;
+  const on=pushPref();
+  const subscribed=await MC.hasPushSubscription();
+  if(on&&!subscribed&&Notification.permission!=='denied'){
+    await MC.subscribeToPush(); // a real prompt only if permission is still 'default'; a silent no-op if already denied
+  }else if(!on&&subscribed){
+    await MC.unsubscribeFromPush();
+  }
+  const note=document.getElementById('push-pref-note');
+  if(note)note.textContent=(on&&Notification.permission==='denied')?'Bloqueadas en la configuración de tu navegador — actívalas ahí para recibirlas de nuevo.':'';
 }
 function setTipsEnabled(on){
   try{localStorage.setItem('mc_tips_enabled',on?'1':'0');}catch(_){}
@@ -3166,97 +3248,9 @@ function renderAccountSignedIn(acct){
       ${((acct.pendingCount||0)+(acct.cancellationCount||0))>0?`<span class="menu-badge on">${((acct.pendingCount||0)+(acct.cancellationCount||0))>99?'99+':((acct.pendingCount||0)+(acct.cancellationCount||0))}</span>`:''}
       <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>`:''}
-    ${acct.isAdmin?pushToggleRowHtml('checking'):''}
     <button class="submit-btn" style="background:var(--paper2);color:var(--ink)" onclick="doSignOut()">Cerrar sesión</button>
   `;
   document.getElementById('modal-bg').classList.add('on');
-  // Real support/subscription status needs two async calls this render
-  // can't block on — painted as "Comprobando…" above, patched here once it
-  // resolves. `seq` mirrors openAccount()'s own accountViewSeq guard: this
-  // function only ever runs while accountViewSeq still equals the turn it
-  // was called for, so capturing it now is equivalent to capturing "my
-  // turn" — if the account view gets closed/reopened before this resolves,
-  // the patch is silently dropped instead of touching a stale/gone modal.
-  if(acct.isAdmin)refreshPushToggleRow(accountViewSeq);
-}
-
-/* Push notifications — admin-only for now. The mechanism itself isn't
-   admin-specific (any profile_id can hold a subscription), only which
-   events currently trigger a send is (new Pendiente items) — extending
-   this to regular accounts later just means relaxing this one gate and
-   adding new server-side triggers, nothing here needs to change. */
-function pushToggleRowHtml(state){
-  // 'checking' (first paint / mid-toggle) and 'unsupported' render as an
-  // inert row — no onclick, no arrow — so a tap can't fire before a real
-  // on/off state is known, and can't do anything on a browser that simply
-  // doesn't have the API (e.g. iOS Safari outside of "add to home screen").
-  const sub={checking:'Comprobando…',unsupported:'No disponibles en este navegador',off:'Desactivadas',on:'Activadas'}[state];
-  const tappable=state==='off'||state==='on';
-  return `<div class="menu-item" id="push-toggle-row" data-push-state="${state}"${tappable?' onclick="togglePushSubscription()" style="border:1.5px solid var(--line2);margin-bottom:4px;cursor:pointer"':' style="border:1.5px solid var(--line2);margin-bottom:4px;opacity:.7"'}>
-    <span class="menu-item-ico">${svgIco('bell')}</span>
-    <span class="menu-item-txt">
-      <span class="menu-item-lbl">Notificaciones push</span>
-      <span class="menu-item-sub">${sub}</span>
-    </span>
-    ${tappable?'<svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>':''}
-  </div>`;
-}
-async function refreshPushToggleRow(seq){
-  const supported=('Notification' in window)&&('PushManager' in window)&&('serviceWorker' in navigator);
-  if(!supported){
-    if(seq!==accountViewSeq)return;
-    const row=document.getElementById('push-toggle-row');
-    if(row)row.outerHTML=pushToggleRowHtml('unsupported');
-    return;
-  }
-  const subscribed=await MC.hasPushSubscription();
-  if(seq!==accountViewSeq)return;
-  const row=document.getElementById('push-toggle-row');
-  if(row)row.outerHTML=pushToggleRowHtml(subscribed?'on':'off');
-}
-async function togglePushSubscription(){
-  const seq=accountViewSeq;
-  const row=document.getElementById('push-toggle-row');
-  if(!row||row.dataset.pushState==='checking')return; // already mid-toggle
-  const turningOff=row.dataset.pushState==='on';
-  row.outerHTML=pushToggleRowHtml('checking');
-  try{
-    if(turningOff){
-      await MC.unsubscribeFromPush();
-      if(seq!==accountViewSeq)return;
-      const fresh=document.getElementById('push-toggle-row');
-      if(fresh)fresh.outerHTML=pushToggleRowHtml('off');
-      toast('Notificaciones desactivadas');
-      return;
-    }
-    const {error}=await MC.subscribeToPush();
-    if(seq!==accountViewSeq)return;
-    const fresh=document.getElementById('push-toggle-row');
-    if(error){
-      if(error==='not_supported'){
-        if(fresh)fresh.outerHTML=pushToggleRowHtml('unsupported');
-      }else if(error==='permission_denied'){
-        if(fresh)fresh.outerHTML=pushToggleRowHtml('off');
-        toast('Bloqueaste las notificaciones — actívalas en la configuración del sitio de tu navegador para intentarlo de nuevo');
-      }else{
-        // any other failure (not_signed_in, a real Postgres error, …) — a
-        // generic fallback so a tap never just silently does nothing.
-        if(fresh)fresh.outerHTML=pushToggleRowHtml('off');
-        toast('No se pudieron activar las notificaciones — intenta de nuevo');
-      }
-      return;
-    }
-    if(fresh)fresh.outerHTML=pushToggleRowHtml('on');
-    toast('Notificaciones activadas ✓');
-  }catch(err){
-    // e.g. pushManager.subscribe() rejecting for a reason that isn't a
-    // clean {error} shape — never leave the row stuck on "Comprobando…".
-    console.error('push toggle failed:',err);
-    if(seq!==accountViewSeq)return;
-    const fresh=document.getElementById('push-toggle-row');
-    if(fresh)fresh.outerHTML=pushToggleRowHtml(turningOff?'on':'off');
-    toast('No se pudieron actualizar las notificaciones — intenta de nuevo');
-  }
 }
 
 let myBusinessesList=[];
@@ -5684,7 +5678,7 @@ const SEARCH_PAGES=[
   {id:'perfil',t:'Mi perfil',s:'Tu cuenta',k:'cuenta entrar iniciar sesión registrarme crear cuenta',ico:'account',bg:'var(--night)',go:()=>openAccount()},
   {id:'negocio',t:'Mi negocio',s:'Tu negocio y su verificación',k:'negocios verificar premium registrar',ico:'account',bg:'var(--night)',go:()=>{openMenu();toggleMenuSection('cuenta');}},
   {id:'mispub',t:'Mis publicaciones',s:'Lo que has publicado',k:'posts anuncios míos',ico:'account',bg:'var(--night)',go:()=>openMyPosts()},
-  {id:'prefs',t:'Preferencias',s:'Tema, consejos y más',k:'tema oscuro claro modo ajustes configuración',ico:'info',bg:'var(--ink3)',go:()=>openPreferences()},
+  {id:'prefs',t:'Preferencias',s:'Tema, consejos y más',k:'tema oscuro claro modo ajustes configuración notificaciones push avisos',ico:'info',bg:'var(--ink3)',go:()=>openPreferences()},
   {id:'sugerencias',t:'Sugerencias',s:'Cuéntanos qué mejorar',k:'opinión feedback ideas mejorar',ico:'message',bg:'var(--palm)',go:()=>openSuggestionForm('menu')},
   {id:'contacto',t:'Contacto',s:'Escríbenos un mensaje',k:'mensaje correo email ayuda soporte',ico:'message',bg:'var(--signal)',go:()=>openContactForm()},
   {id:'mensajes',t:'Mensajes',s:'Tu bandeja de entrada',k:'bandeja respuestas inbox notificaciones',ico:'message',bg:'var(--palm)',go:()=>openMyMessages()},
