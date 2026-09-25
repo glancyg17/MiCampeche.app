@@ -855,11 +855,13 @@ const fakeClient = {
   assert(evd.includes('wa.me/529815551234') && evd.includes('tel:+529815551234'), 'event detail offers WhatsApp + call handoff to the organizer number');
   assert(evd.includes('Precio') && evd.includes('$150'), 'event detail shows the ticket price');
   // e1 isn't featured (no active eventos_featured_bookings exist yet at
-  // this point) so it renders in the compact grouped list, which — per
-  // the Step 3 redesign — deliberately doesn't surface price at all
-  // (only the big featured .evt-card does, and the detail view already
-  // asserted above always does); the compact card still shows name+time+loc.
-  assert(text('evt-list').includes('evt-list-item') && text('evt-list').includes('7:00 PM'), 'a non-featured event renders in the compact grouped list with its time');
+  // this point) so it renders as a regular (non-Destacado) grid card —
+  // same .evtg-card as a featured one, just without the badge. Price now
+  // shows on any card that has one (this fixture's events don't set
+  // price_text, so this just confirms the card itself renders with its
+  // time — price-on-every-card is covered by the detail-view assertion
+  // above and is a deliberate change from the old "featured-only" rule).
+  assert(text('evt-list').includes('evtg-card') && text('evt-list').includes('7:00 PM'), 'a non-featured event renders as a regular grid card with its time');
 
   // ── "Pasados" date filter: MC.fetchEventos now fetches back to 7 days
   //    ago (matching the daily cleanup-expired-eventos job's own grace
@@ -3803,17 +3805,18 @@ const fakeClient = {
     assert(one.length === 1 && activeSet.includes(one[0]), 'activeFeaturedEventIds(1) returns exactly 1 id, drawn from the active set');
     assert(one[0] === two[0], 'Inicio\'s one slot always matches the first of the Eventos section\'s two — same starting rotation index');
 
-    // renderEventos(): exactly the activeFeaturedEventIds(2) events use
-    // the big .evt-card + Destacado badge; every other visible event
-    // renders under .evt-list-item, grouped by date under one
-    // .evt-group-hdr per distinct date, ascending.
+    // renderEventos(): every visible event renders as the same .evtg-card
+    // (Mercado-style grid card) now — exactly the activeFeaturedEventIds(2)
+    // events additionally carry the Destacado badge and sit in their own
+    // "Destacados" grid up top; every other event sits in its date's own
+    // grid, grouped under one .evt-group-hdr per distinct date, ascending.
     const evtListHtml = text('evt-list');
     const evtListEl = doc.getElementById('evt-list');
     two.forEach(id => {
       const title = SAMPLE.eventos.find(x => x.id === id).title;
-      const card = [...evtListEl.querySelectorAll('.evt-card')].find(c => c.textContent.includes(title));
-      assert(!!card, `the featured event "${title}" renders as a big .evt-card`);
-      assert(!!(card && card.querySelector('.evt-featured-badge')), `"${title}"'s card carries the Destacado badge`);
+      const card = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes(title));
+      assert(!!card, `the featured event "${title}" renders as an .evtg-card`);
+      assert(!!(card && card.querySelector('.evtg-badge')), `"${title}"'s card carries the Destacado badge`);
     });
     // e2 is status:'pending' but the fake ignores status filters on plain
     // reads (same reason it already surfaces in evt-list elsewhere in
@@ -3821,8 +3824,9 @@ const fakeClient = {
     // whenever the rotation doesn't happen to pick it.
     ['e1', 'e2', 'e4'].filter(id => !two.includes(id)).forEach(id => {
       const title = SAMPLE.eventos.find(x => x.id === id).title;
-      const item = [...evtListEl.querySelectorAll('.evt-list-item')].find(c => c.textContent.includes(title));
-      assert(!!item, `the non-featured event "${title}" renders under the compact .evt-list-item, not the big card`);
+      const item = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes(title));
+      assert(!!item, `the non-featured event "${title}" also renders as an .evtg-card`);
+      assert(!!(item && !item.querySelector('.evtg-badge')), `"${title}"'s card does NOT carry the Destacado badge, unlike the featured ones above`);
     });
     const groupHdrs = [...evtListEl.querySelectorAll('.evt-group-hdr')].map(h => h.textContent);
     assert(groupHdrs.length > 0 && groupHdrs.length === new Set(groupHdrs).size, 'the regular events render grouped under one .evt-group-hdr per distinct date — no duplicates');

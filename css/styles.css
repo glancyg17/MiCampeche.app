@@ -1,4 +1,4 @@
-:root{--mc-build:"cc701d56ae";}
+:root{--mc-build:"e2a7a5ab32";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -480,31 +480,26 @@ svg{display:block}
 .chip{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line2);border-radius:99px;padding:7px 15px;font-size:12.5px;line-height:1.3;font-weight:600;color:var(--ink2);cursor:pointer;white-space:nowrap;font-family:inherit;position:relative;z-index:6}
 .chip.on{background:var(--night);border-color:var(--night);color:var(--paper)}
 
-/* ═══ EVENTOS (full page) ═══ */
-.evt-list{padding:0 18px 40px;display:flex;flex-direction:column;gap:8px}
-.evt-card{position:relative;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh1);cursor:pointer}
-.evt-card:active{transform:translateY(1px)}
-/* Image sits stacked on top of the text — full width, never squished */
-.evt-thumb{width:100%;height:158px;background-size:cover;background-position:center;background-color:var(--paper2)}
-.evt-body{display:flex;align-items:stretch}
-.evt-arr{width:18px;height:18px;color:var(--ink3);align-self:center;margin-right:8px;flex-shrink:0}
-.evt-date{width:60px;flex-shrink:0;background:linear-gradient(160deg,var(--wall),var(--wall-dk));color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px}
-.evt-date-day{font-family:"Fraunces",Georgia,serif;font-size:24px;font-weight:700;line-height:1}
-.evt-date-mon{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
-.evt-info{flex:1;padding:13px 15px;min-width:0}
-.evt-cat{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--wall-dk);margin-bottom:3px}
-.evt-name{font-size:14.5px;font-weight:700;color:var(--ink);margin-bottom:5px;line-height:1.3}
-.evt-meta{font-size:12px;color:var(--ink3);display:flex;align-items:center;gap:6px}
-.evt-meta .ico{width:13px;height:13px}
-.evt-price{font-size:12.5px;font-weight:700;color:var(--palm);margin-top:4px}
-.evt-featured-badge{position:absolute;top:10px;right:10px;background:var(--wall-dk);color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:4px 9px;border-radius:99px}
-.evt-group-hdr{font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;margin:4px 2px 4px}
-.evt-list-item{display:flex;align-items:center;gap:12px;padding:12px;border-radius:var(--rs);border:1px solid var(--line);background:var(--surface);cursor:pointer}
-.evt-list-item:active{transform:translateY(1px)}
-.evt-list-thumb{width:64px;height:64px;border-radius:9px;background-size:cover;background-position:center;background-color:var(--paper2);flex-shrink:0}
-.evt-list-body{flex:1;min-width:0}
-.evt-list-name{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.evt-list-meta{font-size:11.5px;color:var(--ink3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ═══ EVENTOS (full page) ═══
+   Cards match .prod-card's visual language exactly (.tienda-grid
+   container, same border/radius/shadow) — see eventCardHtml() in
+   app.js. .evt-group-hdr is unchanged in spirit, just re-padded now
+   that .evt-list no longer supplies the horizontal inset itself (each
+   .tienda-grid/.destacados-hdr below brings its own). */
+.evt-list{display:flex;flex-direction:column;padding-bottom:8px}
+.evt-group-hdr{font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;padding:10px 18px 8px}
+.evtg-card{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--surface);cursor:pointer;box-shadow:var(--sh1)}
+.evtg-card:active{transform:translateY(1px)}
+.evtg-img{position:relative;width:100%;aspect-ratio:1;background-size:cover;background-position:center;background-color:var(--paper2)}
+.evtg-badge{position:absolute;top:10px;left:10px;z-index:1;background:var(--wall-dk);color:#fff;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:4px 9px;border-radius:99px}
+.evtg-date{position:absolute;top:10px;right:10px;z-index:1;display:flex;flex-direction:column;align-items:center;min-width:34px;padding:4px 6px;border-radius:9px;background:rgba(255,255,255,.94);color:var(--ink);line-height:1}
+.evtg-date b{font-family:"Fraunces",Georgia,serif;font-size:15px;font-weight:700}
+.evtg-date i{font-style:normal;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px}
+.evtg-body{padding:11px 12px 13px}
+.evtg-cat{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--wall-dk);margin-bottom:3px}
+.evtg-name{font-size:13px;font-weight:700;color:var(--ink);line-height:1.32;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.evtg-meta{font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evtg-price{font-size:12.5px;font-weight:700;color:var(--palm);margin-top:4px}
 
 /* ═══ TIENDA (Productos, inside Anuncios) ═══ */
 .tienda-grid{padding:0 18px 24px;display:grid;grid-template-columns:1fr 1fr;gap:13px}

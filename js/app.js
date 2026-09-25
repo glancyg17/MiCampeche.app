@@ -1,4 +1,4 @@
-window.MC_BUILD='cc701d56ae';
+window.MC_BUILD='e2a7a5ab32';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1534,48 +1534,58 @@ function renderEventos(){
   const featured=list.filter(x=>featuredIds.includes(String(x.id)));
   const regular=list.filter(x=>!featuredIds.includes(String(x.id)));
 
-  const featuredHtml=featured.map(x=>`
-    <div class="evt-card" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
-      ${x.img?`<div class="evt-thumb" style="background-image:url('${x.img}')"></div>`:''}
-      <div class="evt-body">
-        <div class="evt-date"><div class="evt-date-day">${x.day}</div><div class="evt-date-mon">${x.mon}</div></div>
-        <div class="evt-info">
-          <div class="evt-cat">${e(x.cat)}</div>
-          <div class="evt-name">${e(x.name)}</div>
-          <div class="evt-meta">${svgIco('clock')} ${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
-          ${x.price?`<div class="evt-price">${e(x.price)}</div>`:''}
-        </div>
-        ${svgIco('chevronR','evt-arr')}
-      </div>
-      <span class="evt-featured-badge">Destacado</span>
-    </div>
-  `).join('');
+  const featuredHtml=featured.length?`
+    <div class="destacados-hdr">Destacados</div>
+    <div class="tienda-grid">${featured.map(x=>eventCardHtml(x,true)).join('')}</div>
+  `:'';
 
   // regular is still in event_date-ascending order (list already is, and
-  // filtering preserves order) so grouping just has to watch for the
-  // date changing as it walks through, not re-sort anything.
+  // filtering preserves order) so grouping just has to watch for the date
+  // changing as it walks through, not re-sort anything. Each date's own
+  // events render inside their own .tienda-grid (same 2-column grid
+  // container Mercado uses) so the header sits full-width above it.
   let groupsHtml='';
   let lastDs=null;
+  let openGrid=false;
   regular.forEach(x=>{
     if(x.ds!==lastDs){
       lastDs=x.ds;
+      if(openGrid)groupsHtml+='</div>';
       const label=dsToLongEs(x.ds);
-      groupsHtml+=`<div class="evt-group-hdr">${label.charAt(0).toUpperCase()+label.slice(1)}</div>`;
+      groupsHtml+=`<div class="evt-group-hdr">${label.charAt(0).toUpperCase()+label.slice(1)}</div><div class="tienda-grid">`;
+      openGrid=true;
     }
-    groupsHtml+=`
-      <div class="evt-list-item" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
-        <div class="evt-list-thumb" style="background-image:url('${x.img}')"></div>
-        <div class="evt-list-body">
-          <div class="evt-list-name">${e(x.name)}</div>
-          <div class="evt-list-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
-        </div>
-        ${svgIco('chevronR','evt-arr')}
-      </div>
-    `;
+    groupsHtml+=eventCardHtml(x,false);
   });
+  if(openGrid)groupsHtml+='</div>';
 
   el.innerHTML=featuredHtml+groupsHtml;
   wireAdminRemove(el);
+}
+
+/* Eventos grid card — image over title, matching prodCardHtml's visual
+   language (.tienda-grid container; same card radius/border/shadow as
+   .prod-card) so Eventos reads like Mercado/Clasificados' grids instead
+   of its own flat list. The date badge mirrors Inicio's .dc-ev-hero-date
+   treatment for the same reason — same visual language, three places.
+   Price shows on ANY card now (featured or not) — the old compact list
+   row had no room for it, this layout does. No trailing chevron, same
+   as prodCardHtml — the whole card is already tappable. */
+function eventCardHtml(x,featured){
+  return `
+    <div class="evtg-card" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
+      <div class="evtg-img" style="${x.img?`background-image:url('${e(x.img)}')`:''}">
+        ${featured?'<span class="evtg-badge">Destacado</span>':''}
+        <span class="evtg-date"><b>${x.day}</b><i>${e(x.mon)}</i></span>
+      </div>
+      <div class="evtg-body">
+        <div class="evtg-cat">${e(x.cat)}</div>
+        <div class="evtg-name">${e(x.name)}</div>
+        <div class="evtg-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
+        ${x.price?`<div class="evtg-price">${e(x.price)}</div>`:''}
+      </div>
+    </div>
+  `;
 }
 
 /* Turn bare URLs in already-HTML-escaped text into real links — event
