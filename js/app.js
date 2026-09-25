@@ -1,4 +1,4 @@
-window.MC_BUILD='e2a7a5ab32';
+window.MC_BUILD='c6fa3b382e';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1520,6 +1520,42 @@ function evtInDateRange(x){
   if(evtDateFilter==='proximamente')return diffDays>6;
   return true;
 }
+/* Wraps a set of event cards in a horizontal-scroll row — same mechanics
+   as Ofertas' .of-list (snap-scroll, no visible OS scrollbar, genuinely
+   swipeable). Exactly 1 card renders full width instead (.solo) rather
+   than sitting half-width and alone; 2+ show 2 comfortably plus a
+   peeking hint of a 3rd (.evtg-row .evtg-card's flex-basis) so "there's
+   more, scroll" is obvious without any extra UI. */
+function evtRowHtml(cardsHtml){
+  const solo=cardsHtml.length===1;
+  return `<div class="evtg-row${solo?' solo':''}">${cardsHtml.join('')}</div>`;
+}
+
+/* Eventos card — image over title, matching prodCardHtml's visual
+   language (same card radius/border/shadow as .prod-card) so Eventos
+   reads like Mercado/Clasificados instead of its own flat list. The date
+   badge mirrors Inicio's .dc-ev-hero-date treatment — same visual
+   language, three places now. Price shows on ANY card (featured or
+   not) — deliberate: the old compact list row had no room for it, this
+   layout does. No trailing chevron, same as prodCardHtml — the whole
+   card is already tappable. */
+function eventCardHtml(x,featured){
+  return `
+    <div class="evtg-card" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
+      <div class="evtg-img" style="${x.img?`background-image:url('${e(x.img)}')`:''}">
+        ${featured?'<span class="evtg-badge">Destacado</span>':''}
+        <span class="evtg-date"><b>${x.day}</b><i>${e(x.mon)}</i></span>
+      </div>
+      <div class="evtg-body">
+        <div class="evtg-cat">${e(x.cat)}</div>
+        <div class="evtg-name">${e(x.name)}</div>
+        <div class="evtg-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
+        ${x.price?`<div class="evtg-price">${e(x.price)}</div>`:''}
+      </div>
+    </div>
+  `;
+}
+
 function renderEventos(){
   renderEvtDateChips();
   const list=EVENTOS.filter(x=>(evtFilter==='all'||x.cat===evtFilter)&&(!evtColonia||x.colonia===evtColonia)&&evtInDateRange(x));
@@ -1536,56 +1572,26 @@ function renderEventos(){
 
   const featuredHtml=featured.length?`
     <div class="destacados-hdr">Destacados</div>
-    <div class="tienda-grid">${featured.map(x=>eventCardHtml(x,true)).join('')}</div>
+    ${evtRowHtml(featured.map(x=>eventCardHtml(x,true)))}
   `:'';
 
   // regular is still in event_date-ascending order (list already is, and
-  // filtering preserves order) so grouping just has to watch for the date
-  // changing as it walks through, not re-sort anything. Each date's own
-  // events render inside their own .tienda-grid (same 2-column grid
-  // container Mercado uses) so the header sits full-width above it.
-  let groupsHtml='';
-  let lastDs=null;
-  let openGrid=false;
+  // filtering preserves order), so a single pass can bucket consecutive
+  // same-date events together without re-sorting anything.
+  const buckets=[];
   regular.forEach(x=>{
-    if(x.ds!==lastDs){
-      lastDs=x.ds;
-      if(openGrid)groupsHtml+='</div>';
-      const label=dsToLongEs(x.ds);
-      groupsHtml+=`<div class="evt-group-hdr">${label.charAt(0).toUpperCase()+label.slice(1)}</div><div class="tienda-grid">`;
-      openGrid=true;
-    }
-    groupsHtml+=eventCardHtml(x,false);
+    const last=buckets[buckets.length-1];
+    if(last&&last.ds===x.ds)last.events.push(x);
+    else buckets.push({ds:x.ds,events:[x]});
   });
-  if(openGrid)groupsHtml+='</div>';
+  const groupsHtml=buckets.map(b=>{
+    const label=dsToLongEs(b.ds);
+    return `<div class="evt-group-hdr">${label.charAt(0).toUpperCase()+label.slice(1)}</div>`
+      +evtRowHtml(b.events.map(x=>eventCardHtml(x,false)));
+  }).join('');
 
   el.innerHTML=featuredHtml+groupsHtml;
   wireAdminRemove(el);
-}
-
-/* Eventos grid card — image over title, matching prodCardHtml's visual
-   language (.tienda-grid container; same card radius/border/shadow as
-   .prod-card) so Eventos reads like Mercado/Clasificados' grids instead
-   of its own flat list. The date badge mirrors Inicio's .dc-ev-hero-date
-   treatment for the same reason — same visual language, three places.
-   Price shows on ANY card now (featured or not) — the old compact list
-   row had no room for it, this layout does. No trailing chevron, same
-   as prodCardHtml — the whole card is already tappable. */
-function eventCardHtml(x,featured){
-  return `
-    <div class="evtg-card" ${admRm('eventos',x.id,x.name)} onclick="openEvento('${x.id}')">
-      <div class="evtg-img" style="${x.img?`background-image:url('${e(x.img)}')`:''}">
-        ${featured?'<span class="evtg-badge">Destacado</span>':''}
-        <span class="evtg-date"><b>${x.day}</b><i>${e(x.mon)}</i></span>
-      </div>
-      <div class="evtg-body">
-        <div class="evtg-cat">${e(x.cat)}</div>
-        <div class="evtg-name">${e(x.name)}</div>
-        <div class="evtg-meta">${x.time?e(x.time)+' · ':''}${e(x.loc)}</div>
-        ${x.price?`<div class="evtg-price">${e(x.price)}</div>`:''}
-      </div>
-    </div>
-  `;
 }
 
 /* Turn bare URLs in already-HTML-escaped text into real links — event

@@ -855,13 +855,35 @@ const fakeClient = {
   assert(evd.includes('wa.me/529815551234') && evd.includes('tel:+529815551234'), 'event detail offers WhatsApp + call handoff to the organizer number');
   assert(evd.includes('Precio') && evd.includes('$150'), 'event detail shows the ticket price');
   // e1 isn't featured (no active eventos_featured_bookings exist yet at
-  // this point) so it renders as a regular (non-Destacado) grid card —
-  // same .evtg-card as a featured one, just without the badge. Price now
-  // shows on any card that has one (this fixture's events don't set
-  // price_text, so this just confirms the card itself renders with its
-  // time — price-on-every-card is covered by the detail-view assertion
-  // above and is a deliberate change from the old "featured-only" rule).
-  assert(text('evt-list').includes('evtg-card') && text('evt-list').includes('7:00 PM'), 'a non-featured event renders as a regular grid card with its time');
+  // this point). e1 and e2 share the same date (ds(1), "tomorrow") — a
+  // real, naturally-occurring 2-event bucket, no fixture changes needed
+  // — so their row must NOT carry .solo and must hold both cards. e4
+  // sits alone on its own date (ds(5)) — a real 1-event bucket — so ITS
+  // row must carry .solo instead.
+  {
+    const evtListEl = doc.getElementById('evt-list');
+    const e1Card = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes('Evento de prueba') && !c.textContent.includes('posible copia'));
+    const e2Card = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes('posible copia'));
+    const e4Card = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes('Mi evento activo'));
+    assert(!!e1Card && !!e2Card && !!e4Card, 'e1, e2 and e4 each render as an .evtg-card');
+    const e1Row = e1Card.closest('.evtg-row');
+    const e2Row = e2Card.closest('.evtg-row');
+    const e4Row = e4Card.closest('.evtg-row');
+    assert(e1Row === e2Row, 'e1 and e2 (same date) share the same row');
+    assert(e1Row && !e1Row.classList.contains('solo') && e1Row.querySelectorAll('.evtg-card').length === 2, 'a 2-event date renders as a non-solo row holding both cards');
+    assert(e4Row && e4Row.classList.contains('solo') && e4Row.querySelectorAll('.evtg-card').length === 1, 'a 1-event date renders as a .solo row holding just that one card');
+    assert(e4Row !== e1Row, 'the two dates are genuinely separate rows');
+    assert(text('evt-list').includes('7:00 PM'), 'the card still shows its time');
+  }
+
+  // evtRowHtml() as a pure function — the exact solo/multi decision,
+  // independent of any real fixture or rotation timing.
+  {
+    const one = window.evtRowHtml(['<div class="evtg-card">a</div>']);
+    assert(one.startsWith('<div class="evtg-row solo">') && one.includes('a</div>'), 'evtRowHtml() with exactly 1 card returns a .evtg-row.solo wrapper');
+    const two2 = window.evtRowHtml(['<div class="evtg-card">a</div>', '<div class="evtg-card">b</div>']);
+    assert(two2.startsWith('<div class="evtg-row">') && !two2.includes('solo'), 'evtRowHtml() with 2+ cards returns a plain .evtg-row, no .solo');
+  }
 
   // ── "Pasados" date filter: MC.fetchEventos now fetches back to 7 days
   //    ago (matching the daily cleanup-expired-eventos job's own grace
@@ -3806,17 +3828,25 @@ const fakeClient = {
     assert(one[0] === two[0], 'Inicio\'s one slot always matches the first of the Eventos section\'s two — same starting rotation index');
 
     // renderEventos(): every visible event renders as the same .evtg-card
-    // (Mercado-style grid card) now — exactly the activeFeaturedEventIds(2)
-    // events additionally carry the Destacado badge and sit in their own
-    // "Destacados" grid up top; every other event sits in its date's own
-    // grid, grouped under one .evt-group-hdr per distinct date, ascending.
+    // (Mercado-style image-over-title card) now — exactly the
+    // activeFeaturedEventIds(2) events additionally carry the Destacado
+    // badge and sit together in the Destacados row (always non-solo here,
+    // since two.length is always exactly 2); every other event sits in
+    // its own date's row, grouped under one .evt-group-hdr per distinct
+    // date, ascending — and with only 1 regular event left over in THIS
+    // fixture (3 total, 2 always featured), that row is always .solo.
     const evtListHtml = text('evt-list');
     const evtListEl = doc.getElementById('evt-list');
+    let destacadosRow = null;
     two.forEach(id => {
       const title = SAMPLE.eventos.find(x => x.id === id).title;
       const card = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes(title));
       assert(!!card, `the featured event "${title}" renders as an .evtg-card`);
       assert(!!(card && card.querySelector('.evtg-badge')), `"${title}"'s card carries the Destacado badge`);
+      const row = card.closest('.evtg-row');
+      assert(!!row && !row.classList.contains('solo'), `"${title}"'s row is a plain (non-solo) .evtg-row — 2 Destacados side by side`);
+      if (destacadosRow) assert(row === destacadosRow, 'both featured events share the same Destacados row');
+      destacadosRow = row;
     });
     // e2 is status:'pending' but the fake ignores status filters on plain
     // reads (same reason it already surfaces in evt-list elsewhere in
@@ -3827,6 +3857,8 @@ const fakeClient = {
       const item = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes(title));
       assert(!!item, `the non-featured event "${title}" also renders as an .evtg-card`);
       assert(!!(item && !item.querySelector('.evtg-badge')), `"${title}"'s card does NOT carry the Destacado badge, unlike the featured ones above`);
+      const row = item.closest('.evtg-row');
+      assert(!!row && row.classList.contains('solo'), `"${title}" is the only regular event left in this fixture, so its row is .solo`);
     });
     const groupHdrs = [...evtListEl.querySelectorAll('.evt-group-hdr')].map(h => h.textContent);
     assert(groupHdrs.length > 0 && groupHdrs.length === new Set(groupHdrs).size, 'the regular events render grouped under one .evt-group-hdr per distinct date — no duplicates');

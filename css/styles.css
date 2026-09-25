@@ -1,4 +1,4 @@
-:root{--mc-build:"e2a7a5ab32";}
+:root{--mc-build:"c6fa3b382e";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -481,13 +481,18 @@ svg{display:block}
 .chip.on{background:var(--night);border-color:var(--night);color:var(--paper)}
 
 /* ═══ EVENTOS (full page) ═══
-   Cards match .prod-card's visual language exactly (.tienda-grid
-   container, same border/radius/shadow) — see eventCardHtml() in
-   app.js. .evt-group-hdr is unchanged in spirit, just re-padded now
-   that .evt-list no longer supplies the horizontal inset itself (each
-   .tienda-grid/.destacados-hdr below brings its own). */
+   Cards match .prod-card's visual language (border/radius/shadow); each
+   date's events — and the Destacados set — sit in a horizontal-scroll
+   row (.evtg-row, same mechanics as Ofertas' .of-list): exactly 1 event
+   goes full width (.solo), 2+ show 2 comfortably with a peeking hint of
+   a 3rd to make "there's more" obvious. See evtRowHtml()/eventCardHtml()
+   in app.js. */
 .evt-list{display:flex;flex-direction:column;padding-bottom:8px}
 .evt-group-hdr{font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;padding:10px 18px 8px}
+.evtg-row{display:flex;width:100%;align-items:stretch;gap:13px;overflow-x:auto;overflow-y:visible;padding:0 18px 24px;scroll-snap-type:x mandatory;-ms-overflow-style:none;scrollbar-width:none}
+.evtg-row::-webkit-scrollbar{display:none}
+.evtg-row .evtg-card{flex:0 0 46%;scroll-snap-align:start;min-width:0}
+.evtg-row.solo .evtg-card{flex:0 0 100%}
 .evtg-card{border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--surface);cursor:pointer;box-shadow:var(--sh1)}
 .evtg-card:active{transform:translateY(1px)}
 .evtg-img{position:relative;width:100%;aspect-ratio:1;background-size:cover;background-position:center;background-color:var(--paper2)}
