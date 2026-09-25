@@ -1,4 +1,4 @@
-window.MC_BUILD='71e18b9cfa';
+window.MC_BUILD='0ae3a46f78';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -287,8 +287,21 @@ function contactUs(){
    the jsdom test environment (no real finger, no real rendering engine
    to verify the visual pull). Verified by code review here; wants a real
    on-device check after deploying. */
-let pullStartX=0,pullStartY=0,pullActive=false,pullDistance=0,pullRefreshing=false;
+let pullStartX=0,pullStartY=0,pullActive=false,pullDistance=0,pullRefreshing=false,pullEl=null;
 const PULL_THRESHOLD=70,PULL_MAX=100;
+
+/* The layer actually visible+scrollable right now. #search-panel is a
+   separate absolutely-positioned overlay with its own overflow-y:auto
+   (Global Search) — while it's open, the .scr underneath it is not what
+   the finger is scrolling, and its scrollTop stays 0 the whole time. Using
+   .scr.on unconditionally made "scroll back up through search results"
+   read as "already at the top" from the first pixel, firing a pull no
+   matter how far down the list actually was. */
+function pullScrollTarget(){
+  const sp=document.getElementById('search-panel');
+  if(sp&&sp.classList.contains('on'))return sp;
+  return document.querySelector('.scr.on');
+}
 
 function initPullToRefresh(){
   const screens=document.querySelector('.screens');
@@ -297,19 +310,20 @@ function initPullToRefresh(){
 
   screens.addEventListener('touchstart',e=>{
     if(pullRefreshing)return;
-    const activeScr=document.querySelector('.scr.on');
-    if(!activeScr||activeScr.scrollTop>0)return;
+    const target=pullScrollTarget();
+    if(!target||target.scrollTop>0)return;
+    pullEl=target;
     pullStartX=e.touches[0].clientX;
     pullStartY=e.touches[0].clientY;
     pullActive=true;
-    activeScr.classList.add('pull-active');
-    activeScr.classList.remove('pull-snap');
+    pullEl.classList.add('pull-active');
+    pullEl.classList.remove('pull-snap');
   },{passive:true});
 
   screens.addEventListener('touchmove',e=>{
     if(!pullActive||pullRefreshing)return;
-    const activeScr=document.querySelector('.scr.on');
-    if(!activeScr){pullActive=false;return;}
+    const activeScr=pullEl;
+    if(!activeScr||!activeScr.isConnected){pullActive=false;return;}
     if(activeScr.scrollTop>0){ // scrolled away from the top mid-gesture
       pullActive=false;
       activeScr.style.transform='';
@@ -353,7 +367,7 @@ function initPullToRefresh(){
   screens.addEventListener('touchend',async()=>{
     if(!pullActive)return;
     pullActive=false;
-    const activeScr=document.querySelector('.scr.on');
+    const activeScr=pullEl;
     if(!activeScr)return;
     activeScr.classList.add('pull-snap');
     if(pullDistance>=PULL_THRESHOLD){
