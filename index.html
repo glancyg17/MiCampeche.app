@@ -21,12 +21,12 @@
 <meta name="twitter:description" content="Noticias, eventos, la tienda local, avisos vecinales y alertas oficiales de Campeche, todo en una sola app.">
 <meta name="twitter:image" content="https://micampeche.app/assets/images/MiCampeche-OG.jpg">
 <meta name="theme-color" content="#000612">
-<meta name="mc-build" content="6b96ceba88">
+<meta name="mc-build" content="2214fbf038">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png">
-<link rel="stylesheet" href="css/styles.css?v=6b96ceba88">
+<link rel="stylesheet" href="css/styles.css?v=2214fbf038">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -153,11 +153,25 @@
       <div id="evento-detail-body"></div>
     </div>
 
+    <!-- ═══ MANDADITOS (standalone — used to be a Comercio sub-tab) ═══ -->
+    <div class="scr" id="scr-mandaditos">
+      <div class="back-bar"><button class="back-btn" onclick="mcGoBack()"><svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Inicio</button></div>
+      <div class="pad" style="padding-top:0">
+        <div class="sec-title">Mandaditos</div>
+        <div class="sec-sub">Directorio de mensajeros y repartidores de Campeche</div>
+      </div>
+      <div class="of-hdr">
+        <div class="of-hdr-txt">MiCampeche solo conecta — el trato y el pago quedan entre ustedes</div>
+      </div>
+      <div id="mandaditos-cta"></div>
+      <div id="mandaditos-list"></div>
+    </div>
+
     <!-- ═══ TIENDA (Oferta del Día hero + Tienda ⇄ Clasificados toggle) ═══ -->
     <div class="scr" id="scr-tienda">
       <div class="pad">
         <div class="sec-title">Comercio</div>
-        <div class="sec-sub">Ofertas, negocios, clasificados y mandaditos de Campeche</div>
+        <div class="sec-sub">Ofertas, negocios y clasificados de Campeche</div>
       </div>
       <div class="of-hdr">
         <div class="of-hdr-txt">Nuevas ofertas cada mañana · cantidad limitada</div>
@@ -165,10 +179,9 @@
       </div>
       <div class="of-list" id="of-list"></div>
       <div class="mkt-divider"><span>Explorar</span></div>
-      <div class="subtog subtog3">
+      <div class="subtog">
         <button class="subtog-btn on" data-v="mercado" onclick="setTiendaMode('mercado')">Mercado</button>
         <button class="subtog-btn" data-v="clasificados" onclick="setTiendaMode('clasificados')">Clasificados</button>
-        <button class="subtog-btn" data-v="mandaditos" onclick="setTiendaMode('mandaditos')">Mandaditos</button>
       </div>
       <div id="tienda-mercado">
         <div id="destacados-wrap" style="display:none">
@@ -204,13 +217,6 @@
           <input class="filter-search" id="clas-search" type="text" placeholder="Buscar en Clasificados..." oninput="setClasSearch(this.value)">
         </div>
         <div class="tienda-grid" id="clas-grid"></div>
-      </div>
-      <div id="tienda-mandaditos" style="display:none">
-        <div class="of-hdr">
-          <div class="of-hdr-txt">MiCampeche solo conecta — el trato y el pago quedan entre ustedes</div>
-        </div>
-        <div id="mandaditos-cta"></div>
-        <div id="mandaditos-list"></div>
       </div>
       <button class="fab" id="tienda-fab" onclick="openPost('tienda')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     </div>
@@ -542,8 +548,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js?v=6b96ceba88"></script>
-<script src="js/app.js?v=6b96ceba88"></script>
+<script src="js/supabase-client.js?v=2214fbf038"></script>
+<script src="js/app.js?v=2214fbf038"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads

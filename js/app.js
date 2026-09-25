@@ -1,4 +1,4 @@
-window.MC_BUILD='6b96ceba88';
+window.MC_BUILD='2214fbf038';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -197,10 +197,10 @@ async function renderMenuBody(){
   document.getElementById('menu-body').innerHTML=
     parent('cuenta',svgIco('account'),'var(--night)','Cuenta',unread?(unread+(unread===1?' mensaje nuevo':' mensajes nuevos')):'Perfil, negocio y publicaciones',cuentaChildren)
     + leaf(svgIco('news'),'var(--gulf)','Noticias','Lo último de Campeche',`closeMenu();nav('noticias')`)
-    + parent('comercio',svgIco('tienda'),'var(--palm)','Comercio','Mercado, clasificados y mandaditos',[
+    + leaf(svgIco('mandaditos'),'var(--gulf)','Mandaditos','Quién te ayuda con un encargo',`closeMenu();nav('mandaditos')`)
+    + parent('comercio',svgIco('tienda'),'var(--palm)','Comercio','Mercado y clasificados',[
         child(`closeMenu();nav('tienda');setTiendaMode('mercado')`,'Mercado'),
-        child(`closeMenu();nav('tienda');setTiendaMode('clasificados')`,'Clasificados'),
-        child(`closeMenu();nav('tienda');setTiendaMode('mandaditos')`,'Mandaditos')
+        child(`closeMenu();nav('tienda');setTiendaMode('clasificados')`,'Clasificados')
       ].join(''))
     + parent('anuncios',svgIco('eventos'),'var(--wall-dk)','Anuncios','Eventos, empleos y alertas',[
         child(`closeMenu();nav('anuncios');setAnunciosMode('eventos')`,'Eventos'),
@@ -238,7 +238,7 @@ function openAdminChooser(){
 }
 function goToServicios(){closeMenu();nav('servicios');}
 function goToKoox(){closeMenu();nav('koox');}
-function openMandaditoSignup(){closeMenu();editingBusinessId=null;nav('tienda');setTiendaMode('mandaditos');openPost('mandadito');}
+function openMandaditoSignup(){closeMenu();editingBusinessId=null;nav('mandaditos');openPost('mandadito');}
 /* Static reference only — no live data. Ko'ox's routes have changed
    repeatedly since launch (transbordo eliminations, rerouting to the
    Mercado, fare collection starting Feb 2026), so we deliberately don't
@@ -861,10 +861,16 @@ function nav(tab,fromBack){
   else if(tab==='inicio'){curTab=null;}
   renderBottomNav();
   target.scrollTop=0;
+  // Unconditional — unlike the tip gate below, this must fire on every
+  // visit, even a redundant nav('mandaditos') while already there (e.g.
+  // tapping the quick-nav tile again right after registering), the same
+  // way setTiendaMode('mandaditos') used to refresh it on every call.
+  if(tab==='mandaditos')refreshMandaditoTabCta();
   if(!fromBack&&tab!==curScreen){
     if(tab==='anuncios')maybeShowTipGate(anunciosMode);
     else if(tab==='reportar')maybeShowTipGate(reportarMode);
     else if(tab==='tienda')maybeShowTipGate(tiendaMode);
+    else if(tab==='mandaditos')maybeShowTipGate('mandaditos');
     if(tab==='inicio')mcScreenStack=[];
     // A peer bottom-nav tab is a lateral move, not "deeper" — back from any
     // of them returns to Inicio, and bouncing between tabs never piles up.
@@ -1104,7 +1110,7 @@ function renderInicioQuickNav(){
   el.innerHTML=
     tile('tienda','Mercado',`nav('tienda');setTiendaMode('mercado')`)
     +tile('eventos','Eventos',`nav('anuncios');setAnunciosMode('eventos')`)
-    +tile('mandaditos','Mandaditos',`nav('tienda');setTiendaMode('mandaditos')`)
+    +tile('mandaditos','Mandaditos',`nav('mandaditos')`)
     +tile('bell','Avisos',`nav('reportar');setReportarMode('avisos')`);
 }
 
@@ -1289,7 +1295,7 @@ const SECTION_TIPS={
      'Agrega fotos y describe a la mascota, con la zona donde está.',
      'Envíalo: lo revisamos y aparece aquí. Las adopciones son siempre gratuitas.'],
     'Publicar en Mascotas',"openPost('mascotas')"],
-  mandaditos:['tienda','¿Tienes moto y quieres hacer mandados?',
+  mandaditos:['mandaditos','¿Tienes moto y quieres hacer mandados?',
     'Regístrate como mandadito y aparece en el directorio para que vecinos y negocios te contacten.',
     ['Completa tu perfil: foto, vehículo y zona que cubres.',
      'Te pediremos confirmar tu identidad por WhatsApp — es rápido.',
@@ -1669,10 +1675,8 @@ function setTiendaMode(mode){
   document.querySelectorAll('#scr-tienda .subtog-btn').forEach(b=>b.classList.toggle('on',b.dataset.v===mode));
   document.getElementById('tienda-mercado').style.display=mode==='mercado'?'block':'none';
   document.getElementById('tienda-clasificados').style.display=mode==='clasificados'?'block':'none';
-  document.getElementById('tienda-mandaditos').style.display=mode==='mandaditos'?'block':'none';
-  document.getElementById('tienda-fab').style.display=mode==='mandaditos'?'none':'flex';
+  document.getElementById('tienda-fab').style.display='flex';
   document.getElementById('tienda-fab').onclick=function(){openPost(mode==='mercado'?'producto':'clasificado');};
-  if(mode==='mandaditos')refreshMandaditoTabCta();
   if(mode==='mercado')startDestacadosRotation();else stopDestacadosRotation();
   if(curScreen==='tienda'){maybeShowTipGate(mode);trackPage();}
 }
@@ -5673,11 +5677,11 @@ function searchScore(tokens,title,extras){
 const SEARCH_PAGES=[
   {id:'inicio',t:'Inicio',s:'Página principal',k:'home portada principal',ico:'home',bg:'var(--night)',go:()=>nav('inicio')},
   {id:'noticias',t:'Noticias',s:'Lo último de Campeche',k:'periódico prensa notas',ico:'news',bg:'var(--gulf)',go:()=>nav('noticias')},
-  {id:'comercio',t:'Comercio',s:'Ofertas, mercado, clasificados y mandaditos',k:'tienda compras',ico:'tienda',bg:'var(--palm)',go:()=>nav('tienda')},
+  {id:'comercio',t:'Comercio',s:'Ofertas, mercado y clasificados',k:'tienda compras',ico:'tienda',bg:'var(--palm)',go:()=>nav('tienda')},
   {id:'ofertas',t:'Ofertas del día',s:'Comercio · descuentos de negocios locales',k:'descuentos promociones promo 2x1 rebajas',ico:'tienda',bg:'var(--palm)',go:()=>nav('tienda')},
   {id:'mercado',t:'Mercado',s:'Comercio · productos de negocios locales',k:'tienda productos negocios comprar',ico:'tienda',bg:'var(--palm)',go:()=>{nav('tienda');setTiendaMode('mercado');}},
   {id:'clasificados',t:'Clasificados',s:'Comercio · artículos de vecinos',k:'segunda mano usados vender comprar',ico:'tienda',bg:'var(--palm)',go:()=>{nav('tienda');setTiendaMode('clasificados');}},
-  {id:'mandaditos',t:'Mandaditos',s:'Comercio · quién te ayuda con un encargo',k:'mensajero repartidor envíos encargos recados',ico:'mandaditos',bg:'var(--gulf)',go:()=>{nav('tienda');setTiendaMode('mandaditos');}},
+  {id:'mandaditos',t:'Mandaditos',s:'Quién te ayuda con un encargo',k:'mensajero repartidor envíos encargos recados',ico:'mandaditos',bg:'var(--gulf)',go:()=>nav('mandaditos')},
   {id:'anuncios',t:'Anuncios',s:'Eventos, empleos y alertas',k:'',ico:'eventos',bg:'var(--wall-dk)',go:()=>nav('anuncios')},
   {id:'eventos',t:'Eventos',s:'Anuncios · qué pasa en la ciudad',k:'conciertos fiestas agenda calendario',ico:'eventos',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('eventos');}},
   {id:'empleos',t:'Empleos',s:'Anuncios · vacantes en Campeche',k:'trabajo vacantes chamba',ico:'empleos',bg:'var(--wall-dk)',go:()=>{nav('anuncios');setAnunciosMode('empleos');}},
@@ -5712,7 +5716,7 @@ const SEARCH_PAGES=[
   {id:'pub-reporte',t:'Hacer un reporte',s:'Acción · Vecinos',k:'reportar bache fuga luz alumbrado problema crear',ico:'reportar',bg:'var(--signal)',go:()=>openPost('reportar')},
   {id:'pub-mascota',t:'Publicar en Mascotas',s:'Acción · Vecinos',k:'adopcion perdido encontrado campana mascota crear publicar',ico:'paw',bg:'var(--signal)',go:()=>openPost('mascotas')},
   {id:'pub-objeto-perdido',t:'Reportar un objeto perdido o encontrado',s:'Acción · Vecinos',k:'extraviado cartera llaves objeto crear',ico:'reportar',bg:'var(--signal)',go:()=>openPost('avisos')},
-  {id:'ser-mandadito',t:'Ser mandadito',s:'Acción · Comercio',k:'registrarme trabajar repartir mensajero',ico:'mandaditos',bg:'var(--gulf)',go:()=>openMandaditoSignup()},
+  {id:'ser-mandadito',t:'Ser mandadito',s:'Acción · Mandaditos',k:'registrarme trabajar repartir mensajero',ico:'mandaditos',bg:'var(--gulf)',go:()=>openMandaditoSignup()},
   {id:'verificar-negocio',t:'Verificar mi negocio',s:'Acción · Comercio',k:'registrar negocio dar de alta vender',ico:'checkBadge',bg:'var(--palm)',go:()=>{editingBusinessId=null;openPost('negocio_verificar');}}
 ];
 // Categories come from what is LIVE right now (so tapping one never lands on

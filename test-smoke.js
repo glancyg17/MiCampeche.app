@@ -827,9 +827,9 @@ const fakeClient = {
     assert(JSON.stringify(qnOnclicks) === JSON.stringify([
       "nav('tienda');setTiendaMode('mercado')",
       "nav('anuncios');setAnunciosMode('eventos')",
-      "nav('tienda');setTiendaMode('mandaditos')",
+      "nav('mandaditos')",
       "nav('reportar');setReportarMode('avisos')",
-    ]), `each tile is wired to the real nav()+sub-tab call, not just a bare nav() (got: ${qnOnclicks.join(' | ')})`);
+    ]), `each tile is wired to the real nav()+sub-tab call (or, for Mandaditos, its own standalone nav()) — not just a bare nav() (got: ${qnOnclicks.join(' | ')})`);
     // DOM position: after the hero, before dash-body — normal flow, no
     // fixed/sticky positioning that would keep it pinned while scrolling.
     const quicknavEl = doc.getElementById('inicio-quicknav');
@@ -1454,10 +1454,10 @@ const fakeClient = {
 
     await openMenuSettled();
     const top = topBtns();
-    assert(top.length === 9, `the menu has exactly 9 top-level rows (got ${top.length})`);
+    assert(top.length === 10, `the menu has exactly 10 top-level rows (got ${top.length})`);
     const topLabels = top.map(b => (b.querySelector('.menu-item-lbl') || {}).textContent);
-    assert(JSON.stringify(topLabels) === JSON.stringify(['Cuenta', 'Noticias', 'Comercio', 'Anuncios', 'Vecinos', "Transporte (Ko'ox)", 'Sugerencias', 'Contacto', 'Aviso de privacidad y Términos']),
-      `the 9 rows are in the agreed order, with Sugerencias right before Contacto (got: ${topLabels.join(' | ')})`);
+    assert(JSON.stringify(topLabels) === JSON.stringify(['Cuenta', 'Noticias', 'Mandaditos', 'Comercio', 'Anuncios', 'Vecinos', "Transporte (Ko'ox)", 'Sugerencias', 'Contacto', 'Aviso de privacidad y Términos']),
+      `the 10 rows are in the agreed order, Mandaditos between Noticias and Comercio, Sugerencias right before Contacto (got: ${topLabels.join(' | ')})`);
     const menuSuggestBtn = topBtn('Sugerencias');
     assert(!!menuSuggestBtn && (menuSuggestBtn.getAttribute('onclick') || '') === "closeMenu();openSuggestionForm('menu')", 'the "Sugerencias" row closes the menu and opens the suggestion form');
     assert(![...doc.querySelectorAll('.menu-submenu')].some(s => s.classList.contains('open')) && ![...doc.querySelectorAll('.menu-item-arr')].some(a => a.classList.contains('open')),
@@ -1468,10 +1468,11 @@ const fakeClient = {
     const menuKooxBtn = topBtn("Transporte (Ko'ox)");
     assert(!!menuKooxBtn && (menuKooxBtn.getAttribute('onclick') || '') === 'goToKoox()', 'the "Transporte (Ko\'ox)" row is wired to goToKoox()');
 
-    // Comercio expands to its own 3 real children…
+    // Comercio expands to its own 2 real children (Mandaditos moved out
+    // to its own top-level leaf — see below)…
     await toggle('comercio');
     assert(submenuOf('Comercio').classList.contains('open'), 'tapping Comercio expands its own submenu');
-    assert(JSON.stringify(childLbls(submenuOf('Comercio'))) === JSON.stringify(['Mercado', 'Clasificados', 'Mandaditos']), 'Comercio expands to Mercado/Clasificados/Mandaditos');
+    assert(JSON.stringify(childLbls(submenuOf('Comercio'))) === JSON.stringify(['Mercado', 'Clasificados']), 'Comercio expands to Mercado/Clasificados only');
 
     // …opening Anuncios collapses Comercio — only one section open at a time…
     await toggle('anuncios');
@@ -1487,14 +1488,13 @@ const fakeClient = {
     assert(JSON.stringify(childLbls(submenuOf('Vecinos'))) === JSON.stringify(['Avisos', 'Reportes', 'Mascotas']), 'Vecinos expands to Avisos/Reportes/Mascotas');
     await toggle('vecinos');
 
-    // A child's onclick really closes the menu AND navigates — checked
-    // against the exact string, then executed for real (same jsdom
-    // inline-onclick limitation as elsewhere in this file).
-    await toggle('comercio');
-    const mandaditosChild = [...submenuOf('Comercio').querySelectorAll('.menu-item-child')].find(b => b.textContent.includes('Mandaditos'));
-    assert(!!mandaditosChild && mandaditosChild.getAttribute('onclick') === "closeMenu();nav('tienda');setTiendaMode('mandaditos')", 'the Mandaditos child closes the menu, switches to Comercio, and sets the Mandaditos sub-tab — all three, not just the nav');
-    window.closeMenu(); window.nav('tienda'); window.setTiendaMode('mandaditos');
-    assert(!doc.getElementById('menu-bg').classList.contains('on') && doc.getElementById('scr-tienda').classList.contains('on'), 'executing it really closes the menu and lands on Comercio');
+    // Mandaditos is a top-level LEAF now (own screen, not nested under
+    // Comercio) — a plain leaf's onclick is checked against the exact
+    // string, then executed for real, same as the child test used to do.
+    const mandaditosLeaf = topBtn('Mandaditos');
+    assert(!!mandaditosLeaf && mandaditosLeaf.getAttribute('onclick') === "closeMenu();nav('mandaditos')", 'the Mandaditos leaf closes the menu and navigates straight to its own screen — no sub-tab to set anymore');
+    window.closeMenu(); window.nav('mandaditos');
+    assert(!doc.getElementById('menu-bg').classList.contains('on') && doc.getElementById('scr-mandaditos').classList.contains('on'), 'executing it really closes the menu and lands on the standalone Mandaditos screen');
     window.nav('inicio');
 
     // ── "Negocio(s)" is deliberately not a flat openMyBusinesses() call —
@@ -2942,25 +2942,28 @@ const fakeClient = {
     //    NOT form fields — they come from the account. ──
     {
       // The "Quiero ser mandadito" signup entry moved OFF the account menu
-      // and onto the Mandaditos tab itself, as a persistent status-aware CTA
-      // (#mandaditos-cta), not just the once-per-device tip-gate popup.
+      // and onto the standalone Mandaditos screen itself, as a persistent
+      // status-aware CTA (#mandaditos-cta), not just the once-per-device
+      // tip-gate popup.
       await window.openAccount();
       await new Promise(r => setTimeout(r, 20));
       assert(!text('modal-body').includes('openMandaditoSignup()'), 'the "Quiero ser mandadito" entry is no longer in the account menu');
       window.closeModal();
 
-      // It shows on the Mandaditos tab while this account has no mandaditos
-      // row (md1 belongs to uid-2). setTiendaMode('mandaditos') triggers
-      // refreshMandaditoTabCta() -> MC.myMandadito() then re-renders.
-      window.setTiendaMode('mandaditos');
+      // It shows on the Mandaditos screen while this account has no
+      // mandaditos row (md1 belongs to uid-2). nav('mandaditos') triggers
+      // refreshMandaditoTabCta() -> MC.myMandadito() then re-renders —
+      // unconditionally, even calling nav('mandaditos') again while
+      // already there (see the second call below), unlike the tip gate.
+      window.nav('mandaditos');
       await new Promise(r => setTimeout(r, 20));
-      assert(text('mandaditos-cta').includes('Quiero ser mandadito') && text('mandaditos-cta').includes('openMandaditoSignup()'), 'the persistent "Quiero ser mandadito" CTA appears on the Mandaditos tab when the account has no mandadito profile');
+      assert(text('mandaditos-cta').includes('Quiero ser mandadito') && text('mandaditos-cta').includes('openMandaditoSignup()'), 'the persistent "Quiero ser mandadito" CTA appears on the Mandaditos screen when the account has no mandadito profile');
 
       // …and disappears once this account has a PUBLISHED mandadito.
       SAMPLE.mandaditos.push({ id: 'md-mine', display_name: 'Ricardo Martín', phone: '+529811234567', vehicle_type: 'Auto', zona: 'Centro', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() });
-      window.setTiendaMode('mandaditos');
+      window.nav('mandaditos');
       await new Promise(r => setTimeout(r, 20));
-      assert(!text('mandaditos-cta').includes('Quiero ser mandadito'), 'the CTA is hidden once this account already has a published mandadito');
+      assert(!text('mandaditos-cta').includes('Quiero ser mandadito'), 'the CTA is hidden once this account already has a published mandadito — and nav(\'mandaditos\') refreshed it even though we were already on that screen');
       SAMPLE.mandaditos.pop(); // restore the fixture — later Pendiente-count assertions depend on it
 
       // The form: no name/phone fields (account-sourced), submit goes to
