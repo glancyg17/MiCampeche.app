@@ -1,4 +1,4 @@
-window.MC_BUILD='c6fa3b382e';
+window.MC_BUILD='6b96ceba88';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -2434,6 +2434,7 @@ const POST_FORMS={
     {k:'cat',lbl:'Categoría',type:'select',opts:['Comida/Bebida','Ropa','Hogar','Belleza','Electrónica','Mascotas','Deportes','Vehículos','Servicios','Otro']},
     {k:'item_condition',lbl:'Estado',type:'seg',opts:[['nuevo','Nuevo'],['usado','Usado']]},
     {k:'price',lbl:'Precio',type:'money',ph:'150'},
+    {k:'price_type',lbl:'¿Es un precio exacto o "desde"?',type:'seg',opts:[['exacto','Precio exacto'],['desde','Desde este precio']],note:'Usa "Desde" si el producto tiene variantes (tallas, colores, presentaciones) con precios distintos — el precio de arriba se mostrará como el más bajo.'},
     {k:'featured',lbl:'Destacado',type:'seg',opts:[['no','No'],['si','Sí']],premiumOnly:true,note:'Aparece resaltado en Mercado. Tu negocio puede tener hasta 2 productos destacados o en descuento a la vez.'},
     {k:'discount_active',lbl:'Descuento',type:'seg',opts:[['no','No'],['si','Sí']],premiumOnly:true},
     {k:'discount_price',lbl:'Precio con descuento',type:'money',ph:'120',showIf:{field:'discount_active',val:'si'},note:'El precio de arriba se mostrará tachado; este es el nuevo precio.'},
@@ -4606,12 +4607,15 @@ const MY_POST_EDIT={
     input:{cat:r.category,title:r.title,loc:r.location_text,colonia:r.colonia||'',desc:r.description},
     img:{photo:r.image_url}
   })},
-  productos:{form:'producto',fill:r=>({
-    input:{name:r.title,cat:r.category,price:r.price_text||'',lead_time:r.lead_time,desc:r.description,discount_price:r.discount_price_text||''},
-    seg:{item_condition:r.item_condition||'nuevo',availability:r.availability||'ahora',fulfillment:r.fulfillment||'recoger',featured:r.featured?'si':'no',discount_active:r.discount_active?'si':'no'},
-    multi:{contact_methods:r.contact_methods},
-    imgMulti:{photo:r.image_urls||[]}
-  })},
+  productos:{form:'producto',fill:r=>{
+    const desde=(r.price_text||'').startsWith('Desde ');
+    return {
+      input:{name:r.title,cat:r.category,price:desde?r.price_text.replace(/^Desde\s*/,''):(r.price_text||''),lead_time:r.lead_time,desc:r.description,discount_price:r.discount_price_text||''},
+      seg:{item_condition:r.item_condition||'nuevo',availability:r.availability||'ahora',fulfillment:r.fulfillment||'recoger',featured:r.featured?'si':'no',discount_active:r.discount_active?'si':'no',price_type:desde?'desde':'exacto'},
+      multi:{contact_methods:r.contact_methods},
+      imgMulti:{photo:r.image_urls||[]}
+    };
+  }},
   clasificados:{form:'clasificado',fill:r=>({
     input:{name:r.title,cat:r.category,price:r.price_text||'',colonia:r.colonia||'',desc:r.description,contact_phone:r.contact_phone},
     seg:{item_condition:r.item_condition||'nuevo',fulfillment:r.fulfillment||'recoger'},

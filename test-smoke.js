@@ -2863,6 +2863,39 @@ const fakeClient = {
       assert(p.seller_phone === currentBusiness.phone,
         'the business phone is snapshotted onto the product row so the public card can build the wa.me link without reading the private businesses table');
 
+      // The "actual/desde" toggle: 'exacto' is the default (unchanged
+      // behavior, confirmed just above — the price_type field was never
+      // touched in that test and price_text still came out plain). Picking
+      // 'desde' prefixes price_text with "Desde " while price_mxn still
+      // parses just the number — for a product with variants (sizes,
+      // colors) priced differently, where the entered number is the lowest.
+      await window.openPost('producto');
+      await attachListingPhoto();
+      doc.getElementById('pf-name').value = 'Playera con variantes';
+      doc.getElementById('pf-price').value = '199';
+      window.segPick(doc.querySelector('#pf-price_type .seg-btn[data-v="desde"]'));
+      window.multiPick(doc.querySelector('#pf-contact_methods .mchip[data-v="whatsapp"]'));
+      delete lastInsert.productos;
+      await window.submitPost('producto');
+      await new Promise(r => setTimeout(r, 20));
+      const pd = lastInsert.productos;
+      assert(!!pd && pd.price_text === 'Desde $199' && pd.price_mxn === 199,
+        'picking "desde" prefixes price_text with "Desde " while price_mxn still holds the plain parsed number');
+
+      // Editing that row back: the money input shows the bare number (no
+      // "Desde $" baked in) and the toggle is restored to "desde" — driven
+      // through the real openMyPostEdit() flow, not just the fill()
+      // function in isolation, so this also covers applyPostEditFill()'s
+      // own "$"-stripping regex correctly NOT matching a "Desde " prefix.
+      SAMPLE.productos.push({ id: 'p-desde-test', title: 'Playera con variantes', category: 'Ropa', price_text: 'Desde $199', price_mxn: 199, image_urls: ['https://example.com/x.jpg'], status: 'published', item_condition: 'nuevo', availability: 'ahora', lead_time: null, fulfillment: 'recoger', seller_phone: currentBusiness.phone, contact_methods: ['whatsapp'], submitted_by: 'uid-1', business_id: currentBusiness.id, created_at: NOW.toISOString() });
+      await window.refreshMyPosts();
+      await window.openMyPostEdit('productos', 'p-desde-test');
+      await new Promise(r => setTimeout(r, 20));
+      assert(doc.getElementById('pf-price').value === '199', 'editing a "Desde" product shows the bare number in the price field, not "Desde $199" or "$199"');
+      assert(!!doc.querySelector('#pf-price_type .seg-btn[data-v="desde"].on'), 'and the toggle is restored to "Desde este precio"');
+      window.closeModal();
+      SAMPLE.productos.pop(); // restore the fixture
+
       // A listing nobody can respond to is blocked (photo present, so the
       // required-photo guard passes and the contact-method guard is reached).
       await window.openPost('producto');
@@ -3835,12 +3868,19 @@ const fakeClient = {
     // its own date's row, grouped under one .evt-group-hdr per distinct
     // date, ascending — and with only 1 regular event left over in THIS
     // fixture (3 total, 2 always featured), that row is always .solo.
+    // Cards are looked up by their exact data-adm-rm id, not by title
+    // substring — e2's title ("Evento de prueba (posible copia)") contains
+    // e1's title ("Evento de prueba") as a substring, so a textContent
+    // match could silently grab the wrong card depending on DOM order,
+    // which itself depends on the real current hour (activeFeaturedEventIds
+    // rotates off the real clock, not a mocked test time — this bug was
+    // latent and only actually surfaced at specific hours).
     const evtListHtml = text('evt-list');
     const evtListEl = doc.getElementById('evt-list');
     let destacadosRow = null;
     two.forEach(id => {
       const title = SAMPLE.eventos.find(x => x.id === id).title;
-      const card = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes(title));
+      const card = evtListEl.querySelector(`[data-adm-rm="eventos|${id}"]`);
       assert(!!card, `the featured event "${title}" renders as an .evtg-card`);
       assert(!!(card && card.querySelector('.evtg-badge')), `"${title}"'s card carries the Destacado badge`);
       const row = card.closest('.evtg-row');
@@ -3854,7 +3894,7 @@ const fakeClient = {
     // whenever the rotation doesn't happen to pick it.
     ['e1', 'e2', 'e4'].filter(id => !two.includes(id)).forEach(id => {
       const title = SAMPLE.eventos.find(x => x.id === id).title;
-      const item = [...evtListEl.querySelectorAll('.evtg-card')].find(c => c.textContent.includes(title));
+      const item = evtListEl.querySelector(`[data-adm-rm="eventos|${id}"]`);
       assert(!!item, `the non-featured event "${title}" also renders as an .evtg-card`);
       assert(!!(item && !item.querySelector('.evtg-badge')), `"${title}"'s card does NOT carry the Destacado badge, unlike the featured ones above`);
       const row = item.closest('.evtg-row');
