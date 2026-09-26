@@ -1,4 +1,4 @@
-window.MC_BUILD='e7c87c54a7';
+window.MC_BUILD='d5d92d561d';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1165,7 +1165,7 @@ function renderInicio(){
   h+='</div>';
 
   h+=`<div id="inicio-destacados-wrap" style="display:none">
-    <div class="destacados-hdr">Destacados</div>
+    ${dashColHdr('Destacados',"nav('tienda');setTiendaMode('mercado')")}
     <div class="tienda-grid" id="inicio-destacados-grid"></div>
   </div>`;
 
@@ -1822,18 +1822,57 @@ function renderMktChips(){
 }
 function setMktFilter(c){mktFilter=c;renderMercado();}
 function renderMercado(){
-  const list=TIENDA.filter(x=>x.sellerType==='negocio'
+  const base=TIENDA.filter(x=>x.sellerType==='negocio'
     &&(mktFilter==='all'||x.cat===mktFilter)
     &&(!mktColonia||x.colonia===mktColonia)
     &&(!mktSearch||x.name.toLowerCase().includes(mktSearch)));
   const el=document.getElementById('mkt-grid');
-  if(!list.length){
+  if(!base.length){
     const filtered=mktFilter!=='all'||mktColonia||mktSearch;
     el.innerHTML=emptyState('tienda','Nada por aquí todavía',filtered?'Nada coincide con este filtro.':'Sé el primero en publicar en esta categoría.');
     return;
   }
-  el.innerHTML=list.map(prodCardHtml).join('');
+  el.innerHTML=mercadoGridHtml(base);
   wireAdminRemove(el);
+}
+/* Destacado/Descuento products get two treatments in this one grid now
+   (no more separate boxed section on this tab):
+   1. Up to 2 rotate through the very top slot on the same shared timer
+      Home's own destacados block already uses -- deliberately UNFILTERED
+      (the full system-wide pool via eligibleDestacados(), exactly like
+      the old carousel), so a search/filter doesn't hide them from that
+      one slot either.
+   2. Any promoted product that ALSO matches the current filter is
+      additionally scattered through the rest of the results, at a
+      position seeded by its id + today's date -- stable while re-
+      rendering (typing a search, changing colonia) so items don't
+      visibly jump around, but different from one day to the next. */
+function mercadoGridHtml(base){
+  const rest=base.filter(x=>!(x.featured||x.discountActive));
+  const scattered=base.filter(x=>x.featured||x.discountActive);
+  const out=rest.slice();
+  scattered.forEach(item=>{
+    const pos=Math.floor(seededRand(String(item.id)+TODAY_DS)*(out.length+1));
+    out.splice(pos,0,item);
+  });
+  return `<div id="mkt-top-promo">${mercadoTopPromoHtml()}</div>${out.map(prodCardHtml).join('')}`;
+}
+function mercadoTopPromoHtml(){
+  const pool=eligibleDestacados();
+  if(!pool.length)return '';
+  const showN=Math.min(2,pool.length);
+  const start=destacadosRotationIndex%pool.length;
+  const slice=[];
+  for(let i=0;i<showN;i++)slice.push(pool[(start+i)%pool.length]);
+  return slice.map(prodCardHtml).join('');
+}
+/* Small, stable (non-cryptographic) string hash -> a 0..1 float, used to
+   scatter today's promoted products through the Mercado grid at positions
+   that stay put across re-renders but shuffle daily. */
+function seededRand(seed){
+  let h=0;
+  for(let i=0;i<seed.length;i++){h=(h*31+seed.charCodeAt(i))|0;}
+  return (Math.abs(h)%1000)/1000;
 }
 
 /* ══════════════ RENDER: DESTACADOS (rotating cross-business promo strip) ══════════════
@@ -1851,26 +1890,31 @@ function eligibleDestacados(){
     .sort((a,b)=>String(a.id).localeCompare(String(b.id))); // stable order across re-renders/rotations
 }
 function renderDestacadosCarousel(){
-  const mounts=[
-    {wrap:document.getElementById('destacados-wrap'),grid:document.getElementById('destacados-grid')},
-    {wrap:document.getElementById('inicio-destacados-wrap'),grid:document.getElementById('inicio-destacados-grid')}
-  ].filter(m=>m.wrap&&m.grid);
-  if(!mounts.length)return;
   const pool=eligibleDestacados();
-  if(!pool.length){
-    mounts.forEach(m=>m.wrap.style.display='none');
-    if(destacadosRotationTimer){clearInterval(destacadosRotationTimer);destacadosRotationTimer=null;}
-    return;
+  // Home's own boxed strip -- unchanged shape, only mount left of its kind.
+  const wrap=document.getElementById('inicio-destacados-wrap');
+  const grid=document.getElementById('inicio-destacados-grid');
+  if(wrap&&grid){
+    if(!pool.length){wrap.style.display='none';}
+    else{
+      wrap.style.display='block';
+      const showN=Math.min(2,pool.length);
+      const start=destacadosRotationIndex%pool.length;
+      const slice=[];
+      for(let i=0;i<showN;i++)slice.push(pool[(start+i)%pool.length]);
+      grid.innerHTML=slice.map(prodCardHtml).join('');
+      wireAdminRemove(grid);
+    }
   }
-  const showN=Math.min(2,pool.length);
-  const start=destacadosRotationIndex%pool.length;
-  const slice=[];
-  for(let i=0;i<showN;i++)slice.push(pool[(start+i)%pool.length]);
-  mounts.forEach(m=>{
-    m.wrap.style.display='block';
-    m.grid.innerHTML=slice.map(prodCardHtml).join('');
-    wireAdminRemove(m.grid);
-  });
+  // Mercado's inline top slot -- only touch it if the tab is actually
+  // mounted right now; replace just this small wrapper, not the whole
+  // grid, so scroll position and the rest of the list stay put every 7s.
+  const topSlot=document.getElementById('mkt-top-promo');
+  if(topSlot){
+    topSlot.innerHTML=mercadoTopPromoHtml();
+    wireAdminRemove(topSlot);
+  }
+  if(!pool.length&&destacadosRotationTimer){clearInterval(destacadosRotationTimer);destacadosRotationTimer=null;}
 }
 /* Timer only runs while Mercado is the visible sub-tab (see setTiendaMode
    below), and only when there are actually more than 2 eligible items to

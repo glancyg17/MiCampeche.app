@@ -21,12 +21,12 @@
 <meta name="twitter:description" content="Noticias, eventos, la tienda local, avisos vecinales y alertas oficiales de Campeche, todo en una sola app.">
 <meta name="twitter:image" content="https://micampeche.app/assets/images/MiCampeche-OG.jpg">
 <meta name="theme-color" content="#000612">
-<meta name="mc-build" content="e7c87c54a7">
+<meta name="mc-build" content="d5d92d561d">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png">
-<link rel="stylesheet" href="css/styles.css?v=e7c87c54a7">
+<link rel="stylesheet" href="css/styles.css?v=d5d92d561d">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -184,10 +184,6 @@
         <button class="subtog-btn" data-v="clasificados" onclick="setTiendaMode('clasificados')">Clasificados</button>
       </div>
       <div id="tienda-mercado">
-        <div id="destacados-wrap" style="display:none">
-          <div class="destacados-hdr">Destacados</div>
-          <div class="tienda-grid" id="destacados-grid"></div>
-        </div>
         <div class="filter-row">
           <div class="filter-select-wrap">
             <select class="filter-select" id="mkt-cat-select" onchange="setMktFilter(this.value)"></select>
@@ -548,8 +544,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js?v=e7c87c54a7"></script>
-<script src="js/app.js?v=e7c87c54a7"></script>
+<script src="js/supabase-client.js?v=d5d92d561d"></script>
+<script src="js/app.js?v=d5d92d561d"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads
