@@ -1,4 +1,4 @@
-window.MC_BUILD='d5d92d561d';
+window.MC_BUILD='25c926cba1';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1798,6 +1798,13 @@ function openProdView(sellerType,id){
     ${x.desc?`<div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${e(x.desc)}</div>`:''}
     ${rows.length?`<div class="pv-rows">${rows.map(r=>`<div class="pv-row"><span>${e(r[0])}</span><b>${e(r[1])}</b></div>`).join('')}</div>`:''}
     ${cta}
+    ${(()=>{
+      if(x.sellerType!=='negocio'||!x.businessId)return '';
+      const more=TIENDA.filter(o=>o.sellerType==='negocio'&&o.businessId===x.businessId&&String(o.id)!==String(x.id));
+      if(!more.length)return '';
+      return `<div class="mkt-divider"><span>Más de ${e(x.seller)}</span></div>
+        <div class="tienda-grid">${more.slice(0,6).map(prodCardHtml).join('')}</div>`;
+    })()}
   `;
   document.getElementById('modal-bg').classList.add('on');
 }
@@ -3285,7 +3292,6 @@ function renderAccountSignedIn(acct){
           <span class="menu-item-lbl">Mis negocios (${bizList.length})</span>
           <span class="menu-item-sub">Negocio, productos, ofertas y vacantes</span>
         </span>
-        ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`<span class="menu-badge on">${acct.myActiveOfertas.length}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:biz?`
@@ -3297,7 +3303,6 @@ function renderAccountSignedIn(acct){
           <span class="menu-item-lbl">${e(biz.business_name)}</span>
           <span class="menu-item-sub">${biz.status==='pending'?'En revisión':biz.status==='rejected'?'No aprobado':biz.is_premium?'Negocio Premium':'Negocio verificado'}${biz.category?' · '+e(biz.category):''}</span>
         </span>
-        ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`<span class="menu-badge on">${acct.myActiveOfertas.length}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:`
@@ -4552,13 +4557,13 @@ function advancePendingQueue(prevIndex){
    but scoped to the current user's own rows (any status) and tappable
    straight into the edit form. Open to every signed-in account. */
 let myPostsList=[];
-let myPostsTab='pending';
+let myPostsTab='active';
 let myPostsTypeFilter=null; // null = "Todos"; otherwise a table name like 'productos'
 let myPostsTableFilter=null; // null = show every self-editable table (the plain "Mis publicaciones" case); an array like ['productos'] scopes the same list/tabs/edit/discard machinery to just that table, used by the new "Mi negocio" sections
 let myPostsTitleBase='Mis publicaciones';
 async function openMyPosts(tables,title,backKey){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'account');
-  myPostsTab='pending';
+  myPostsTab='active';
   myPostsTypeFilter=null;
   myPostsTableFilter=tables||null;
   myPostsTitleBase=title||'Mis publicaciones';

@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='d5d92d561d';
+window.MC_BUILD_CLIENT='25c926cba1';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -932,7 +932,7 @@ MC.fetchTienda=async function(){
   if(prod.error)console.error(prod.error);
   if(clas.error)console.error(clas.error);
   const negocios=(prod.data||[]).map(r=>({
-    id:r.id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
+    id:r.id,businessId:r.business_id,cat:r.category||'Otro',name:r.title,price:r.price_text||fmtMXN(r.price_mxn),
     seller:r.business_name_snapshot,img:(r.image_urls&&r.image_urls[0])||'',imgs:r.image_urls||[],featured:!!r.featured,discountActive:!!r.discount_active,discountPrice:r.discount_price_text||(r.discount_price_mxn!=null?fmtMXN(r.discount_price_mxn):''),colonia:r.colonia,sellerType:'negocio',isExample:!!r.is_example,
     desc:r.description||'',condition:r.item_condition||'nuevo',availability:r.availability||'ahora',leadTime:r.lead_time||'',
     fulfillment:r.fulfillment||'',phone:r.seller_phone||'',contactMethods:r.contact_methods||[]

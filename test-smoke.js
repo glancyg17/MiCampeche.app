@@ -4407,12 +4407,30 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     const mp = () => text('modal-body');
     assert(/^Mis publicaciones \(11\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, m8 (pending) + m9 (rejected, no reason) + m10 (published) in mascotas, e3 (finished) + e4 (active) in eventos, and now o1 (published) + o3 (published, future-scheduled) + o4 (rejected) + o5 (pending) in ofertas, ofertas having joined SELF_EDIT_TABLES so a rejected oferta is actually visible/editable here like every other type');
-    // Default tab is Pendiente, and it buckets rejected alongside true
-    // pending — neither is currently live, both need the submitter's attention.
     assert(mp().includes('Pendiente (5)') && mp().includes('Activo (5)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + m8 (pending) + m9 (rejected) + o4 (rejected) + o5 (pending) in Pendiente, av2 + e4 + m10 + o1 + o3 in Activo, e3 in Finalizado');
+
+    // Default tab is Activo, not Pendiente — most residents open "Mis
+    // publicaciones" to check on something already live, not to chase a
+    // pending review. The published aviso shows up here instead, with no
+    // "Editar y reenviar" (that stays rejected-only) but it DOES still
+    // get the universal discard action. m10 (published, unresolved
+    // adopción) is here too, with its own "Marcar como adoptado" resolve
+    // button — campaña posts and non-mascotas tables never get this button.
+    assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'the default tab is Activo — a published post shows the "Publicado" badge with no extra tap needed');
+    assert(!mp().includes('Aviso test'), 'a rejected post does not show up in the default Activo tab');
+    assert(mp().includes('Mi evento activo'), 'the future-dated eventos row appears under Activo');
+    assert(!mp().includes('Mi evento finalizado'), 'the past-dated eventos row does not appear under Activo');
+    assert(!mp().includes('Editar y reenviar'), 'a non-rejected item never shows the rejected-specific "Editar y reenviar" action');
+    assert(mp().includes("confirmDiscardMyPost('avisos','av2')"), 'a published (active) post still carries the universal discard action');
+    assert(mp().includes("openMyPostEdit('avisos','av2')"), 'a published, still-editable row is tappable straight into its edit form');
+    assert(mp().includes('Mi cachorro en adopción') && mp().includes("resolveMascota('m10',true)") && mp().includes('Marcar como adoptado'), 'a published, unresolved adopción post shows a "Marcar como adoptado" resolve button');
+
+    // Switch to Pendiente: rejected alongside true pending — neither is
+    // currently live, both need the submitter's attention.
+    window.setMyPostsTab('pending');
     assert(mp().includes('Aviso test') && mp().includes('No aprobado') && mp().includes('La descripción no es clara'), 'a rejected post shows the "No aprobado" badge with the rejection reason inline');
     assert(mp().includes('Mi mascota perdida (pendiente)') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
-    assert(!mp().includes('Mi aviso publicado'), 'a published (active) post does not show up in the default Pendiente tab');
+    assert(!mp().includes('Mi aviso publicado'), 'a published (active) post does not show up in the Pendiente tab');
     assert(!mp().includes('Cachorro mestizo en adopción'), 'another user\'s post never appears — fetchMyPosts is scoped to the owner');
     assert(!mp().includes('Corte de agua programado en Zona Norte'), 'alertas (owner-less) is excluded from Mis publicaciones entirely');
     // A rejected post keeps its explicit "Editar y reenviar" action. The
@@ -4424,20 +4442,6 @@ const fakeClient = {
     assert(mp().includes("confirmDiscardMyPost('avisos','av1')"), 'a rejected post\'s card carries the universal discard (trash icon) action, targeting its own table/id');
     assert(mp().includes("confirmDiscardMyPost('mascotas','m8')"), 'a non-rejected (pending) post\'s card ALSO carries the discard action, now that the DB allows discarding any status');
     assert(mp().includes("openMyPostEdit('mascotas','m8')"), 'a plain pending (non-rejected, non-rejected-styled) post is still whole-card tappable into edit, same as before');
-
-    // Switch to Activo: the published aviso shows up here instead, with
-    // no "Editar y reenviar" (that stays rejected-only) but it DOES still
-    // get the universal discard action. m10 (published, unresolved
-    // adopción) is here too, with its own "Marcar como adoptado" resolve
-    // button — campaña posts and non-mascotas tables never get this button.
-    window.setMyPostsTab('active');
-    assert(mp().includes('Mi aviso publicado') && mp().includes('Publicado'), 'a published post shows the "Publicado" badge, now under the Activo tab');
-    assert(mp().includes('Mi evento activo'), 'the future-dated eventos row appears under Activo');
-    assert(!mp().includes('Mi evento finalizado'), 'the past-dated eventos row does not appear under Activo');
-    assert(!mp().includes('Editar y reenviar'), 'a non-rejected item never shows the rejected-specific "Editar y reenviar" action');
-    assert(mp().includes("confirmDiscardMyPost('avisos','av2')"), 'a published (active) post still carries the universal discard action');
-    assert(mp().includes("openMyPostEdit('avisos','av2')"), 'a published, still-editable row is tappable straight into its edit form');
-    assert(mp().includes('Mi cachorro en adopción') && mp().includes("resolveMascota('m10',true)") && mp().includes('Marcar como adoptado'), 'a published, unresolved adopción post shows a "Marcar como adoptado" resolve button');
 
     // Switch to Finalizado: only the past-dated event, correctly relabeled
     // even though its raw DB status is still 'published'.
@@ -4479,8 +4483,10 @@ const fakeClient = {
       assert(doc.getElementById('post-submit-btn').textContent === 'Reservar sin costo', 'and the button reads "Reservar sin costo", not "Pagar $99 y reservar"');
       mockFreeOfertaAvailable = false;
       currentBusiness.is_premium = false;
-      // Back to Mis publicaciones (still on the Pendiente tab) for the FIX 2 flow below.
+      // Back to Mis publicaciones, switched to Pendiente (openMyPosts now
+      // defaults to Activo) for the FIX 2 flow below.
       await window.openMyPosts();
+      window.setMyPostsTab('pending');
       await new Promise(r => setTimeout(r, 20));
     }
 
