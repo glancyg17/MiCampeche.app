@@ -1,4 +1,4 @@
-window.MC_BUILD='07993f61f9';
+window.MC_BUILD='b72455e7fc';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -3406,7 +3406,7 @@ function renderAccountSignedIn(acct){
 }
 
 let myBusinessesList=[];
-let myBusinessUpgradedIds=[];
+let myPremiumSlotCount=0;
 let viewingBusinessId=null; // set by openBusinessProfile(id), read by openBusinessEdit()/refreshBusinessProfile() so they act on whichever business is currently open
 
 /* "Mis negocios" — only reachable once an account has 2+ businesses (see
@@ -3417,33 +3417,43 @@ async function openMyBusinesses(){
   document.getElementById('modal-title').textContent='Mis negocios';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
-  const [list,upgraded]=await Promise.all([MC.myBusinesses(),MC.myBusinessPremiumUpgrades()]);
+  await refreshMyBusinessesData();
+  renderMyBusinesses();
+}
+/* Re-fetches without touching the modal stack -- used after any action
+   on this screen (toggle, buy, cancel) so it re-renders in place. */
+async function refreshMyBusinessesData(){
+  const [list,slotCount]=await Promise.all([MC.myBusinesses(),MC.myPremiumSlotCount()]);
   myBusinessesList=list;
-  myBusinessUpgradedIds=upgraded;
+  myPremiumSlotCount=slotCount;
+}
+async function refreshMyBusinesses(){
+  await refreshMyBusinessesData();
   renderMyBusinesses();
 }
 function renderMyBusinesses(){
-  const primary=myBusinessesList.find(b=>b.is_primary);
-  const canAddMore=!!(primary&&primary.is_premium)&&myBusinessesList.length<5;
+  const canAddMore=myPremiumSlotCount>0&&myBusinessesList.length<5;
+  const usedCount=myBusinessesList.filter(b=>b.is_premium).length;
   document.getElementById('modal-title').textContent=`Mis negocios (${myBusinessesList.length})`;
-  document.getElementById('modal-body').innerHTML=myBusinessesList.map(b=>{
-    const isUpgraded=myBusinessUpgradedIds.includes(b.id);
-    const statusLbl=b.status==='pending'?'En revisión':b.status==='rejected'?'No aprobado':(b.is_premium||isUpgraded)?'Premium':'Verificado';
-    const showPremiumAction=!b.is_primary&&b.status==='published';
+  const slotSummary=myPremiumSlotCount>0?`
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 4px;margin-bottom:10px;border-bottom:1.5px solid var(--line2)">
+      <div style="font-size:12.5px;color:var(--ink3);line-height:1.4">${usedCount} de ${myPremiumSlotCount} espacio(s) Premium en uso</div>
+      <button class="chip" onclick="openCancelPremiumSlot()" style="font-size:11.5px;color:var(--signal);flex-shrink:0">Cancelar un espacio</button>
+    </div>
+  `:'';
+  document.getElementById('modal-body').innerHTML=slotSummary+myBusinessesList.map(b=>{
+    const statusLbl=b.status==='pending'?'En revisión':b.status==='rejected'?'No aprobado':b.is_premium?'Premium':'Verificado';
+    const action=renderPremiumToggleAction(b);
     return `<div style="margin-bottom:4px">
-      <button class="menu-item" onclick="openBusinessProfile('${b.id}')" style="border:1.5px solid var(--line2);${showPremiumAction?'border-bottom:none;border-radius:var(--rs) var(--rs) 0 0':'border-radius:var(--rs)'}">
+      <button class="menu-item" onclick="openBusinessProfile('${b.id}')" style="border:1.5px solid var(--line2);${action?'border-bottom:none;border-radius:var(--rs) var(--rs) 0 0':'border-radius:var(--rs)'}">
         ${b.business_image_url?`<img src="${e(b.business_image_url)}" style="width:34px;height:34px;object-fit:cover;border-radius:9px;flex-shrink:0">`:`<span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1"/></svg></span>`}
         <span class="menu-item-txt">
-          <span class="menu-item-lbl">${e(b.business_name)}${b.is_primary?' · Principal':''}</span>
+          <span class="menu-item-lbl">${e(b.business_name)}</span>
           <span class="menu-item-sub">${statusLbl}${b.category?' · '+e(b.category):''}</span>
         </span>
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
-      ${showPremiumAction?(isUpgraded?`
-        <button class="menu-item" onclick="confirmCancelBusinessPremium('${b.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--signal);font-size:12.5px;padding:9px">Cancelar Premium de este negocio</button>
-      `:`
-        <button class="menu-item" onclick="startBusinessPremiumUpgrade('${b.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--gulf);font-size:12.5px;padding:9px">Subir a Premium — $${BUSINESS_PREMIUM_UPGRADE_FEE_MXN} MXN/mes</button>
-      `):''}
+      ${action}
     </div>`;
   }).join('')
   +(canAddMore?`
@@ -3451,9 +3461,141 @@ function renderMyBusinesses(){
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
       <span class="menu-item-txt"><span class="menu-item-lbl">Agregar otro negocio</span><span class="menu-item-sub">$${BUSINESS_SETUP_FEE_MXN} MXN de configuración</span></span>
     </button>
-  `:(primary&&!primary.is_premium&&myBusinessesList.length===1?`
-    <div style="color:var(--ink3);font-size:12px;padding:8px 4px;line-height:1.5">Actualiza tu negocio principal a Premium para poder agregar más negocios.</div>
+  `:(myPremiumSlotCount===0&&myBusinessesList.length===1?`
+    <div style="color:var(--ink3);font-size:12px;padding:8px 4px;line-height:1.5">Necesitas al menos un espacio Premium para poder agregar más negocios.</div>
   `:''));
+}
+/* Shared between Mis negocios and the single-business profile view.
+   Admin always gets a free, instant toggle either direction (matching
+   the database's own admin bypass -- admin status only ever affects
+   payment, never Premium eligibility itself). A regular owner's options
+   depend entirely on the one live invariant: turning off is always
+   offered on an already-Premium business; turning on is a free instant
+   toggle if a slot is currently unused, otherwise it's a real purchase
+   at whatever the next slot actually costs (749 for a first slot, 499
+   after that). */
+function renderPremiumToggleAction(biz){
+  if(biz.status!=='published')return '';
+  const isAdmin=!!(lastFetchedAccount&&lastFetchedAccount.isAdmin);
+  const usedCount=myBusinessesList.filter(x=>x.is_premium).length;
+  if(biz.is_premium){
+    return `<button class="menu-item" onclick="confirmTurnOffBusinessPremium('${biz.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--signal);font-size:12.5px;padding:9px">Desactivar Premium</button>`;
+  }
+  if(isAdmin||usedCount<myPremiumSlotCount){
+    return `<button class="menu-item" onclick="turnOnBusinessPremium('${biz.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--gulf);font-size:12.5px;padding:9px">Activar Premium${myPremiumSlotCount>usedCount?' (tienes un espacio libre)':''}</button>`;
+  }
+  const nextPrice=myPremiumSlotCount===0?749:499;
+  return `<button class="menu-item" onclick="buyPremiumSlot('${biz.id}')" style="border:1.5px solid var(--line2);border-top:none;border-radius:0 0 var(--rs) var(--rs);justify-content:center;color:var(--gulf);font-size:12.5px;padding:9px">Comprar un espacio Premium — $${nextPrice} MXN/mes</button>`;
+}
+async function turnOnBusinessPremium(businessId){
+  const {error}=await MC.setBusinessPremium(businessId,true);
+  if(error){toast(pgErrorToast(error,'No se pudo activar Premium — puede que ya no tengas un espacio libre.'));refreshMyBusinesses();return;}
+  toast('Premium activado ✓');
+  refreshMyBusinesses();
+  if(viewingBusinessId===businessId)refreshBusinessProfile();
+}
+function buyPremiumSlot(businessId){
+  const nextPrice=myPremiumSlotCount===0?749:499;
+  sessionStorage.setItem('mc_pending_premium_slot',JSON.stringify({businessId}));
+  window.location.href=nextPrice===749?STRIPE_LINK_PREMIUM:STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE;
+}
+/* Turning a business's Premium off is only ever "just do it" when it has
+   2 or fewer published productos already (Básico's own cap) -- otherwise
+   the founder was explicit this must not silently auto-pick which stay:
+   the picker screen below runs first, and the actual toggle only happens
+   once 2 have been explicitly chosen. */
+async function confirmTurnOffBusinessPremium(businessId){
+  const allPosts=await MC.fetchMyPosts();
+  const published=allPosts.filter(p=>p.table==='productos'&&p.raw&&String(p.raw.business_id)===String(businessId)&&p.status==='published');
+  if(published.length<=2){
+    const {error}=await MC.setBusinessPremium(businessId,false);
+    if(error){toast(pgErrorToast(error,'No se pudo desactivar Premium.'));return;}
+    toast('Premium desactivado ✓');
+    refreshMyBusinesses();
+    if(viewingBusinessId===businessId)refreshBusinessProfile();
+    return;
+  }
+  premiumDowngradeTarget=businessId;
+  premiumDowngradeProducts=published;
+  openPremiumDowngradeProductPicker();
+}
+let premiumDowngradeTarget=null;
+let premiumDowngradeProducts=[];
+function openPremiumDowngradeProductPicker(){
+  mcModalPushView('myBusinesses');
+  document.getElementById('modal-title').textContent='Elige qué productos quedan';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:14px">Este negocio deja Premium y el límite baja a 2 productos publicados. Tienes ${premiumDowngradeProducts.length} — elige cuáles 2 se quedan. Los demás se descartan (no se puede deshacer).</div>
+    <div id="premium-downgrade-picker">${premiumDowngradeProducts.map(p=>`
+      <label class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" class="premium-downgrade-check" value="${e(String(p.id))}" onchange="syncPremiumDowngradePicker()" style="margin-right:10px">
+        <span class="menu-item-lbl">${e(p.title)}</span>
+      </label>
+    `).join('')}</div>
+    <button class="submit-btn" id="premium-downgrade-confirm-btn" disabled style="opacity:.4;cursor:default" onclick="confirmPremiumDowngrade()">Selecciona 2 productos (0/2)</button>
+  `;
+}
+function syncPremiumDowngradePicker(){
+  const checked=document.querySelectorAll('.premium-downgrade-check:checked');
+  const btn=document.getElementById('premium-downgrade-confirm-btn');
+  document.querySelectorAll('.premium-downgrade-check').forEach(cb=>{cb.disabled=(checked.length>=2&&!cb.checked);});
+  if(checked.length===2){
+    btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
+    btn.textContent='Confirmar y desactivar Premium';
+  } else {
+    btn.disabled=true;btn.style.opacity='.4';btn.style.cursor='default';
+    btn.textContent=`Selecciona 2 productos (${checked.length}/2)`;
+  }
+}
+async function confirmPremiumDowngrade(){
+  const keep=[...document.querySelectorAll('.premium-downgrade-check:checked')].map(cb=>cb.value);
+  const toDiscard=premiumDowngradeProducts.filter(p=>!keep.includes(String(p.id)));
+  const btn=document.getElementById('premium-downgrade-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Aplicando…';}
+  for(const p of toDiscard){
+    const {error}=await MC.deleteMyPost('productos',p.id);
+    if(error){toast(pgErrorToast(error,'No se pudo descartar uno de los productos. Intenta de nuevo.'));if(btn){btn.disabled=false;}return;}
+  }
+  const {error}=await MC.setBusinessPremium(premiumDowngradeTarget,false);
+  if(error){toast(pgErrorToast(error,'Los productos se descartaron, pero no se pudo desactivar Premium. Escríbenos por WhatsApp.'));return;}
+  toast('Premium desactivado y productos ajustados ✓');
+  const targetId=premiumDowngradeTarget;
+  premiumDowngradeTarget=null;premiumDowngradeProducts=[];
+  mcModalBack('myBusinesses');
+  refreshMyBusinesses();
+  if(viewingBusinessId===targetId)refreshBusinessProfile();
+}
+/* Cancelling a slot (not reassigning -- actually reducing how many the
+   profile pays for) is the one place the founder was explicit must force
+   a real choice: if doing so would leave more Premium businesses than
+   slots remaining, this refuses outright and tells them to turn some off
+   first via the per-business buttons above, rather than silently picking
+   one to downgrade for them. */
+function openCancelPremiumSlot(){
+  const usedCount=myBusinessesList.filter(b=>b.is_premium).length;
+  const remainingAfter=myPremiumSlotCount-1;
+  if(usedCount>remainingAfter){
+    toast(`Primero desactiva Premium en ${usedCount-remainingAfter} negocio(s) de arriba -- tienes más negocios Premium que los espacios que quedarían.`);
+    return;
+  }
+  mcModalPushView('myBusinesses');
+  document.getElementById('modal-title').textContent='Cancelar un espacio Premium';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;line-height:1.5;margin-bottom:14px">Dejarás de pagar por uno de tus espacios Premium. Detendremos el cobro correspondiente en los próximos días.</div>
+    <div style="display:flex;gap:8px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink)" onclick="mcModalBack('myBusinesses')">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--signal);color:#fff" id="cancel-slot-btn" onclick="submitCancelPremiumSlot()">Confirmar</button>
+    </div>
+  `;
+}
+async function submitCancelPremiumSlot(){
+  const btn=document.getElementById('cancel-slot-btn');
+  if(btn){btn.disabled=true;btn.textContent='Cancelando…';}
+  const {error}=await MC.cancelOnePremiumSlot();
+  if(error){toast(pgErrorToast(error,'No se pudo cancelar.'));if(btn){btn.disabled=false;btn.textContent='Confirmar';}return;}
+  toast('Espacio Premium cancelado ✓');
+  mcModalBack('myBusinesses');
+  refreshMyBusinesses();
 }
 /* Look the business up by id rather than passing its name through the
    onclick chain — names are free text and may contain a single quote,
@@ -3953,9 +4095,16 @@ async function openBusinessProfile(id){
   const biz=await MC.fetchBusinessById(id);
   if(!biz){mcModalBack();return;}
   renderBusinessProfile(biz);
-  const posts=await MC.fetchMyPosts();
+  // renderPremiumToggleAction (called by renderBusinessProfile) reads
+  // myBusinessesList/myPremiumSlotCount -- fetched here too, not just in
+  // refreshBusinessProfile, since this screen is also reachable directly
+  // (burger menu "Mi negocio", the account modal's single-business row)
+  // without ever going through Mis negocios first.
+  const [posts,list,slotCount]=await Promise.all([MC.fetchMyPosts(),MC.myBusinesses(),MC.myPremiumSlotCount()]);
   if(viewingBusinessId!==id)return; // navigated to a different business before this landed
   bizProfilePosts=posts;
+  myBusinessesList=list;
+  myPremiumSlotCount=slotCount;
   renderBusinessProfile(biz);
 }
 function renderBusinessProfile(biz){
@@ -3976,16 +4125,7 @@ function renderBusinessProfile(biz){
       </span>
       <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>
-    ${(biz.status==='published'&&!biz.is_premium&&!isAdmin)?`
-      <a class="menu-item" style="border:1.5px solid var(--line2);margin-bottom:4px;text-decoration:none" href="${STRIPE_LINK_PREMIUM}">
-        <span class="menu-item-ico" style="background:var(--wall)">${svgIco('checkBadge')}</span>
-        <span class="menu-item-txt">
-          <span class="menu-item-lbl">Actualizar a Premium</span>
-          <span class="menu-item-sub">$749 MXN/mes · más productos y espacios de Oferta</span>
-        </span>
-        <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </a>
-    `:''}
+    ${renderPremiumToggleAction(biz)}
     ${(()=>{const n=bizProfilePosts.filter(p=>p.table==='productos'&&p.raw.business_id===biz.id).length;return n?`
       <button class="menu-item" onclick="openMyPosts(['productos'],'Mis productos en Tienda','bizProfile')" style="border:1.5px solid var(--line2);margin-bottom:4px;margin-top:10px">
         <span class="menu-item-ico">${svgIco('tienda')}</span>
@@ -4013,9 +4153,11 @@ function renderBusinessProfile(biz){
 async function refreshBusinessProfile(){
   if(!viewingBusinessId)return;
   const id=viewingBusinessId;
-  const [biz,posts]=await Promise.all([MC.fetchBusinessById(id),MC.fetchMyPosts()]);
+  const [biz,posts,list,slotCount]=await Promise.all([MC.fetchBusinessById(id),MC.fetchMyPosts(),MC.myBusinesses(),MC.myPremiumSlotCount()]);
   if(viewingBusinessId!==id)return; // navigated to a different business before this landed
   bizProfilePosts=posts;
+  myBusinessesList=list;
+  myPremiumSlotCount=slotCount;
   renderBusinessProfile(biz);
 }
 
@@ -5636,10 +5778,30 @@ function isMobile(){
 /* ══════════════ STRIPE PAYMENT RETURN ══════════════
    Both payment links redirect back here with a ?paid= marker. This is a
    client-side signal only — not cryptographic proof of payment (no
-   webhook verification yet) — which is why Premium never self-grants
-   itself here; only the Oferta booking actually completes automatically,
-   and that's a low-stakes "did they pay for the booking ceremony" gate,
-   not a privilege escalation risk the way flipping is_premium would be. */
+   webhook verification yet) — same client-trusted pattern already used
+   for the Oferta booking / $99 business setup / event featuring flows. A
+   Premium purchase now records the same client-trusted way (a
+   premium_subscriptions row); see activatePendingPremiumSlotBusiness
+   just below for the one thing it still refuses to silently do itself. */
+/* After a slot purchase completes, if the person clicked "buy" from a
+   specific business's own row, immediately assign the new slot to that
+   business too -- one smooth step for the common case (they clearly
+   intended it for that business) rather than making them go find the
+   toggle again in Mis negocios. If this specific assignment fails for
+   any reason, that's fine -- the slot itself is real and already
+   theirs; they can toggle it onto any business manually. Checks BOTH
+   possible pending keys since either Stripe link could have been the one
+   that sent them here. */
+async function activatePendingPremiumSlotBusiness(key){
+  const pending=sessionStorage.getItem(key)||sessionStorage.getItem('mc_pending_premium_slot')||sessionStorage.getItem('mc_pending_business_premium_upgrade');
+  sessionStorage.removeItem('mc_pending_premium_slot');
+  sessionStorage.removeItem('mc_pending_business_premium_upgrade');
+  if(!pending)return;
+  try{
+    const {businessId}=JSON.parse(pending);
+    if(businessId)await MC.setBusinessPremium(businessId,true);
+  }catch(_){}
+}
 async function checkPaymentReturn(){
   const params=new URLSearchParams(window.location.search);
   const paid=params.get('paid');
@@ -5663,7 +5825,10 @@ async function checkPaymentReturn(){
     toast('¡Pago recibido y espacio reservado! En revisión antes de publicarse ✓');
     refreshOfertaPostCta();
   } else if(paid==='premium'){
-    toast('¡Pago recibido! Activaremos tu cuenta Premium en breve.');
+    const {error}=await MC.submitPremiumSlotPurchase(749);
+    if(error){toast('Pago recibido, pero no pudimos activarlo — escríbenos por WhatsApp y lo resolvemos.');return;}
+    await activatePendingPremiumSlotBusiness('mc_pending_premium_slot');
+    toast('¡Pago recibido! Ya tienes un espacio Premium ✓');
   } else if(paid==='evento_feature'){
     const pending=sessionStorage.getItem('mc_pending_evento_feature');
     if(!pending){toast('Pago recibido, pero no encontramos los detalles de tu evento. Escríbenos por WhatsApp.');return;}
@@ -5687,16 +5852,10 @@ async function checkPaymentReturn(){
     }
     toast('¡Pago recibido! Tu nuevo negocio fue enviado para revisión ✓');
   } else if(paid==='business_premium_upgrade'){
-    const pending=sessionStorage.getItem('mc_pending_business_premium_upgrade');
-    if(!pending){toast('Pago recibido, pero no encontramos a qué negocio corresponde. Escríbenos por WhatsApp.');return;}
-    sessionStorage.removeItem('mc_pending_business_premium_upgrade');
-    const {businessId}=JSON.parse(pending);
-    const {error}=await MC.submitBusinessPremiumUpgrade(businessId);
-    if(error){
-      toast('Pago recibido, pero no pudimos activarlo — escríbenos por WhatsApp y lo resolvemos.');
-      return;
-    }
-    toast('¡Pago recibido! Este negocio ahora puede tener hasta 10 productos ✓');
+    const {error}=await MC.submitPremiumSlotPurchase(499);
+    if(error){toast('Pago recibido, pero no pudimos activarlo — escríbenos por WhatsApp y lo resolvemos.');return;}
+    await activatePendingPremiumSlotBusiness('mc_pending_business_premium_upgrade');
+    toast('¡Pago recibido! Ya tienes un espacio Premium adicional ✓');
   } else if(paid==='mandadito_boost'){
     const pending=sessionStorage.getItem('mc_pending_mandadito_boost');
     if(!pending){toast('Pago recibido, pero no encontramos los detalles de tu impulso. Escríbenos por WhatsApp.');return;}

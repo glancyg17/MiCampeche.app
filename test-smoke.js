@@ -279,10 +279,16 @@ const SAMPLE = {
     // .av-img thumbnail render on the public Avisos card.
     { id: 'av2', category: 'Seguridad', title: 'Mi aviso publicado', description: 'x', image_url: 'https://example.com/aviso-photo.jpg', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), profiles: { display_name: 'Vecina Test' } },
   ],
-  // Mutated directly by the Step B multi-business Premium-upgrade tests
-  // (which business ids currently have the $499/mo upgrade) — read via
-  // the generic select() path, same as eventos_featured_bookings elsewhere.
+  // Retired fixture — business_premium_upgrades is no longer the source of
+  // truth for anything (see premium_subscriptions below), kept only
+  // because the old, no-longer-called client functions that used it
+  // (MC.myBusinessPremiumUpgrades etc.) are still defined, unused.
   business_premium_upgrades: [],
+  // One row per profile per paid Premium slot (the new model) — mutated
+  // directly by the Premium toggle/buy/cancel tests, read via the
+  // generic select() path (profile_id filtering + {count:'exact',head:true}
+  // are both already honored generically by the mock).
+  premium_subscriptions: [],
   // Step C admin worklist. cr3 is already resolved (resolved_at set) —
   // MC.fetchCancellationReminders' .is('resolved_at',null) filter must
   // exclude it; cr1/cr2 are the two real unresolved rows the tests exercise.
@@ -405,10 +411,30 @@ const fakeClient = {
           extraBusinesses.push(extraBiz);
           return { data: [extraBiz], error: null };
         }); },
-        update: (row) => { lastUpdate.businesses = row; return makeChain(() => {
-          if (currentBusiness) currentBusiness = { ...currentBusiness, ...row };
-          return { data: currentBusiness ? [currentBusiness] : [], error: null };
-        }); },
+        update: (row) => {
+          lastUpdate.businesses = row;
+          let targetId = null;
+          return makeChain(() => {
+            // Real MC.setBusinessPremium targets ONE business by id
+            // (multi-business accounts can toggle Premium on any of
+            // theirs) — apply the update to whichever fixture object
+            // that id actually matches, falling back to currentBusiness
+            // only when no id filter was given at all (every other
+            // existing caller in this suite updates the single-business
+            // fixture that way).
+            if (targetId != null) {
+              if (currentBusiness && String(currentBusiness.id) === String(targetId)) {
+                currentBusiness = { ...currentBusiness, ...row };
+              } else {
+                const i = extraBusinesses.findIndex(b => String(b.id) === String(targetId));
+                if (i !== -1) extraBusinesses[i] = { ...extraBusinesses[i], ...row };
+              }
+            } else if (currentBusiness) {
+              currentBusiness = { ...currentBusiness, ...row };
+            }
+            return { data: currentBusiness ? [currentBusiness] : [], error: null };
+          }, (f, v) => { if (f === 'id') targetId = v; });
+        },
       };
     }
     if (table === 'password_reset_requests') {
@@ -2695,7 +2721,7 @@ const fakeClient = {
     assert(text('modal-title') === 'Mi negocio', 'tapping the business box opens the business profile view');
     assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Lun-Sáb 9am-8pm'), 'the profile shows the full business record, not just the name');
     assert(text('modal-body').includes('Editar negocio'), 'the profile carries the edit action that sends changes back to review');
-    assert(!text('modal-body').includes('Actualizar a Premium'), 'Premium upsell stays hidden for admin accounts — admin already has premium (and more) rights');
+    assert(text('modal-body').includes('Activar Premium') && !text('modal-body').includes('Comprar un espacio Premium'), 'an admin gets a free, instant Premium toggle regardless of slot count — admin status bypasses the payment/slot check the same way it does everywhere else in this app');
     // The "Ofertas activas" section was removed from Mi negocio entirely
     // (redundant with the global account-menu entry, which has its own
     // dedicated fetch/state and is unaffected) — confirm it's really gone.
@@ -2708,7 +2734,7 @@ const fakeClient = {
     await window.openAccount(); // refresh the account view so lastFetchedAccount reflects the non-admin state
     await window.openBusinessProfile('biz-1');
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('Actualizar a Premium'), 'a non-admin with the exact same approved, non-premium business DOES see the upsell in the profile');
+    assert(text('modal-body').includes('Comprar un espacio Premium — $749 MXN/mes'), 'a non-admin with the exact same approved, non-premium business and no Premium slot yet sees the buy-a-slot CTA at $749 (their first slot)');
     window.mcModalBack();
     currentProfile.is_admin = true; // restore — later tests (Moderación/Pendiente access) need this fixture to stay admin
 
@@ -2736,16 +2762,16 @@ const fakeClient = {
     // matching ALL of a profile's businesses by profile_id alone, which
     // throws for real the moment a profile has 2+ (maybeSingle() requires
     // 0 or 1 row).
-    // With just the one (non-Premium) business still in place, the list
-    // view shows the "upgrade to Premium to add more" hint — renderMyBusinesses()
-    // only shows this hint at exactly 1 business (once a 2nd already
-    // exists, whether to add a 3rd is a different question the hint isn't
-    // meant to answer), so this has to be checked before extraBusinesses
-    // is added below.
+    // With just the one business still in place and zero Premium slots
+    // bought, the list view shows the "need a slot to add more" hint —
+    // renderMyBusinesses() only shows this hint at exactly 1 business
+    // (once a 2nd already exists, whether to add a 3rd is a different
+    // question the hint isn't meant to answer), so this has to be
+    // checked before extraBusinesses is added below.
     await window.openMyBusinesses();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('Actualiza tu negocio principal a Premium'), 'without a Premium primary, the list shows the "upgrade to add more" hint');
-    assert(!text('modal-body').includes('Agregar otro negocio'), 'and does NOT offer "Agregar otro negocio" while the primary isn\'t Premium');
+    assert(text('modal-body').includes('Necesitas al menos un espacio Premium'), 'without any Premium slot, the list shows the "need a slot to add more" hint');
+    assert(!text('modal-body').includes('Agregar otro negocio'), 'and does NOT offer "Agregar otro negocio" while there\'s no Premium slot at all');
     window.mcModalBack();
 
     extraBusinesses = [{ id: 'biz-2', profile_id: 'uid-1', business_name: 'Taco Loco 2', description: 'Segunda sucursal', category: 'Comida', address: 'Calle 20', phone: '981 000 5678', is_primary: false, status: 'published', is_premium: false }];
@@ -2760,12 +2786,18 @@ const fakeClient = {
     assert(text('modal-title') === 'Mis negocios (2)', 'openMyBusinesses() shows the real count in the title');
     assert(text('modal-body').includes('Taco Loco') && text('modal-body').includes('Taco Loco 2'), 'both businesses are listed');
 
-    // Make the primary Premium: the add-business entry point appears instead.
+    // Give the profile a real Premium slot: the add-business entry point
+    // appears instead. This is the new model's own point — canAddMore is
+    // gated by ANY slot existing for the profile, not by the primary
+    // business's own is_premium flag (that whole "primary" concept is
+    // retired), so a slot is added here rather than just flipping a flag.
+    SAMPLE.premium_subscriptions = [{ id: 'ps-add-biz', profile_id: 'uid-1', price_mxn: 749 }];
     currentBusiness.is_premium = true;
     await window.openMyBusinesses();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('Agregar otro negocio') && text('modal-body').includes('$99 MXN'), 'once the primary is Premium, "Agregar otro negocio" appears with the real $99 fee');
-    assert(!text('modal-body').includes('Actualiza tu negocio principal a Premium'), 'and the upgrade hint is gone');
+    assert(text('modal-body').includes('Agregar otro negocio') && text('modal-body').includes('$99 MXN'), 'once the profile has a real Premium slot, "Agregar otro negocio" appears with the real $99 fee');
+    assert(!text('modal-body').includes('Necesitas al menos un espacio Premium'), 'and the "need a slot" hint is gone');
+    SAMPLE.premium_subscriptions = [];
 
     // Additional-business submission pays FIRST — never calls
     // MC.verifyBusiness (i.e. never reaches a real insert) directly.
@@ -3784,14 +3816,25 @@ const fakeClient = {
     assert(!window.sessionStorage.getItem('mc_pending_oferta'), 'and nothing is stashed for a Stripe return');
     assert(text('toast') === 'Reservado sin pago (cuenta admin) ✓', 'and the admin-bypass toast fires');
 
-    // Premium's return path: confirmation only — must NEVER self-grant
-    // is_premium client-side. That stays a founder-verified, manual step.
+    // Premium's return path: a $749 slot purchase now records a real
+    // premium_subscriptions row, the same client-trusted pattern already
+    // used for the Oferta booking / business setup / event featuring
+    // flows — the old "confirmation only, manual founder step" model is
+    // retired now that Supabase's own invariant (turning is_premium on
+    // only succeeds with a free slot) is the real protection, not an
+    // unverified client flip. Arriving with no stashed business context
+    // (buyPremiumSlot always stashes one, but a bare return might not)
+    // must still record the slot without attempting any business update.
     window.history.pushState({}, '', '/?paid=premium');
     delete lastUpdate.businesses; // clear any earlier business update from this test run
+    delete lastInsert.premium_subscriptions;
+    window.sessionStorage.removeItem('mc_pending_premium_slot');
+    window.sessionStorage.removeItem('mc_pending_business_premium_upgrade');
     await window.checkPaymentReturn();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('toast') === '¡Pago recibido! Activaremos tu cuenta Premium en breve.', 'Premium payment return shows a confirmation, not an immediate upgrade');
-    assert(!lastUpdate.businesses, 'returning from a Premium payment never calls a client-side update to is_premium — that stays a manual, founder-verified step');
+    assert(lastInsert.premium_subscriptions && lastInsert.premium_subscriptions.price_mxn === 749, 'a $749 Premium payment return records a real premium_subscriptions row at the correct price');
+    assert(!lastUpdate.businesses, 'with no stashed business context, no business is touched — the slot alone is recorded');
+    assert(text('toast') === '¡Pago recibido! Ya tienes un espacio Premium ✓', 'Premium payment return shows the new slot-purchase confirmation');
 
     // ══════════════ Eventos: pay-to-feature ($99, 3-day window) ══════════════
     // want_feature='no' (the default seg option): the event submits for
@@ -4093,62 +4136,114 @@ const fakeClient = {
     currentBusiness.is_primary = true;
     extraBusinesses = [{ id: 'biz-2', profile_id: 'uid-1', business_name: 'Taco Loco 2', description: 'Segunda sucursal', category: 'Comida', address: 'Calle 20', phone: '981 000 5678', delivers: false, is_primary: false, status: 'published', is_premium: false }];
 
-    // ── $499/mo per-business Premium upgrade ──
-    SAMPLE.business_premium_upgrades = [];
+    // ══════════════ New Premium model: one self-service toggle per
+    //    business, gated by a shared slot pool (premium_subscriptions) —
+    //    replaces the old $749-primary-only / $499-per-business split
+    //    tested above (that mechanism is retired; MC.startBusinessPremiumUpgrade
+    //    etc. are left defined but unused). ══════════════
+    currentProfile.is_admin = false;
+    await window.openAccount(); // refresh lastFetchedAccount to non-admin — renderPremiumToggleAction reads it
+    SAMPLE.premium_subscriptions = [];
     await window.openMyBusinesses();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('Subir a Premium') && text('modal-body').includes('499 MXN/mes'), '"Subir a Premium" appears on a non-primary published business with no upgrade row yet');
-    assert(!text('modal-body').includes('Cancelar Premium'), 'and "Cancelar Premium" does not, since no upgrade exists yet');
+    assert(!text('modal-body').includes('espacio(s) Premium en uso'), 'with zero Premium slots at all, the slot-summary row is not shown');
+    assert(text('modal-body').includes('Comprar un espacio Premium — $749 MXN/mes'), 'with no slots at all, every published business offers to buy the first one at $749');
 
-    window.sessionStorage.removeItem('mc_pending_business_premium_upgrade');
-    await window.startBusinessPremiumUpgrade('biz-2');
-    const pendingPremiumRaw = window.sessionStorage.getItem('mc_pending_business_premium_upgrade');
-    assert(!!pendingPremiumRaw && JSON.parse(pendingPremiumRaw).businessId === 'biz-2', 'starting the upgrade stores the real businessId in sessionStorage before the (jsdom-unfollowable) redirect to STRIPE_LINK_BUSINESS_PREMIUM_UPGRADE');
-
-    window.history.pushState({}, '', '/?paid=business_premium_upgrade');
-    delete lastInsert.business_premium_upgrades;
-    await window.checkPaymentReturn();
+    // A real slot exists, unused by either business — both offer a free,
+    // instant toggle (no purchase) since one slot is genuinely available.
+    SAMPLE.premium_subscriptions = [{ id: 'ps1', profile_id: 'uid-1', price_mxn: 749 }];
+    await window.refreshMyBusinesses();
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.business_premium_upgrades && lastInsert.business_premium_upgrades.business_id === 'biz-2', 'the ?paid=business_premium_upgrade return calls MC.submitBusinessPremiumUpgrade with the real stashed businessId');
-    assert(!window.sessionStorage.getItem('mc_pending_business_premium_upgrade'), 'sessionStorage is cleared after the upgrade is created');
-    assert(text('toast') === '¡Pago recibido! Este negocio ahora puede tener hasta 10 productos ✓', 'a successful upgrade shows the right confirmation toast');
+    assert(text('modal-body').includes('0 de 1 espacio(s) Premium en uso'), 'the slot summary shows the real used/total counts');
+    assert(text('modal-body').includes('Activar Premium (tienes un espacio libre)'), 'with a genuinely free slot, turning a business on is offered as an instant, free toggle, not a purchase');
 
-    // Admin bypass: startBusinessPremiumUpgrade for an admin calls
-    // MC.submitBusinessPremiumUpgrade directly, no Stripe redirect / stash.
-    currentProfile.is_admin = true;
-    window.sessionStorage.removeItem('mc_pending_business_premium_upgrade');
-    delete lastInsert.business_premium_upgrades;
-    await window.startBusinessPremiumUpgrade('biz-2');
+    delete lastUpdate.businesses;
+    await window.turnOnBusinessPremium('biz-2');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastInsert.business_premium_upgrades && lastInsert.business_premium_upgrades.business_id === 'biz-2', 'an admin starting a per-business Premium upgrade calls MC.submitBusinessPremiumUpgrade directly');
-    assert(!window.sessionStorage.getItem('mc_pending_business_premium_upgrade'), 'and nothing is stashed for a Stripe return');
-    assert(text('toast') === 'Premium activado sin pago (cuenta admin) ✓', 'and the admin-bypass toast fires');
+    assert(lastUpdate.businesses && lastUpdate.businesses.is_premium === true, 'turning Premium on calls MC.setBusinessPremium(id,true) directly — the database\'s own invariant is what actually enforces the free-slot rule, not the client');
+    assert(text('toast') === 'Premium activado ✓', 'a successful toggle-on shows its own confirmation toast');
 
-    // Now simulate the upgrade actually existing (the fake insert above
-    // doesn't mutate SAMPLE, same as every other fake insert in this
-    // suite) and re-open the list: "Cancelar Premium" replaces "Subir a Premium".
-    SAMPLE.business_premium_upgrades = [{ business_id: 'biz-2', business_name: 'Taco Loco 2', profile_id: 'uid-1' }];
-    await window.openMyBusinesses();
+    // Reassignment: biz-2 already holds the one slot — turning it off on
+    // biz-2 and back on for biz-1 is two instant, free toggles, no
+    // payment prompt anywhere in this flow (no new money changes hands).
+    await window.refreshMyBusinesses();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-body').includes('Cancelar Premium'), 'once an upgrade row exists, "Cancelar Premium" appears instead');
-    assert(!text('modal-body').includes('Subir a Premium'), 'and "Subir a Premium" no longer does');
+    assert(text('modal-body').includes('Desactivar Premium'), 'biz-2 (now holding the slot) offers to turn it off');
+    assert(text('modal-body').includes('Comprar un espacio Premium — $499 MXN/mes'), 'and biz-1, with the one real slot already in use elsewhere, is offered a genuinely NEW slot at $499 — the real price after the first, not $749 again');
 
-    window.confirmCancelBusinessPremium('biz-2');
-    assert(text('modal-title') === 'Cancelar Premium de este negocio', 'confirming cancel opens its own confirm screen');
-    assert(text('modal-body').includes('Taco Loco 2'), 'the confirm screen shows which business is losing Premium');
-    delete lastDelete.business_premium_upgrades;
-    await window.cancelBusinessPremiumUpgrade('biz-2');
+    delete lastUpdate.businesses;
+    await window.confirmTurnOffBusinessPremium('biz-2');
     await new Promise(r => setTimeout(r, 20));
-    assert(lastDelete.business_premium_upgrades === 'biz-2', 'cancelBusinessPremiumUpgrade calls through to MC.cancelBusinessPremiumUpgrade with the right business id');
-    assert(text('toast') === 'Premium cancelado para este negocio', 'a successful cancel shows the right confirmation toast');
-    assert(text('modal-title') === 'Mis negocios (2)', 'a successful cancel returns to (and refreshes) the Mis negocios list');
+    assert(lastUpdate.businesses && lastUpdate.businesses.is_premium === false, 'biz-2 has 0 published productos in this fixture (well under the 2-product cap), so turning it off is instant — no picker needed');
+    assert(text('toast') === 'Premium desactivado ✓', 'and shows its own confirmation toast');
+
+    delete lastUpdate.businesses;
+    await window.turnOnBusinessPremium('biz-1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.businesses && lastUpdate.businesses.is_premium === true, 'and biz-1 can now take that same slot — the exact "turn one off, a different one on" reassignment the founder was explicit must work instantly and for free');
+
+    // ── Turning Premium off with MORE than 2 published productos must
+    //    force an explicit choice, never auto-pick — the "elige 2" picker. ──
+    const originalProductosForDowngrade = SAMPLE.productos;
+    SAMPLE.productos = [
+      { id: 'pd1', business_id: 'biz-1', submitted_by: 'uid-1', title: 'Producto A', status: 'published', created_at: NOW.toISOString() },
+      { id: 'pd2', business_id: 'biz-1', submitted_by: 'uid-1', title: 'Producto B', status: 'published', created_at: NOW.toISOString() },
+      { id: 'pd3', business_id: 'biz-1', submitted_by: 'uid-1', title: 'Producto C', status: 'published', created_at: NOW.toISOString() },
+    ];
+    await window.confirmTurnOffBusinessPremium('biz-1');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Elige qué productos quedan', 'with 3 published productos (over Básico\'s 2-product cap), turning Premium off opens the picker instead of silently discarding for you');
+    assert(text('modal-body').includes('Producto A') && text('modal-body').includes('Producto B') && text('modal-body').includes('Producto C'), 'the picker lists every real published product');
+    assert(doc.getElementById('premium-downgrade-confirm-btn').disabled === true, 'the confirm button starts disabled — nothing is chosen yet');
+
+    const dgCheckA = doc.querySelector('.premium-downgrade-check[value="pd1"]');
+    const dgCheckB = doc.querySelector('.premium-downgrade-check[value="pd2"]');
+    const dgCheckC = doc.querySelector('.premium-downgrade-check[value="pd3"]');
+    dgCheckA.checked = true; window.syncPremiumDowngradePicker();
+    assert(doc.getElementById('premium-downgrade-confirm-btn').disabled === true, 'still disabled with only 1 of 2 chosen');
+    dgCheckB.checked = true; window.syncPremiumDowngradePicker();
+    assert(doc.getElementById('premium-downgrade-confirm-btn').disabled === false && doc.getElementById('premium-downgrade-confirm-btn').textContent === 'Confirmar y desactivar Premium', 'exactly 2 chosen enables the confirm button');
+    assert(dgCheckC.disabled === true, 'a third checkbox is disabled once 2 are already checked — exactly 2 must stay, no more');
+
+    delete lastDelete.productos;
+    delete lastUpdate.businesses;
+    await window.confirmPremiumDowngrade();
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastDelete.productos === 'pd3', 'the one NOT chosen (pd3) is discarded through the real MC.deleteMyPost — the same reversible discard flow every other content type already uses');
+    assert(lastUpdate.businesses && lastUpdate.businesses.is_premium === false, 'and only THEN does Premium actually turn off, after the discard succeeded');
+    assert(text('toast') === 'Premium desactivado y productos ajustados ✓', 'a distinct confirmation toast covers both the discard and the toggle');
+    SAMPLE.productos = originalProductosForDowngrade;
+
+    // ── Cancelling a slot must never silently downgrade a business for
+    //    you — refuses outright when it would leave more Premium
+    //    businesses than slots remaining. ──
+    extraBusinesses = [{ ...extraBusinesses[0], is_premium: true }];
+    currentBusiness.is_premium = true;
+    await window.refreshMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    window.openCancelPremiumSlot();
+    assert(text('toast').includes('Primero desactiva Premium'), 'with 2 Premium businesses and only 1 slot, cancelling that slot is refused with a clear message, not a silent auto-downgrade');
+    assert(text('modal-title') !== 'Cancelar un espacio Premium', 'and the confirm screen never opens');
+
+    currentBusiness.is_premium = false;
+    extraBusinesses = [{ ...extraBusinesses[0], is_premium: false }];
+    await window.refreshMyBusinesses();
+    await new Promise(r => setTimeout(r, 20));
+    window.openCancelPremiumSlot();
+    assert(text('modal-title') === 'Cancelar un espacio Premium', 'with zero Premium businesses currently active, cancelling the one slot is allowed');
+    delete lastDelete.premium_subscriptions;
+    await window.submitCancelPremiumSlot();
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastDelete.premium_subscriptions === 'ps1', 'confirming calls MC.cancelOnePremiumSlot, which deletes a real premium_subscriptions row');
+    assert(text('toast') === 'Espacio Premium cancelado ✓', 'and shows its own confirmation toast');
 
     // Clean up for every test after this point — closeModal() resets
     // mcModalStack outright, regardless of how deep the confirm-cancel /
     // re-list navigation above left it, so the nested-modal-view tests
     // further down start from the same clean slate they always have.
-    SAMPLE.business_premium_upgrades = [];
+    SAMPLE.premium_subscriptions = [];
     extraBusinesses = [];
+    currentProfile.is_admin = true; // restore — later tests (Moderación/Pendiente access) need this fixture to stay admin
     window.closeModal();
 
     // ── Admin unified Pendiente queue (this fixture account is_admin: true) ──

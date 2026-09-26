@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='07993f61f9';
+window.MC_BUILD_CLIENT='b72455e7fc';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -307,6 +307,43 @@ MC.myBusinesses=async function(){
   if(!uid)return [];
   const {data}=await sb.from('businesses').select('*').eq('profile_id',uid).order('is_primary',{ascending:false}).order('created_at',{ascending:true});
   return data||[];
+};
+/* How many premium slots this profile is currently paying for -- doesn't
+   matter which businesses currently hold them, that's each business's
+   own is_premium flag. */
+MC.myPremiumSlotCount=async function(){
+  const uid=await MC.ready;
+  if(!uid)return 0;
+  const {count,error}=await sb.from('premium_subscriptions').select('id',{count:'exact',head:true}).eq('profile_id',uid);
+  if(error){console.error(error);return 0;}
+  return count||0;
+};
+/* Self-service toggle. The real protection is the database's own
+   invariant (a business owner can always turn premium off; turning it on
+   only succeeds with a free slot) -- this just performs the update and
+   lets a genuine "no free slot" attempt come back as a real Postgres
+   error rather than silently doing nothing. */
+MC.setBusinessPremium=async function(businessId,on){
+  return sb.from('businesses').update({is_premium:on}).eq('id',businessId);
+};
+/* Records a newly-bought slot after a real Stripe redirect -- same
+   client-trusted pattern already used for the $99 business setup / event
+   featuring / oferta booking flows elsewhere in this app. */
+MC.submitPremiumSlotPurchase=async function(priceMxn){
+  const uid=await MC.ready;
+  return sb.from('premium_subscriptions').insert({profile_id:uid,price_mxn:priceMxn});
+};
+/* Cancels ONE slot -- doesn't matter which specific row, they're fully
+   interchangeable, so this just takes any one belonging to the caller.
+   The caller is responsible for having already brought their currently-
+   premium business count down to fit BEFORE calling this (the app's own
+   UI enforces that; nothing here blocks the delete itself). */
+MC.cancelOnePremiumSlot=async function(){
+  const uid=await MC.ready;
+  const {data,error:selErr}=await sb.from('premium_subscriptions').select('id').eq('profile_id',uid).limit(1);
+  if(selErr)return {error:selErr};
+  if(!data||!data.length)return {error:{message:'no_premium_subscriptions'}};
+  return sb.from('premium_subscriptions').delete().eq('id',data[0].id);
 };
 /* Which of the account's businesses currently have the $499/mo upgrade
    — drives "Subir a Premium" vs "Cancelar Premium" per row in Mis
