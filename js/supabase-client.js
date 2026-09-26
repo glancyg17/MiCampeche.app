@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='769bdd9e78';
+window.MC_BUILD_CLIENT='2bc5b7aad8';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -586,10 +586,16 @@ MC.fetchWeather=async function(){
    ones the DB self-edit triggers + "owner update own" RLS cover. Derived
    from CONTENT_TABLES (for the labels/titleField) minus: alertas
    (owner-less), businesses (its own dedicated profile/edit view — showing
-   it here too would just duplicate it), and noticias/ofertas (no
-   resident self-edit path). Every row in "Mis publicaciones" is therefore
-   tappable straight into an edit form. */
-const SELF_EDIT_TABLES=['eventos','productos','clasificados','mascotas','empleos','reportes','avisos','mandaditos'];
+   it here too would just duplicate it), and noticias (no resident
+   self-edit path). Every row in "Mis publicaciones" is therefore tappable
+   straight into an edit form — EXCEPT ofertas, which is included here
+   only so a REJECTED oferta gets real visibility (the rejection count,
+   the card, the "Editar y reenviar" button) but stays deliberately
+   un-tappable while live/pending (MY_POST_EDIT.ofertas's own comment,
+   js/app.js) and routes through MC.updateOferta, not the generic
+   MC.updatePost, since resubmitting it also needs a fresh calendar
+   booking. */
+const SELF_EDIT_TABLES=['eventos','productos','clasificados','mascotas','empleos','reportes','avisos','mandaditos','ofertas'];
 const MY_POST_TABLES=CONTENT_TABLES.filter(t=>t.ownerField&&SELF_EDIT_TABLES.includes(t.table));
 
 /* So a rejection reason isn't just stored and forgotten — a submitter can
@@ -692,10 +698,11 @@ MC.adminFetchUserDetail=async function(userId){
    status — shaped exactly like MC.fetchMyPosts()'s own output
    (table,label,id,title,status,rejectionReason,createdAt,raw) so the
    existing myPostBucket()/postStatusBadge()/MY_POSTS_TABS helpers work
-   unmodified. Deliberately excludes 'productos' (business-scoped — that
-   lives on the business page instead, via adminFetchBusinessPosts). */
+   unmodified. Deliberately excludes 'productos' and 'ofertas'
+   (business-scoped — those live on the business page instead, via
+   adminFetchBusinessPosts, which already fetches both). */
 MC.adminFetchUserPosts=async function(userId){
-  const tables=MY_POST_TABLES.filter(t=>t.table!=='productos');
+  const tables=MY_POST_TABLES.filter(t=>t.table!=='productos'&&t.table!=='ofertas');
   const results=await Promise.all(tables.map(async ({table,label,titleField,ownerField})=>{
     const {data,error}=await sb.from(table).select('*').eq(ownerField,userId).order('created_at',{ascending:false});
     if(error){console.error(error);return [];}
@@ -1385,6 +1392,34 @@ MC.updatePost=async function(table,id,d){
   // non-admin owner this is redundant with what the trigger already
   // does — harmless.
   return sb.from(table).update({...build(d),status:'pending',rejection_reason:null}).eq('id',id);
+};
+
+/* Resubmitting a REJECTED oferta. Its calendar booking was already deleted
+   by free_oferta_booking_on_reject when it was rejected (rejecting an
+   oferta always frees that day back to the calendar), so resubmission
+   needs a fresh day -- newSlotDs is required in practice, since the real
+   UI only reaches submit once a day is picked. fee_paid_mxn is explicitly
+   0: this is a moderation-driven resubmission of something already
+   committed to and already reviewed once, not a new paid or free-cycle
+   booking, so it neither charges again nor consumes another Premium free
+   slot. RLS ("ofertas owner update own") and the enforce_ofertas_edit
+   trigger (business_id/submitted_by/is_premium/is_free_slot pinned,
+   status forced back to pending) do the real protection here -- this
+   function just sends the editable content fields. */
+MC.updateOferta=async function(id,d,newSlotDs){
+  const priceWas=parseMoney(d.priceWas),priceNow=parseMoney(d.priceNow);
+  const discountPct=(priceWas&&priceNow&&priceWas>0)?Math.max(1,Math.min(75,Math.round((1-priceNow/priceWas)*100))):null;
+  const {error}=await sb.from('ofertas').update({
+    title:d.item||'Oferta',description:d.desc||null,terms:d.terms||null,image_url:d.photo||null,
+    price_was:priceWas,price_now:priceNow,quantity_total:parseInt(d.qty,10)||1,discount_pct:discountPct,
+    status:'pending',rejection_reason:null
+  }).eq('id',id);
+  if(error)return {error};
+  if(newSlotDs){
+    const {error:bookErr}=await sb.from('ofertas_bookings').insert({oferta_id:id,booked_date:newSlotDs,fee_paid_mxn:0});
+    if(bookErr)return {error:bookErr};
+  }
+  return {error:null};
 };
 
 /* "Descartar" on a rejected post — a real DELETE, not another status

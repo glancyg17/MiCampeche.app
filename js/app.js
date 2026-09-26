@@ -1,4 +1,4 @@
-window.MC_BUILD='769bdd9e78';
+window.MC_BUILD='2bc5b7aad8';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -2541,6 +2541,7 @@ const POST_FORMS={
 };
 
 let selectedSlotDate=null; // set by pickSlotDay(), read by submitPost() for kind==='oferta'
+let selectedOfertaFreeEligible=false; // set by applyOfertaBusinessHints(), read synchronously by pickSlotDay() so it doesn't need its own network round-trip
 let editingPost=null; // {table,id} while the post form is in self-edit mode; set by openMyPostEdit() AFTER openPost() renders, read by submitPost()
 let creatingAdditionalBusiness=false; // set by openAdditionalBusinessForm() AFTER openPost() renders, read by submitPost()'s negocio_verificar branch
 let postBusinessOptions=[]; // this account's published businesses eligible for a new producto/oferta — set inside openPost() itself, just below
@@ -2612,6 +2613,7 @@ async function openPost(kind){
   document.getElementById('modal-body').innerHTML=h;
   document.getElementById('modal-bg').classList.add('on');
   selectedSlotDate=null;
+  selectedOfertaFreeEligible=false;
   selectedFeatureStart=null;
   uploadedImageUrls={};
   uploadedImageUrlsMulti={};
@@ -2687,11 +2689,20 @@ async function applyOfertaBusinessHints(biz){
   const noteEl=document.getElementById('post-submit-note');
   if(!noteEl)return;
   const defaultNote=svgIco('alertas')+POST_FORMS.oferta.note;
+  selectedOfertaFreeEligible=false;
   if(!biz||!biz.is_premium){noteEl.innerHTML=defaultNote;return;}
   const free=await MC.checkFreeOfertaEligible(biz.id);
+  selectedOfertaFreeEligible=free;
   noteEl.innerHTML=free
     ? svgIco('alertas')+'Esta oferta va incluida con tu Premium este ciclo — sin costo. La siguiente en este mismo ciclo ya sigue el precio normal ($99 MXN).'
     : defaultNote;
+  // If a day was already picked before switching business (multi-business
+  // accounts), refresh the confirmation message/button so it matches the
+  // new business's real eligibility instead of leaving stale $99 copy.
+  if(selectedSlotDate){
+    const selEl=document.querySelector(`.slot-day[data-ds="${selectedSlotDate}"]`);
+    if(selEl)pickSlotDay(selEl,false);
+  }
 }
 
 /* ══════════════ OFERTAS SLOT CALENDAR (business-facing booking picker) ══════════════
@@ -2723,18 +2734,39 @@ function slotCalendarHtml(){
   return h;
 }
 function pickSlotDay(el,isFull){
-  document.querySelectorAll('.slot-day').forEach(d=>d.classList.remove('sel'));
-  el.classList.add('sel');
-  const ds=el.dataset.ds;
-  selectedSlotDate=ds;
-  const d=new Date(ds+'T12:00:00');
+  const d=new Date(el.dataset.ds+'T12:00:00');
   const monthNames=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const label=`${d.getDate()} de ${monthNames[d.getMonth()]}`;
   const btn=document.getElementById('post-submit-btn');
   const sel=document.getElementById('slot-cal-selected');
+
+  // Editing/resubmitting a REJECTED oferta: its booking was already freed
+  // when it was rejected (free_oferta_booking_on_reject deletes the
+  // ofertas_bookings row on rejection), so resubmission needs a fresh day
+  // — but never payment or a waitlist join. This is a moderation-driven
+  // resubmission of something already committed to and already reviewed
+  // once, not a brand-new booking.
+  if(editingPost&&editingPost.table==='ofertas'){
+    if(isFull){toast('Ese día ya está ocupado — elige otro.');return;}
+    document.querySelectorAll('.slot-day').forEach(x=>x.classList.remove('sel'));
+    el.classList.add('sel');
+    selectedSlotDate=el.dataset.ds;
+    sel.innerHTML=`<div class="slot-cal-ok-msg">${svgIco('checkBadge')}Reprogramarás tu oferta para el ${label} — sin costo adicional.</div>`;
+    btn.textContent='Guardar cambios';
+    btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
+    return;
+  }
+
+  document.querySelectorAll('.slot-day').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+  selectedSlotDate=el.dataset.ds;
   if(isFull){
     sel.innerHTML=`<div class="slot-cal-full-msg">${svgIco('clock')}El ${label} ya está ocupado. Puedes unirte a la lista de espera y te avisamos si se libera.</div>`;
     btn.textContent='Unirme a la lista de espera';
+    btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
+  } else if(selectedOfertaFreeEligible){
+    sel.innerHTML=`<div class="slot-cal-ok-msg">${svgIco('checkBadge')}Reservarás el ${label} — incluida con tu Premium este ciclo, sin costo.</div>`;
+    btn.textContent='Reservar sin costo';
     btn.disabled=false;btn.style.opacity='';btn.style.cursor='';
   } else {
     sel.innerHTML=`<div class="slot-cal-ok-msg">${svgIco('checkBadge')}Reservarás el ${label} por $${SLOT_FEE_MXN} MXN.</div>`;
@@ -4548,14 +4580,18 @@ function renderMyPosts(){
   const MASCOTA_RESOLVE_LABEL={adopcion:'Marcar como adoptado',perdido:'Ya apareció',encontrado:'Ya lo recogieron'};
   document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+list.map(p=>{
     const isRejected=p.status==='rejected';
-    const editable=!!MY_POST_EDIT[p.table]&&!isRejected;
+    // Ofertas are deliberately never tap-anywhere-editable while
+    // live/pending -- see the note on MY_POST_EDIT.ofertas above. Only a
+    // rejected oferta gets an edit path, via the explicit "Editar y
+    // reenviar" button every other rejected content type already has.
+    const editable=!!MY_POST_EDIT[p.table]&&!isRejected&&p.table!=='ofertas';
     const showMascotaResolve=p.table==='mascotas'&&p.status==='published'&&p.raw&&p.raw.type!=='campana';
     return `<div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px${editable?';cursor:pointer':''}"${editable?` onclick="openMyPostEdit('${p.table}','${e(String(p.id))}')"`:''}>
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <span style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(p.label)}</span>
         <div style="display:flex;align-items:center;gap:10px">
           ${postStatusBadge(p.status,myPostsTab)}
-          <button aria-label="Descartar" style="background:none;border:none;padding:2px;cursor:pointer;color:var(--ink3);display:flex" onclick="event.stopPropagation();confirmDiscardMyPost('${p.table}','${e(String(p.id))}')">${svgIco('trash')}</button>
+          ${p.table!=='ofertas'?`<button aria-label="Descartar" style="background:none;border:none;padding:2px;cursor:pointer;color:var(--ink3);display:flex" onclick="event.stopPropagation();confirmDiscardMyPost('${p.table}','${e(String(p.id))}')">${svgIco('trash')}</button>`:''}
         </div>
       </div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(p.title)}</div>
@@ -4650,6 +4686,18 @@ const MY_POST_EDIT={
     seg:{item_condition:r.item_condition||'nuevo',fulfillment:r.fulfillment||'recoger'},
     multi:{contact_methods:r.contact_methods},
     imgMulti:{photo:r.image_urls||[]}
+  })},
+  // Deliberately only ever reached for a REJECTED oferta -- see the
+  // 'ofertas' exclusion in the `editable` computation below, and
+  // openMyPostEdit's own table==='ofertas' handling. A live oferta stays
+  // exactly as un-editable as the form's own "no podrás editar esta
+  // oferta... después de enviarla" copy promises. Its card also skips
+  // the universal "Descartar" trash-icon action (below) -- ofertas has
+  // no owner-DELETE RLS policy at all (only the new owner-UPDATE one),
+  // so that button would silently no-op rather than actually delete anything.
+  ofertas:{form:'oferta',fill:r=>({
+    input:{item:r.title,desc:r.description,terms:r.terms||'',priceWas:r.price_was!=null?String(r.price_was):'',priceNow:r.price_now!=null?String(r.price_now):'',qty:r.quantity_total!=null?String(r.quantity_total):''},
+    img:{photo:r.image_url}
   })}
 };
 function applyPostEditFill(fill){
@@ -4710,8 +4758,17 @@ async function openMyPostEdit(table,id){
   // Featuring is offered at fresh-submission time only, not via self-edit
   // (out of scope for this step) — hide both rows during edit.
   ['want_feature','feature_start'].forEach(k=>{const row=document.getElementById('row-'+k);if(row)row.style.display='none';});
-  const btn=document.getElementById('post-submit-btn');
-  if(btn)btn.textContent='Guardar cambios';
+  if(table==='ofertas'){
+    // Its booking was freed on rejection, so a day MUST be picked before
+    // submitting — leave the base render's disabled "Selecciona un día
+    // para continuar" button exactly as-is; pickSlotDay's editingPost
+    // branch (above) takes over once a day is actually clicked.
+    const noteEl=document.getElementById('post-submit-note');
+    if(noteEl)noteEl.innerHTML=svgIco('alertas')+'Elige un nuevo día para reenviar tu oferta a revisión — no se te cobrará de nuevo.';
+  } else {
+    const btn=document.getElementById('post-submit-btn');
+    if(btn)btn.textContent='Guardar cambios';
+  }
 }
 
 /* Renders every field the submitter actually sent, per MODERATION_DETAIL_FIELDS
@@ -5219,11 +5276,16 @@ async function submitPost(kind){
   // the resident's own row. The DB trigger forces it back to 'pending'.
   if(editingPost){
     const {table,id}=editingPost;
-    const {error}=await MC.updatePost(table,id,data);
+    if(table==='ofertas'&&!selectedSlotDate){
+      stop();toast('Elige un día para reenviar tu oferta');return;
+    }
+    const {error}=table==='ofertas'
+      ? await MC.updateOferta(id,data,selectedSlotDate)
+      : await MC.updatePost(table,id,data);
     if(btn){btn.disabled=false;btn.textContent=originalLabel;}
     if(error){toast(pgErrorToast(error,'No se pudieron guardar los cambios.'));return;}
     editingPost=null;
-    toast('Cambios guardados — vuelve a revisión ✓');
+    toast(table==='ofertas'?'Oferta reenviada — vuelve a revisión ✓':'Cambios guardados — vuelve a revisión ✓');
     mcModalBack('myPosts');
     refreshContent(); // re-fetch + re-render every public list so the edited
                        // item's new status (and content) actually disappears

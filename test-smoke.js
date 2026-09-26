@@ -4362,7 +4362,7 @@ const fakeClient = {
     await window.openAccount();
     await new Promise(r => setTimeout(r, 20)); // the "N no aprobadas" count loads after the view paints, then re-renders
     assert(text('modal-body').includes('Mis publicaciones'), 'the account view has a "Mis publicaciones" entry for every signed-in resident');
-    assert(text('modal-body').includes('2 no aprobadas'), 'it flags the count of rejected posts inline — now includes m9, a rejected mascota post with rejection_reason left null (e.g. an admin "Quitar" with no typed message), which used to be undercounted');
+    assert(text('modal-body').includes('3 no aprobadas'), 'it flags the count of rejected posts inline — now includes m9 (a rejected mascota post with rejection_reason left null, e.g. an admin "Quitar" with no typed message, which used to be undercounted) and o4 (a rejected oferta, now counted at all since ofertas joined SELF_EDIT_TABLES so a rejected oferta gets real visibility/edit path)');
     assert(!text('modal-body').includes('La descripción no es clara'), 'the full rejection reason is no longer duplicated inline in the account view — it lives in the Mis publicaciones view now');
 
     // ── Mis publicaciones: the resident-facing sibling of the admin
@@ -4374,10 +4374,10 @@ const fakeClient = {
     await window.openMyPosts();
     await new Promise(r => setTimeout(r, 20));
     const mp = () => text('modal-body');
-    assert(/^Mis publicaciones \(7\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, m8 (pending) + m9 (rejected, no reason) + m10 (published) in mascotas, e3 (finished) + e4 (active) in eventos');
+    assert(/^Mis publicaciones \(11\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, m8 (pending) + m9 (rejected, no reason) + m10 (published) in mascotas, e3 (finished) + e4 (active) in eventos, and now o1 (published) + o3 (published, future-scheduled) + o4 (rejected) + o5 (pending) in ofertas, ofertas having joined SELF_EDIT_TABLES so a rejected oferta is actually visible/editable here like every other type');
     // Default tab is Pendiente, and it buckets rejected alongside true
     // pending — neither is currently live, both need the submitter's attention.
-    assert(mp().includes('Pendiente (3)') && mp().includes('Activo (3)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + m8 (pending) + m9 (rejected) in Pendiente, av2 + e4 + m10 in Activo, e3 in Finalizado');
+    assert(mp().includes('Pendiente (5)') && mp().includes('Activo (5)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + m8 (pending) + m9 (rejected) + o4 (rejected) + o5 (pending) in Pendiente, av2 + e4 + m10 + o1 + o3 in Activo, e3 in Finalizado');
     assert(mp().includes('Aviso test') && mp().includes('No aprobado') && mp().includes('La descripción no es clara'), 'a rejected post shows the "No aprobado" badge with the rejection reason inline');
     assert(mp().includes('Mi mascota perdida (pendiente)') && mp().includes('En revisión'), 'a pending post from a DIFFERENT table shows the "En revisión" badge');
     assert(!mp().includes('Mi aviso publicado'), 'a published (active) post does not show up in the default Pendiente tab');
@@ -4431,6 +4431,59 @@ const fakeClient = {
     assert(lastUpdate.avisos.status === 'pending' && lastUpdate.avisos.rejection_reason === null, 'the client explicitly re-queues a self-edit as pending and clears any prior rejection reason — this must not rely solely on the edit trigger, since that trigger deliberately no-ops for an admin editing their own post');
     assert(text('toast') === 'Cambios guardados — vuelve a revisión ✓', 'a confirmation toast fires after a successful self-edit');
     assert(refreshContentCallCount > refreshCountBeforeSelfEdit, 'a successful self-edit re-fetches/re-renders the public content lists too, not just Mis Publicaciones');
+
+    // ── Ofertas FIX 1: pickSlotDay must reflect real Premium free-slot
+    //    eligibility the instant a day is picked, not just at submit time
+    //    — previously always showed "$99" payment copy even when the
+    //    account was about to get the slot for free. ──
+    {
+      currentBusiness.is_premium = true;
+      mockFreeOfertaAvailable = true;
+      await window.openPost('oferta');
+      await new Promise(r => setTimeout(r, 20)); // applyOfertaBusinessHints() resolves async
+      const freeSlotDay = doc.querySelector('.slot-day:not(.full)');
+      window.pickSlotDay(freeSlotDay, false);
+      assert(text('slot-cal-selected').includes('incluida con tu Premium este ciclo') && !text('slot-cal-selected').includes('$99'), 'an eligible Premium account sees free-slot language the instant a day is picked, not payment copy');
+      assert(doc.getElementById('post-submit-btn').textContent === 'Reservar sin costo', 'and the button reads "Reservar sin costo", not "Pagar $99 y reservar"');
+      mockFreeOfertaAvailable = false;
+      currentBusiness.is_premium = false;
+      // Back to Mis publicaciones (still on the Pendiente tab) for the FIX 2 flow below.
+      await window.openMyPosts();
+      await new Promise(r => setTimeout(r, 20));
+    }
+
+    // ── Ofertas FIX 2: a REJECTED oferta (o4) can now be edited and
+    //    resubmitted. ofertas joined SELF_EDIT_TABLES above, so o4 now
+    //    genuinely appears in Mis publicaciones (still the same
+    //    myPostsList this whole block already fetched) with the same
+    //    "Editar y reenviar" action every other rejected type gets — but
+    //    stays deliberately un-tappable and non-discardable while
+    //    live/pending, and routes through the new MC.updateOferta (which
+    //    also books a fresh day) instead of the generic MC.updatePost,
+    //    since its old booking was already freed by
+    //    free_oferta_booking_on_reject (live in Supabase) when it was
+    //    rejected. ──
+    assert(mp().includes('Oferta rechazada') && mp().includes('La imagen no muestra el producto real'), 'the rejected oferta (o4) shows its real title and rejection reason in Mis publicaciones, now that ofertas is a self-edit table');
+    assert(!mp().includes("confirmDiscardMyPost('ofertas','o4')"), 'a rejected oferta\'s card has no "Descartar" trash-icon action — ofertas has no owner-DELETE RLS policy, so that button would silently no-op');
+    await window.openMyPostEdit('ofertas', 'o4');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Editar publicación' && doc.getElementById('pf-item').value === 'Oferta rechazada', 'tapping "Editar y reenviar" on the rejected oferta opens the real oferta form, pre-filled with its own data');
+    assert(doc.getElementById('post-submit-btn').disabled === true && doc.getElementById('post-submit-btn').textContent === 'Selecciona un día para continuar', 'the submit button starts disabled, same as a fresh oferta submission — its booking was freed on rejection, so a NEW day must be picked before resubmitting');
+    assert((text('post-submit-note') || '').includes('Elige un nuevo día'), 'the note explains a new day is needed, instead of the generic "Guardar cambios" framing every other self-edited type gets immediately');
+    await attachOfertaPhoto();
+    const resubmitDay = doc.querySelector('.slot-day:not(.full)');
+    window.pickSlotDay(resubmitDay, false);
+    const resubmitDs = resubmitDay.dataset.ds;
+    assert(text('slot-cal-selected').includes('Reprogramarás tu oferta') && text('slot-cal-selected').includes('sin costo adicional'), 'picking a day while editing a rejected oferta shows reprogram copy — never payment or waitlist language, even on a day that would otherwise be "full" for a stranger');
+    assert(doc.getElementById('post-submit-btn').textContent === 'Guardar cambios' && doc.getElementById('post-submit-btn').disabled === false, 'and the button becomes "Guardar cambios", enabled');
+    delete lastUpdate.ofertas;
+    delete lastInsert.ofertas_bookings;
+    await window.submitPost('oferta');
+    await new Promise(r => setTimeout(r, 20));
+    assert(lastUpdate.ofertas && lastUpdate.ofertas.title === 'Oferta rechazada' && lastUpdate.ofertas.status === 'pending' && lastUpdate.ofertas.rejection_reason === null, 'resubmitting routes through MC.updateOferta, which re-queues the row as pending and clears the rejection reason');
+    assert(lastInsert.ofertas_bookings && lastInsert.ofertas_bookings.oferta_id === 'o4' && lastInsert.ofertas_bookings.booked_date === resubmitDs && lastInsert.ofertas_bookings.fee_paid_mxn === 0, 'a fresh booking is inserted for the newly-picked day, at fee_paid_mxn:0 — this is a moderation resubmission, never a new charge or another free-cycle slot');
+    assert(text('toast') === 'Oferta reenviada — vuelve a revisión ✓', 'a distinct, oferta-specific confirmation toast fires, not the generic "Cambios guardados" text');
+    window.mcModalBack('myPosts');
 
     // ── Eventos month calendar: self-editing e3 (event_date 8 days in the
     //    past) should open the calendar already showing THAT event's month
