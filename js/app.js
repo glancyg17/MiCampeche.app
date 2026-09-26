@@ -1,4 +1,4 @@
-window.MC_BUILD='25c926cba1';
+window.MC_BUILD='097c569736';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1343,6 +1343,34 @@ try{
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{
     if(themePref()==='auto')applyTheme();
   });
+}catch(_){}
+
+/* Compensates for interactive-widget=overlays-content (index.html's
+   viewport meta tag, added to stop the on-screen keyboard pushing the
+   bottom nav up): since the layout viewport no longer shrinks when the
+   keyboard opens, a focused input low on the screen can end up hidden
+   BEHIND the keyboard instead. visualViewport still reports the real,
+   keyboard-shrunk visible area, so on every resize (keyboard opening,
+   closing, or changing height) this nudges whatever's currently focused
+   back into that visible area. Chrome/Android only in practice --
+   visualViewport plus overlays-content are the exact pairing being
+   compensated for; other browsers either lack the API (no-op, caught
+   below) or already resize the layout on their own. */
+try{
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',()=>{
+      const el=document.activeElement;
+      if(!el||!(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable))return;
+      // Give the keyboard animation a moment to finish before measuring.
+      setTimeout(()=>{
+        const rect=el.getBoundingClientRect();
+        const visibleBottom=window.visualViewport.height;
+        if(rect.bottom>visibleBottom||rect.top<0){
+          el.scrollIntoView({block:'center',behavior:'smooth'});
+        }
+      },50);
+    });
+  }
 }catch(_){}
 function maybeShowTipGate(key){
   if(tipGateShownThisSession.has(key))return;
