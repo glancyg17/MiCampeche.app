@@ -1,4 +1,4 @@
-window.MC_BUILD='b38c47f0df';
+window.MC_BUILD='769bdd9e78';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -3767,6 +3767,8 @@ function renderAdminBusinessView(biz){
     <div style="font-weight:800;font-size:19px;line-height:1.25">${e(biz.business_name)}${biz.is_primary?' <span style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">· Principal</span>':''}</div>
     ${owner?`<div style="color:var(--ink3);font-size:13px;margin-top:3px">Cuenta de ${e(owner.display_name||'Sin nombre')}</div>`:''}
     ${(biz.status==='rejected'&&biz.rejection_reason)?`<div style="color:var(--signal);font-size:12.5px;margin-top:6px">${e(biz.rejection_reason)}</div>`:''}
+    ${adminSectionLabel('Detalles del negocio')}
+    ${renderModerationDetailFields('businesses',biz)}
     ${adminSectionLabel('Cambiar tipo de cuenta')}
     <div style="display:flex;gap:8px">${tier(false,'Básico')}${tier(true,'Premium')}</div>
     <div style="color:var(--ink3);font-size:12px;margin-top:8px;line-height:1.5">${since?'Premium desde el '+since+'. ':''}Pasar a Básico quita los Destacados y Descuentos del negocio y crea un recordatorio de cancelación en Pendiente.</div>
