@@ -1,4 +1,4 @@
-window.MC_BUILD='2bc5b7aad8';
+window.MC_BUILD='e7c87c54a7';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1396,6 +1396,7 @@ function renderPreferencesBody(acct=lastFetchedAccount){
         <button class="chip${on?'':' on'}" onclick="setTipsEnabled(false)">Desactivados</button>
       </div>
     </div>
+    ${renderWaAppPrefBlock()}
     ${acct&&acct.signedIn?renderPushPrefBlock():''}
     ${isStandalone()?'':`
       <button class="menu-item" onclick="triggerInstall()" style="border:1.5px solid var(--line2);justify-content:center;margin-top:6px">
@@ -1403,6 +1404,27 @@ function renderPreferencesBody(acct=lastFetchedAccount){
       </button>
     `}
   `;
+}
+/* Android-only (see isAndroidUA/openWhatsAppSmart) -- lets someone change
+   or clear a remembered WhatsApp-app choice without digging into phone
+   settings. Renders nothing on iOS/desktop since there's nothing to
+   remember there. */
+function renderWaAppPrefBlock(){
+  if(!isAndroidUA())return '';
+  const pref=waAppPref();
+  return `<div style="margin-bottom:14px">
+    <div class="fl" style="margin-bottom:8px">Qué WhatsApp abrir</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="chip${pref===''?' on':''}" onclick="setWaAppPrefAndRefresh('')">Preguntar siempre</button>
+      <button class="chip${pref==='personal'?' on':''}" onclick="setWaAppPrefAndRefresh('personal')">WhatsApp</button>
+      <button class="chip${pref==='business'?' on':''}" onclick="setWaAppPrefAndRefresh('business')">WhatsApp Business</button>
+    </div>
+    <div class="field-note">Se usa cuando escribes a un negocio o vecino por WhatsApp desde la app.</div>
+  </div>`;
+}
+function setWaAppPrefAndRefresh(v){
+  setWaAppPref(v);
+  document.getElementById('modal-body').innerHTML=renderPreferencesBody();
 }
 /* Push notification preference block in Preferencias — shown to every
    signed-in account (not admin-only anymore: the mechanism itself was
@@ -4003,7 +4025,7 @@ function openWhatsAppStep(waMessage,explanation,onContinue){
       <div style="font-weight:700;font-size:15px;margin-top:10px">¿Por qué te pedimos esto?</div>
       <div style="color:var(--ink3);font-size:13px;margin-top:6px;line-height:1.5">${explanation}</div>
     </div>
-    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none" href="${waUrl}" target="_blank" rel="noopener" onclick="runWhatsAppStepContinue()">
+    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none" ${isAndroidUA()?`href="javascript:void(0)" data-wa-url="${e(waUrl)}" onclick="event.preventDefault();openWhatsAppSmart(this.dataset.waUrl);runWhatsAppStepContinue()"`:`href="${waUrl}" target="_blank" rel="noopener" onclick="runWhatsAppStepContinue()"`}>
       ${svgIco('phone')}Abrir WhatsApp
     </a>
   `;
@@ -5113,7 +5135,7 @@ function runWriteGate(acct,kindForSignin){
 async function guardedContact(url){
   const acct=await MC.currentAccount();
   if(!runWriteGate(acct,null))return false;
-  location.href=url;
+  if(url.indexOf('https://wa.me/')===0){openWhatsAppSmart(url);}else{location.href=url;}
   return true;
 }
 /* encodeURIComponent leaves ' unescaped, and these URLs now sit inside a
@@ -5122,6 +5144,59 @@ async function guardedContact(url){
    titles, so escape it too — otherwise "Pizza d'Italia" breaks the button
    and a crafted title could run script. */
 function contactMsgParam(text){return encodeURIComponent(text).replace(/'/g,'%27');}
+
+/* Android has two genuinely separate, installable apps for this --
+   com.whatsapp (regular) and com.whatsapp.w4b (Business) -- and Chrome's
+   intent:// link format can explicitly target one by package name,
+   bypassing whatever default the phone has remembered. iOS has no
+   equivalent: Apple doesn't let any app, web or native, force a specific
+   third-party app to handle an open/share, so none of this applies there
+   -- isAndroidUA() gates it so every other platform is untouched. */
+const WA_PKG={personal:'com.whatsapp',business:'com.whatsapp.w4b'};
+function isAndroidUA(){return /Android/i.test(navigator.userAgent);}
+function waAppPref(){try{return localStorage.getItem('mc_wa_app_pref')||'';}catch(_){return '';}}
+function setWaAppPref(v){try{if(v)localStorage.setItem('mc_wa_app_pref',v);else localStorage.removeItem('mc_wa_app_pref');}catch(_){}}
+/* Entry point every WhatsApp navigation should go through on Android.
+   Everywhere else this is just location.href=waUrl -- identical to the
+   plain link behavior that already existed, nothing changes. */
+function openWhatsAppSmart(waUrl){
+  if(!isAndroidUA()){location.href=waUrl;return;}
+  const pref=waAppPref();
+  if(pref&&WA_PKG[pref]){navigateWhatsAppPackage(waUrl,WA_PKG[pref]);return;}
+  openWhatsAppChooser(waUrl);
+}
+function navigateWhatsAppPackage(waUrl,pkg){
+  const rest=waUrl.replace(/^https:\/\//,'');
+  location.href='intent://'+rest+'#Intent;scheme=https;package='+pkg+';S.browser_fallback_url='+encodeURIComponent(waUrl)+';end';
+}
+/* Pushes onto the modal stack only if something's already open (so
+   backing out returns to whatever screen asked for this), same idiom
+   openBusinessProfile already uses. */
+function openWhatsAppChooser(waUrl){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('waChooser');
+  document.getElementById('modal-title').textContent='Abrir con';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:14px">¿Con cuál WhatsApp quieres continuar?</div>
+    <button class="menu-item" data-wa-url="${e(waUrl)}" data-wa-app="personal" style="border:1.5px solid var(--line2);margin-bottom:8px;justify-content:center" onclick="chooseWhatsAppApp(this)">
+      <span class="menu-item-lbl">WhatsApp</span>
+    </button>
+    <button class="menu-item" data-wa-url="${e(waUrl)}" data-wa-app="business" style="border:1.5px solid var(--line2);margin-bottom:14px;justify-content:center" onclick="chooseWhatsAppApp(this)">
+      <span class="menu-item-lbl">WhatsApp Business</span>
+    </button>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink3)">
+      <input type="checkbox" id="wa-remember-choice" checked> Recordar mi elección en este teléfono
+    </label>
+  `;
+  document.getElementById('modal-bg').classList.add('on');
+}
+function chooseWhatsAppApp(btn){
+  const which=btn.dataset.waApp;
+  const waUrl=btn.dataset.waUrl;
+  const remember=document.getElementById('wa-remember-choice');
+  if(remember&&remember.checked)setWaAppPref(which);
+  closeModal();
+  navigateWhatsAppPackage(waUrl,WA_PKG[which]);
+}
 function openVerificationGate(acct){
   const rejected=acct.phoneVerificationStatus==='rejected';
   const waMsg='Hola, mi cuenta en MiCampeche está en revisión. Mi nombre es '+(acct.displayName||'')+' y mi número registrado es: '+(acct.phone||'');
@@ -5135,7 +5210,7 @@ function openVerificationGate(acct){
         ? 'El mensaje de WhatsApp debe venir del <b>mismo número</b> que registraste en tu cuenta. '+(acct.phoneVerificationReason?e(acct.phoneVerificationReason)+' ':'')+'Escríbenos por WhatsApp y lo resolvemos.'
         : 'En cuanto confirmemos que tu mensaje de WhatsApp vino desde el número que registraste, podrás publicar e interactuar. Mientras tanto puedes explorar todo MiCampeche.<br><br>El mensaje debe venir del <b>mismo número</b> — si lo enviaste desde otro, mándalo de nuevo desde el correcto.'}</div>
     </div>
-    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none" href="${waUrl}" target="_blank" rel="noopener">
+    <a class="submit-btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none" ${isAndroidUA()?`href="javascript:void(0)" data-wa-url="${e(waUrl)}" onclick="event.preventDefault();openWhatsAppSmart(this.dataset.waUrl)"`:`href="${waUrl}" target="_blank" rel="noopener"`}>
       ${svgIco('phone')}${rejected?'Escribir por WhatsApp':'Enviar mi verificación por WhatsApp'}
     </a>
   `;

@@ -3319,6 +3319,38 @@ const fakeClient = {
       await new Promise(r => setTimeout(r, 30));
       window.closeModal();
 
+      // ── Android: choosing WhatsApp vs WhatsApp Business (intent://
+      //    package targeting) instead of silently following whatever the
+      //    phone's remembered default happens to be. Gated entirely on
+      //    navigator.userAgent containing "Android" — every other test
+      //    above ran under jsdom's default (non-Android) UA and kept the
+      //    exact plain wa.me/tel:/sms: behavior, unaffected by any of this. ──
+      {
+        const uaDesc = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+        Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36', configurable: true });
+        window.localStorage.removeItem('mc_wa_app_pref');
+        const testWaUrl = 'https://wa.me/529811234567?text=hola';
+        try {
+          window.location.hash = '';
+          window.openWhatsAppSmart(testWaUrl);
+          assert(text('modal-title') === 'Abrir con' && (text('modal-body') || '').includes('WhatsApp Business') && window.location.hash === '', 'on Android with no remembered choice, openWhatsAppSmart shows the in-app chooser instead of navigating directly');
+
+          const bizBtn = doc.querySelector('[data-wa-app="business"]');
+          assert(!!bizBtn && bizBtn.dataset.waUrl === testWaUrl, 'the chooser renders a WhatsApp Business option carrying the real wa.me url');
+          window.chooseWhatsAppApp(bizBtn);
+          assert(window.localStorage.getItem('mc_wa_app_pref') === 'business', 'picking WhatsApp Business with "recordar mi elección" checked (the default) stores the preference for next time');
+
+          // A second call with the preference already set must skip the
+          // chooser entirely and go straight to the remembered package.
+          doc.getElementById('modal-title').textContent = '';
+          window.openWhatsAppSmart(testWaUrl);
+          assert(text('modal-title') !== 'Abrir con', 'once a preference is remembered, a later WhatsApp navigation skips the chooser and targets that package directly');
+        } finally {
+          window.localStorage.removeItem('mc_wa_app_pref');
+          if (uaDesc) Object.defineProperty(window.navigator, 'userAgent', uaDesc); else delete window.navigator.userAgent;
+        }
+      }
+
       // The URL sits in a single-quoted JS string inside onclick, so an
       // apostrophe in a user-typed title must be escaped or it breaks the
       // button (and could inject script).
