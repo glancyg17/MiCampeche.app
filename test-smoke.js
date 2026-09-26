@@ -1938,6 +1938,20 @@ const fakeClient = {
     assert(text('modal-title') === 'Crear cuenta', 'toggling to signup shows the Crear cuenta form');
     assert(!!doc.getElementById('acct-phone'), 'signup form includes the (now required) phone field');
 
+    // .submit-note is display:flex, so any DIRECT child — including a bare
+    // text node or an inline <b> — becomes its own flex item and wraps
+    // independently. Real bug found in production: the WhatsApp advisory
+    // text (icon, then "text <b>bold</b> more text" as three separate
+    // top-level nodes) rendered as three side-by-side broken columns
+    // instead of one flowing paragraph. Fixed by wrapping the whole
+    // message in a single <span> so it's ONE flex item; asserting that
+    // wrapper stays here so this can't silently regress.
+    const waNote = [...doc.querySelectorAll('.submit-note')].find(x => x.textContent.includes('WhatsApp'));
+    const waSpan = waNote && waNote.querySelector('span');
+    assert(!!waSpan && waSpan.textContent.includes('Al terminar') && waSpan.textContent.includes('vendemos'),
+      'the signup WhatsApp advisory text is wrapped in one span, not left as separate flex-item text nodes');
+    assert(!!waSpan.querySelector('b'), 'the bold "desde este mismo número" phrase is nested INSIDE that span, not a sibling flex item of it');
+
     // Consent line: signup only, both links wired to the real nav() calls
     // proven above — jsdom can't fire the inline onclick itself (same
     // documented limitation as the menu item above), so this checks the

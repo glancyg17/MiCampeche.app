@@ -1,4 +1,4 @@
-window.MC_BUILD='0392489b9a';
+window.MC_BUILD='65ac75c5a6';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -3917,7 +3917,7 @@ function renderAccountForm(){
   h+=phoneFieldHtml('acct-phone-cc','acct-phone',isSignup?'Teléfono / WhatsApp':'Tu número de teléfono');
   h+=`<div><label class="fl">Contraseña</label>${passwordFieldHtml('acct-password','Mínimo 6 caracteres')}</div>`;
   if(!isSignup)h+=`<div style="text-align:right;margin-top:-8px"><a href="#" onclick="openForgotPassword();return false;" style="font-size:12.5px;color:var(--gulf);text-decoration:none">¿Olvidaste tu contraseña?</a></div>`;
-  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'Al terminar te pediremos un mensaje de WhatsApp <b>desde este mismo número</b> para activar tu cuenta. Hasta que la activemos puedes explorar, pero no publicar. Tu número nunca lo compartimos ni lo vendemos.':'Inicia sesión con tu número de teléfono y contraseña.'}</div>`;
+  h+=`<div class="submit-note">${svgIco('alertas')}${isSignup?'<span>Al terminar te pediremos un mensaje de WhatsApp <b>desde este mismo número</b> para activar tu cuenta. Hasta que la activemos puedes explorar, pero no publicar. Tu número nunca lo compartimos ni lo vendemos.</span>':'Inicia sesión con tu número de teléfono y contraseña.'}</div>`;
   if(isSignup)h+=`<div style="font-size:12px;color:var(--ink3);text-align:center;margin-top:8px;line-height:1.5">Al crear tu cuenta, aceptas nuestro <a onclick="closeModal();nav('privacidad');return false;" href="#" style="color:var(--gulf);text-decoration:underline">Aviso de Privacidad</a> y <a onclick="closeModal();nav('terminos');return false;" href="#" style="color:var(--gulf);text-decoration:underline">Términos y Condiciones</a>.</div>`;
   h+=`<button class="submit-btn" id="acct-submit-btn" onclick="submitAuth()">${isSignup?'Crear cuenta':'Iniciar sesión'}</button>`;
   document.getElementById('modal-body').innerHTML=h;
