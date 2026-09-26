@@ -1,4 +1,4 @@
-window.MC_BUILD='fbaf00b2bb';
+window.MC_BUILD='0392489b9a';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -4202,12 +4202,32 @@ async function submitNewPassword(){
   closeModal();
 }
 
+/* Signup's own generic-fallback replacement. A bare "No se pudo completar"
+   toast is the worst possible message at the single most costly moment to
+   lose someone — their very first real interaction with the app, with no
+   way for them (or us, afterward) to know what actually went wrong. If
+   authErrorToast()/pgErrorToast() didn't recognize the real error:
+   (1) logs it remotely via MC.logClientError so a future occurrence is
+   actually diagnosable without a screenshot, and (2) offers a real way to
+   still finish — WhatsApp, the exact same mechanism openWhatsAppStep()
+   already uses right after a SUCCESSFUL signup — instead of a dead end.
+   `source` distinguishes which step of MC.signUp() actually failed (see
+   MC.signUp in supabase-client.js): 'profile' errors are Postgres-shaped
+   (pgErrorToast), anything else is a Supabase Auth error (authErrorToast). */
+function handleSignupError(error,source,name,email,phone){
+  const msg=source==='profile'?pgErrorToast(error,null):authErrorToast(error);
+  const generic=!msg||msg==='No se pudo completar. Intenta de nuevo.'||msg==='Algo salió mal. Intenta de nuevo.';
+  if(!generic){toast(msg);return;}
+  MC.logClientError('signup:'+(source||'auth'),error);
+  const waMsg='Hola, intenté crear una cuenta en MiCampeche y no se pudo completar. Mi nombre es '+(name||'')+', mi correo es '+(email||'')+' y mi número es '+(phone||'')+'. ¿Me ayudan a activarla?';
+  openWhatsAppStep(waMsg,'Tuvimos un problema técnico al crear tu cuenta — ya lo sabemos y lo estamos revisando. Mientras tanto, escríbenos por WhatsApp con estos mismos datos y te ayudamos a activarla directamente.',null);
+}
 async function submitAuth(){
   const password=document.getElementById('acct-password').value||'';
   const btn=document.getElementById('acct-submit-btn');
   const original=btn.textContent;
   let result;
-  let signedUpName=null,signedUpPhone=null;
+  let signedUpName=null,signedUpPhone=null,signedUpEmail=null;
   if(accountMode==='signup'){
     const email=(document.getElementById('acct-email').value||'').trim();
     const name=(document.getElementById('acct-name').value||'').trim()||'Vecino';
@@ -4220,7 +4240,7 @@ async function submitAuth(){
     }
     btn.disabled=true;btn.textContent='Un momento…';
     result=await MC.signUp(email,password,name,fullPhone);
-    signedUpName=name;signedUpPhone=fullPhone;
+    signedUpName=name;signedUpPhone=fullPhone;signedUpEmail=email;
   } else {
     const {digits:phoneDigits,full:fullPhone}=readPhone('acct-phone-cc','acct-phone');
     if(phoneDigits.length<6||!password){toast('Escribe tu número y contraseña');return;}
@@ -4228,7 +4248,10 @@ async function submitAuth(){
     result=await MC.signInWithPhone(fullPhone,password);
   }
   btn.disabled=false;btn.textContent=original;
-  if(result.error){toast(authErrorToast(result.error));return;}
+  if(result.error){
+    if(accountMode==='signup'){handleSignupError(result.error,result.source,signedUpName,signedUpEmail,signedUpPhone);return;}
+    toast(authErrorToast(result.error));return;
+  }
   refreshPendingBadge();
   refreshHeaderAccount();
   if(accountMode==='signup'&&signedUpPhone){

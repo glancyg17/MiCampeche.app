@@ -1997,6 +1997,7 @@ const fakeClient = {
     await window.openAccount(); // previous signup closed the modal entirely after the WhatsApp step
     window.setAccountMode('signup'); // form defaults to login now; this step exercises signup
 
+    delete lastInsert.client_errors;
     forcedErrors.profilesUpdateAlways = true;
     doc.getElementById('acct-name').value = 'Fallo Persistente';
     doc.getElementById('acct-email').value = 'fallopersistente@example.com';
@@ -2004,12 +2005,21 @@ const fakeClient = {
     doc.getElementById('acct-password').value = 'secreto123';
     await window.submitAuth();
     await new Promise(r => setTimeout(r, 20));
-    assert(text('modal-title') !== 'Un paso más: WhatsApp', 'a failure that persists through the retry never reaches the WhatsApp step at all — this is the actual fix: no more silent false-success');
-    assert(text('toast') !== '¡Cuenta creada! Ya tienes sesión iniciada ✓', 'and no false-success toast shows either');
+    assert(currentProfile.display_name !== 'Fallo Persistente', 'a failure that persists through the retry never actually persists the real data — this is the original fix: no more silent false-success');
+    // This is an unrecognized (generic) profile-update error — the source
+    // ('profile', not 'auth') routes it through pgErrorToast, which falls
+    // through to the generic string, so handleSignupError()'s escape hatch
+    // now kicks in: logged remotely and the WhatsApp step opens with its
+    // own failure-specific explanation, instead of a dead-end toast.
+    assert(text('modal-title') === 'Un paso más: WhatsApp' && text('modal-body').includes('Tuvimos un problema técnico'), 'an unrecognized persistent profile-update failure now opens the WhatsApp escape hatch with its own explanation, instead of a dead end');
+    assert(!!lastInsert.client_errors && lastInsert.client_errors.context === 'signup:profile', 'the unrecognized profile-step failure is logged remotely via MC.logClientError with the right context');
+    window.closeModal();
     forcedErrors.profilesUpdateAlways = false;
 
     await window.doSignOut();
     await new Promise(r => setTimeout(r, 20));
+    await window.openAccount(); // the previous step's WhatsApp escape hatch replaced the modal body entirely — reopen the real form
+    window.setAccountMode('signup');
 
     // Switching the country selector should change the combined number
     // actually sent to Supabase, not just be cosmetic. Checked directly
@@ -4507,6 +4517,37 @@ const fakeClient = {
     assert(false, 'account error-path threw: ' + err.stack);
   } finally {
     forcedErrors.updateUser = null;
+  }
+
+  // ── handleSignupError() called directly — its own dispatch logic,
+  //    independent of the real MC.signUp()/submitAuth() flow. MC itself is
+  //    a top-level `const` in supabase-client.js and isn't reachable from
+  //    window (same limitation noted elsewhere in this file), but
+  //    handleSignupError is a plain `function` declaration in app.js, so
+  //    it IS window-exposed and callable directly with a synthetic error. ──
+  {
+    delete lastInsert.client_errors;
+    window.handleSignupError({ code: '99999', message: 'something nobody wrote a pattern for' }, 'auth', 'Prueba Nombre', 'prueba@example.com', '+529810001111');
+    await new Promise(r => setTimeout(r, 20));
+    assert(!!lastInsert.client_errors && lastInsert.client_errors.context === 'signup:auth' && lastInsert.client_errors.error_code === '99999', 'an unrecognized error is logged remotely via the client_errors insert, with the right context and code');
+    assert(text('modal-title') === 'Un paso más: WhatsApp', 'an unrecognized error opens the WhatsApp escape hatch, not a bare toast');
+    const escapeHatchLink = doc.querySelector('#modal-body a[href*="wa.me"]');
+    assert(!!escapeHatchLink && escapeHatchLink.getAttribute('href').includes(encodeURIComponent('Prueba Nombre')) && escapeHatchLink.getAttribute('href').includes(encodeURIComponent('prueba@example.com')) && escapeHatchLink.getAttribute('href').includes(encodeURIComponent('+529810001111')), 'the wa.me message includes the real name/email/phone that were passed in');
+    window.closeModal();
+
+    // A RECOGNIZED Postgres error at the profile step: routes through
+    // pgErrorToast (not authErrorToast, because source='profile'), shows
+    // its specific message, and — being recognized, not generic — never
+    // logs or opens the WhatsApp escape hatch at all. The title is set to
+    // a sentinel first so a stale leftover value can't make the "didn't
+    // open WhatsApp" check trivially (and wrongly) pass.
+    delete lastInsert.client_errors;
+    doc.getElementById('modal-title').textContent = 'SENTINEL-UNTOUCHED';
+    window.handleSignupError({ code: '23505', message: 'duplicate key value violates unique constraint "businesses_profile_id_key"' }, 'profile', 'Prueba Nombre', 'prueba@example.com', '+529810001111');
+    await new Promise(r => setTimeout(r, 20));
+    assert(!lastInsert.client_errors, 'a recognized error is never logged — logging is reserved for the truly-unrecognized fallback case');
+    assert(text('toast') === 'Ya tienes un negocio verificado en esta cuenta.', 'a recognized profile-step error shows its own specific (Postgres-shaped) message, not the WhatsApp escape hatch');
+    assert(text('modal-title') === 'SENTINEL-UNTOUCHED', 'and the modal (WhatsApp step or otherwise) is never touched for a recognized error');
   }
 
   // ── sw.js: install must bypass the HTTP cache, not read through it.

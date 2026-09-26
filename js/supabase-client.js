@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='fbaf00b2bb';
+window.MC_BUILD_CLIENT='0392489b9a';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -54,7 +54,7 @@ MC.ready=ensureSession();
    one tied to that email. */
 MC.signUp=async function(email,password,displayName,phone){
   const {data,error}=await sb.auth.updateUser({email,password,data:{display_name:displayName}});
-  if(error)return {error};
+  if(error)return {error,source:'auth'};
   // updateUser() converts the anonymous account to a real one server-side,
   // but the CURRENT session's JWT still carries the old is_anonymous:true
   // claim until explicitly refreshed — every request made with the stale
@@ -82,8 +82,26 @@ MC.signUp=async function(email,password,displayName,phone){
     await sb.auth.getSession();
     ({error:profileErr}=await sb.from('profiles').update({display_name:displayName,phone}).eq('id',data.user.id));
   }
-  if(profileErr)return {error:profileErr};
+  if(profileErr)return {error:profileErr,source:'profile'};
   return {error:null};
+};
+
+/* Fire-and-forget diagnostic breadcrumb for the signup flow specifically —
+   never blocks or breaks the real flow it's riding along on (same
+   "swallow every failure" spirit as notify_push). Exists because a real
+   production signup failure could previously only ever be diagnosed as
+   "the person saw a generic toast" — nothing else was visible to chat or
+   the founder afterward. Table is public.client_errors: insert-only for
+   anyone (a still-anonymous session can hit this before any real
+   identity exists), admin-only to read. */
+MC.logClientError=function(context,error){
+  try{
+    sb.from('client_errors').insert({
+      context,
+      error_code:error&&error.code?String(error.code):null,
+      error_message:error&&error.message?String(error.message).slice(0,500):null
+    }).then(()=>{},()=>{});
+  }catch(_){}
 };
 
 MC.signIn=async function(email,password){
