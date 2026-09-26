@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='65ac75c5a6';
+window.MC_BUILD_CLIENT='b38c47f0df';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -1278,12 +1278,17 @@ const CONTENT_PAYLOAD={
   productos:(d)=>{
     const onOrder=d.availability==='pedido';
     const priceText=d.price?(d.price_type==='desde'?'Desde '+d.price:d.price):null;
+    const discountOn=d.discount_active==='si';
     return {
       title:d.name,category:d.cat||null,price_mxn:parseMoney(d.price),price_text:priceText,
       description:d.desc||null,image_urls:Array.isArray(d.photo)?d.photo:[],
       availability:onOrder?'pedido':'ahora',lead_time:onOrder?(d.lead_time||null):null,
       fulfillment:d.fulfillment||null,item_condition:d.item_condition==='usado'?'usado':'nuevo',
-      contact_methods:defaultContactMethods(d)
+      contact_methods:defaultContactMethods(d),
+      featured:d.featured==='si',
+      discount_active:discountOn,
+      discount_price_mxn:discountOn?parseMoney(d.discount_price):null,
+      discount_price_text:discountOn?(d.discount_price||null):null
     };
   },
   clasificados:(d)=>({

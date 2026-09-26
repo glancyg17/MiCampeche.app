@@ -4,7 +4,7 @@
 // network. This avoids silently serving stale content the way a
 // cache-everything strategy would.
 // The cache name is derived from a build id stamped by scripts/stamp.js (npm run stamp) — never edit it by hand.
-const BUILD = '65ac75c5a6';                        // stamped by scripts/stamp.js (npm run stamp) — never edit by hand
+const BUILD = 'b38c47f0df';                        // stamped by scripts/stamp.js (npm run stamp) — never edit by hand
 const CACHE_NAME = 'micampeche-' + BUILD;   // one cache per build, so a deploy can never mix generations
 const APP_SHELL = [
   '/',
