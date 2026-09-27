@@ -1,4 +1,4 @@
-window.MC_BUILD='a68335c1fd';
+window.MC_BUILD='74f2f73b76';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -894,6 +894,13 @@ function nav(tab,fromBack){
   // the next pull-to-refresh. Cheap and idempotent (stops/re-renders
   // itself first) even if called redundantly.
   if(tab==='inicio')startDestacadosRotation();
+  // Same reasoning as the line above: renderOfertas() (which computes
+  // the wheel's centered scroll position) runs on every background data
+  // refresh regardless of which tab is visible at the time -- if it ran
+  // while Comercio was hidden, #of-list was display:none and the
+  // centering math came out wrong. Re-running it here, on an actual
+  // visit, fixes that even though the data itself didn't change.
+  if(tab==='tienda')centerOfertaWheel();
   mcSyncBackTrap();
   trackPage();
 }
@@ -2247,7 +2254,11 @@ function toggleOfertaFlip(el){el.classList.toggle('flipped');}
 function centerOfertaWheel(){
   const wheel=document.getElementById('of-list');
   const first=wheel&&wheel.querySelector('.of-card');
-  if(!wheel||!first)return;
+  // Guards the same problem nav()'s own hook (Step C) fixes at the
+  // source: if this runs while the Comercio screen isn't the visible
+  // one, #of-list is display:none and every dimension reads 0 -- bail
+  // rather than compute garbage from that.
+  if(!wheel||!first||!wheel.clientWidth)return;
   const side=Math.max(0,(wheel.clientWidth-first.getBoundingClientRect().width)/2);
   wheel.style.paddingLeft=side+'px';
   wheel.style.paddingRight=side+'px';
