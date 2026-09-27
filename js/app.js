@@ -1,4 +1,4 @@
-window.MC_BUILD='12261b2c7a';
+window.MC_BUILD='5209f914e7';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1904,8 +1904,17 @@ function mercadoGridHtml(base){
   const rest=base.filter(x=>!(x.featured||x.discountActive));
   const scattered=base.filter(x=>(x.featured||x.discountActive)&&!topIds.has(String(x.id)));
   const out=rest.slice();
+  // Real breathing room after the top group -- otherwise a scattered
+  // item can land in the very first position right below the top
+  // rotation, and since every promoted card carries the same bold
+  // ribbon, that reads as one clumped wall of banners even though only
+  // showN of them are technically "the top". minGap mirrors however many
+  // are currently up top (2 or 4), so at least that many ordinary
+  // products always separate the two groups -- capped to what's
+  // actually available so a short list doesn't break.
+  const minGap=Math.min(showN,out.length);
   scattered.forEach(item=>{
-    const pos=Math.floor(seededRand(String(item.id)+TODAY_DS)*(out.length+1));
+    const pos=minGap+Math.floor(seededRand(String(item.id)+TODAY_DS)*Math.max(1,out.length-minGap+1));
     out.splice(pos,0,item);
   });
   return `<div id="mkt-top-promo" style="display:contents">${top.map(prodCardHtml).join('')}</div>${out.map(prodCardHtml).join('')}`;
