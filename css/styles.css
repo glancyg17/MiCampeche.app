@@ -1,4 +1,4 @@
-:root{--mc-build:"5209f914e7";}
+:root{--mc-build:"de415ec407";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -299,6 +299,7 @@ svg{display:block}
 .slot-cal-full-msg{background:var(--paper3);color:var(--ink2)}
 .slot-cal-ok-msg .ico,.slot-cal-full-msg .ico{width:15px;height:15px;flex-shrink:0;margin-top:1px}
 .of-card{position:relative;flex:0 0 82%;height:270px;scroll-snap-align:start;perspective:1400px;cursor:pointer}
+.of-card-big{flex:none;width:100%;height:380px;margin-bottom:2px}
 .of-flip-inner{position:relative;width:100%;height:100%;transition:transform .5s cubic-bezier(.4,.2,.2,1);transform-style:preserve-3d}
 .of-card.flipped .of-flip-inner{transform:rotateY(180deg)}
 .of-flip-front,.of-flip-back{position:absolute;inset:0;backface-visibility:hidden;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh1);overflow:hidden;display:flex;flex-direction:column}
@@ -317,6 +318,44 @@ svg{display:block}
 .of-back-text{font-size:12.5px;line-height:1.5;color:var(--ink2);white-space:pre-wrap}
 .of-seller{font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;display:flex;align-items:center;gap:5px}
 .of-badge-premium{background:var(--wall);color:#fff;padding:1px 8px 1px 5px;border-radius:99px;font-size:9px;letter-spacing:.03em;display:inline-flex;align-items:center;gap:2px;vertical-align:middle}
+
+/* ═══ Oferta del Día spotlight (Comercio screen) ═══ */
+#of-spotlight-wrap{position:relative;text-align:center;padding-top:26px;overflow:visible}
+.of-spot-glow{
+  position:absolute;top:-6px;left:50%;transform:translateX(-50%);
+  width:88%;max-width:360px;height:190px;
+  background:radial-gradient(ellipse at center, rgba(250,180,0,.28) 0%, rgba(250,180,0,.09) 42%, transparent 72%);
+  pointer-events:none;z-index:0;
+}
+.of-spot-eyebrow{position:relative;font-size:11.5px;font-weight:700;color:var(--wall-dk);letter-spacing:.02em;margin-bottom:6px}
+.of-spot-title{position:relative;font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:32px;line-height:1.04;color:var(--ink);margin:0 0 8px;letter-spacing:-.01em}
+.of-spot-sub{position:relative;font-size:13px;color:var(--ink2);margin:0 0 18px;line-height:1.5}
+.of-spot-card-wrap{position:relative;z-index:1}
+
+/* one quiet ambient loop (the glow, "alive" like a real spotlight) + one
+   staggered entrance the first time the screen appears -- nothing per
+   card below this, nothing on scroll. */
+@keyframes ofSpotGlow{
+  0%,100%{opacity:.85;transform:translateX(-50%) scale(1)}
+  50%{opacity:1;transform:translateX(-50%) scale(1.07)}
+}
+@keyframes ofSpotReveal{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.of-spot-glow{animation:ofSpotGlow 5.5s ease-in-out infinite}
+.of-spot-eyebrow,.of-spot-title,.of-spot-sub,.of-spot-card-wrap{
+  opacity:0;animation:ofSpotReveal .6s cubic-bezier(.16,.8,.3,1) forwards;
+}
+.of-spot-eyebrow{animation-delay:.05s}
+.of-spot-title{animation-delay:.15s}
+.of-spot-sub{animation-delay:.28s}
+.of-spot-card-wrap{animation-delay:.42s}
+
+@media (prefers-reduced-motion: reduce){
+  .of-spot-glow{animation:none}
+  .of-spot-eyebrow,.of-spot-title,.of-spot-sub,.of-spot-card-wrap{animation:none;opacity:1}
+}
 .of-badge-premium .ico{width:10px;height:10px;stroke-width:2.5}
 .of-name{font-size:14px;font-weight:700;color:var(--ink);line-height:1.3}
 .of-price-row{display:flex;align-items:baseline;gap:8px;margin-top:5px}

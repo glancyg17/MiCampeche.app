@@ -21,12 +21,12 @@
 <meta name="twitter:description" content="Noticias, eventos, la tienda local, avisos vecinales y alertas oficiales de Campeche, todo en una sola app.">
 <meta name="twitter:image" content="https://micampeche.app/assets/images/MiCampeche-OG.jpg">
 <meta name="theme-color" content="#000612">
-<meta name="mc-build" content="5209f914e7">
+<meta name="mc-build" content="de415ec407">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png">
-<link rel="stylesheet" href="css/styles.css?v=5209f914e7">
+<link rel="stylesheet" href="css/styles.css?v=de415ec407">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -169,12 +169,9 @@
 
     <!-- ═══ TIENDA (Oferta del Día hero + Tienda ⇄ Clasificados toggle) ═══ -->
     <div class="scr" id="scr-tienda">
-      <div class="pad">
-        <div class="sec-title">Comercio</div>
-        <div class="sec-sub">Ofertas, negocios y clasificados de Campeche</div>
-      </div>
+      <div class="pad" id="of-spotlight-wrap"></div>
       <div class="of-hdr">
-        <div class="of-hdr-txt">Nuevas ofertas cada mañana · cantidad limitada</div>
+        <div class="of-hdr-txt">También hoy</div>
         <button class="of-hdr-post-btn" id="of-hdr-post-btn" onclick="openPost('oferta')">¿Tienes un negocio? Publica una oferta</button>
       </div>
       <div class="of-list" id="of-list"></div>
@@ -544,8 +541,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js?v=5209f914e7"></script>
-<script src="js/app.js?v=5209f914e7"></script>
+<script src="js/supabase-client.js?v=de415ec407"></script>
+<script src="js/app.js?v=de415ec407"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads
