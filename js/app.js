@@ -1,4 +1,4 @@
-window.MC_BUILD='74f2f73b76';
+window.MC_BUILD='87387e4588';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -900,7 +900,7 @@ function nav(tab,fromBack){
   // while Comercio was hidden, #of-list was display:none and the
   // centering math came out wrong. Re-running it here, on an actual
   // visit, fixes that even though the data itself didn't change.
-  if(tab==='tienda')centerOfertaWheel();
+  if(tab==='tienda')centerOfertaWheel(OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS));
   mcSyncBackTrap();
   trackPage();
 }
@@ -2176,6 +2176,64 @@ async function submitMandaditoReport(mandaditoId){
    moves when the business themselves confirms a real payment (see
    confirmOfertaSaleStep2 further down), so there's no more "claimed but
    never showed up" gap. */
+/* Full markup for one oferta card -- unchanged from before except it's
+   now its own function so renderOfertas can call it 3x per oferta (see
+   below) instead of inlining one copy each. */
+function ofertaCardHtml(o){
+  const soldOut=o.sold>=o.total;
+  // Genuinely today's real release only -- never the random fallback
+  // pick used just to decide where the wheel starts (see
+  // centerOfertaWheel below). Mutually exclusive with sold-out: if it
+  // sold out the same day, "Agotado" is the more useful thing to show.
+  const isToday=!o.isExample&&o.postedDs===TODAY_DS;
+  const pct=Math.min(100,Math.round((o.sold/o.total)*100));
+  const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
+  const num=digitsOnly(o.phone);
+  const intl=num?(num.length===10?'52'+num:num):'';
+  const msg=contactMsgParam(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
+  const claimBtn=soldOut
+    ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
+    : intl
+      ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="javascript:void(0)" onclick="event.stopPropagation();event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">Contactar</a>`
+      : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
+  const bottomHtml=`
+    <div class="of-bottom">
+      <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
+      <div class="of-claim-row">
+        <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
+        ${claimBtn}
+      </div>
+    </div>`;
+  return `
+  <div class="of-card${soldOut?' sold-out':''}" data-oferta-id="${e(String(o.id))}" onclick="toggleOfertaFlip(this)" ${admRm('ofertas',o.id,o.name)}>
+    <div class="of-flip-inner">
+      <div class="of-flip-front">
+        <div class="of-hero-wrap">
+          ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':(isToday?'<div class="of-today-ribbon">Hoy</div>':'')}
+          <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
+          <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
+          <div class="of-hero-overlay">
+            <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
+            <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+            <div class="of-price-row">
+              <span class="of-price-now">$${o.priceNow}</span>
+              <span class="of-price-was">$${o.priceWas}</span>
+              <span class="of-pct">-${discountPct}%</span>
+            </div>
+          </div>
+        </div>
+        ${bottomHtml}
+      </div>
+      <div class="of-flip-back">
+        <div class="of-back-seller">${e(o.seller)}</div>
+        <div class="of-back-title">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+        ${o.desc?`<div class="of-back-text">${e(o.desc)}</div>`:'<div class="of-back-text" style="color:var(--ink3)">Sin descripción adicional.</div>'}
+        ${o.terms?`<div class="of-back-section-lbl">Condiciones</div><div class="of-back-text">${e(o.terms)}</div>`:''}
+        ${bottomHtml}
+      </div>
+    </div>
+  </div>`;
+}
 function renderOfertas(){
   const el=document.getElementById('of-list');
   // Example ofertas are exempt from the normal 7-day lifespan (so they
@@ -2184,98 +2242,69 @@ function renderOfertas(){
   const visible=OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
     .sort((a,b)=>(a.isExample===b.isExample)?0:(a.isExample?1:-1));
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
-  el.innerHTML=visible.map((o)=>{
-    const soldOut=o.sold>=o.total;
-    // Genuinely today's real release only -- never the random fallback
-    // pick used just to decide where the wheel starts (see
-    // centerOfertaWheel below). Mutually exclusive with sold-out: if it
-    // sold out the same day, "Agotado" is the more useful thing to show.
-    const isToday=!o.isExample&&o.postedDs===TODAY_DS;
-    const pct=Math.min(100,Math.round((o.sold/o.total)*100));
-    const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
-    const num=digitsOnly(o.phone);
-    const intl=num?(num.length===10?'52'+num:num):'';
-    const msg=contactMsgParam(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
-    const claimBtn=soldOut
-      ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
-      : intl
-        ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="javascript:void(0)" onclick="event.stopPropagation();event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">Contactar</a>`
-        : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
-    const bottomHtml=`
-      <div class="of-bottom">
-        <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
-        <div class="of-claim-row">
-          <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
-          ${claimBtn}
-        </div>
-      </div>`;
-    return `
-    <div class="of-card${soldOut?' sold-out':''}" data-oferta-id="${e(String(o.id))}" onclick="toggleOfertaFlip(this)" ${admRm('ofertas',o.id,o.name)}>
-      <div class="of-flip-inner">
-        <div class="of-flip-front">
-          <div class="of-hero-wrap">
-            ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':(isToday?'<div class="of-today-ribbon">Hoy</div>':'')}
-            <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
-            <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
-            <div class="of-hero-overlay">
-              <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-              <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-              <div class="of-price-row">
-                <span class="of-price-now">$${o.priceNow}</span>
-                <span class="of-price-was">$${o.priceWas}</span>
-                <span class="of-pct">-${discountPct}%</span>
-              </div>
-            </div>
-          </div>
-          ${bottomHtml}
-        </div>
-        <div class="of-flip-back">
-          <div class="of-back-seller">${e(o.seller)}</div>
-          <div class="of-back-title">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-          ${o.desc?`<div class="of-back-text">${e(o.desc)}</div>`:'<div class="of-back-text" style="color:var(--ink3)">Sin descripción adicional.</div>'}
-          ${o.terms?`<div class="of-back-section-lbl">Condiciones</div><div class="of-back-text">${e(o.terms)}</div>`:''}
-          ${bottomHtml}
-        </div>
-      </div>
-    </div>
-  `;}).join('');
+  // Rendered 3x back-to-back so the wheel can loop: the person always
+  // lives in the middle copy, with an identical copy on either side to
+  // scroll into before silently jumping back -- see centerOfertaWheel.
+  el.innerHTML=[...visible,...visible,...visible].map(ofertaCardHtml).join('');
   wireAdminRemove(el);
-  centerOfertaWheel();
+  centerOfertaWheel(visible);
 }
 function toggleOfertaFlip(el){el.classList.toggle('flipped');}
-/* Positions the wheel on load: today's real oferta if one exists, else
-   the same random-live-not-sold-out fallback Home's own Oferta del día
-   card already uses (homeOfertaPool()/pickHomeOferta() -- not
-   duplicated here). Re-runs on every render (e.g. after a real-time
-   refresh), which is fine -- it just re-settles to the same logical
-   choice. Padding is computed, not fixed, so the first/last card can
-   also actually reach true center; a fixed padding would strand them
-   short of it. */
-function centerOfertaWheel(){
+/* Positions the wheel AND makes it loop. renderOfertas() renders the
+   oferta list 3 copies back-to-back; this starts scrolled into the
+   MIDDLE copy (today's real oferta if one exists, else the same
+   random-live-not-sold-out fallback Home's own Oferta del día card
+   already uses -- homeOfertaPool()/pickHomeOferta(), not duplicated
+   here), then, once scrolling settles, silently jumps the scroll
+   position by exactly one copy's width whenever it drifts into the
+   left or right copy -- imperceptible, since every copy is identical
+   content, and the practical effect is a loop that never hits a real
+   end no matter how far or fast you scroll. Validated first as a live,
+   hands-on interactive prototype before being ported here.
+   Re-runs on every render (e.g. after a background data refresh), which
+   is fine -- it just re-settles to the same logical starting choice;
+   `visible` is the exact list renderOfertas() just rendered 3 copies of,
+   needed here to find which copy is the real "today" pick within the
+   middle third specifically (a plain data-oferta-id match would find
+   the FIRST copy, not the middle one). Padding is computed, not fixed,
+   so the first/last actual card can also truly reach center -- a fixed
+   padding would strand them short of it. */
+function centerOfertaWheel(visible){
   const wheel=document.getElementById('of-list');
-  const first=wheel&&wheel.querySelector('.of-card');
-  // Guards the same problem nav()'s own hook (Step C) fixes at the
-  // source: if this runs while the Comercio screen isn't the visible
-  // one, #of-list is display:none and every dimension reads 0 -- bail
-  // rather than compute garbage from that.
-  if(!wheel||!first||!wheel.clientWidth)return;
-  const side=Math.max(0,(wheel.clientWidth-first.getBoundingClientRect().width)/2);
+  const cards=wheel?[...wheel.querySelectorAll('.of-card')]:[];
+  // Guards the same problem nav()'s own hook fixes at the source: if
+  // this runs while the Comercio screen isn't the visible one, #of-list
+  // is display:none and every dimension reads 0 -- bail rather than
+  // compute garbage from that.
+  if(!wheel||!cards.length||!wheel.clientWidth)return;
+  const perSet=cards.length/3;
+  const side=Math.max(0,(wheel.clientWidth-cards[0].getBoundingClientRect().width)/2);
   wheel.style.paddingLeft=side+'px';
   wheel.style.paddingRight=side+'px';
+  // Distance from copy 1's first card to copy 2's first card = one full
+  // copy's width (cards + gaps) -- measured, not assumed, so it stays
+  // correct regardless of how many real ofertas exist.
+  const setWidth=cards[perSet].offsetLeft-cards[0].offsetLeft;
   const pick=pickHomeOferta(homeOfertaPool());
-  // Not a CSS attribute selector (CSS.escape isn't available in every
-  // environment this runs in) -- a plain dataset comparison is simpler
-  // and just as correct for an id that's always a plain string/number.
-  const target=pick?[...wheel.querySelectorAll('.of-card')].find(c=>c.dataset.ofertaId===String(pick.id)):null;
-  const card=target||first;
-  wheel.scrollLeft=card.offsetLeft+card.offsetWidth/2-wheel.clientWidth/2;
+  const idxInSet=pick?visible.findIndex(o=>String(o.id)===String(pick.id)):-1;
+  const startCard=cards[perSet+(idxInSet>=0?idxInSet:0)];
+  wheel.scrollLeft=startCard.offsetLeft+startCard.offsetWidth/2-wheel.clientWidth/2;
   updateOfertaWheelScale();
-  let ticking=false;
+  function reposition(){
+    if(setWidth<=0)return;
+    if(wheel.scrollLeft<setWidth*0.5)wheel.scrollLeft+=setWidth;
+    else if(wheel.scrollLeft>setWidth*1.5)wheel.scrollLeft-=setWidth;
+  }
+  let ticking=false,settleTimer=null;
   wheel.onscroll=function(){
-    if(ticking)return;
-    ticking=true;
-    requestAnimationFrame(()=>{updateOfertaWheelScale();ticking=false;});
+    if(!ticking){
+      ticking=true;
+      requestAnimationFrame(()=>{updateOfertaWheelScale();ticking=false;});
+    }
+    clearTimeout(settleTimer);
+    settleTimer=setTimeout(reposition,120);
   };
+  wheel.onscrollend=reposition;
 }
 /* The actual "wheel" feel: whichever card is closest to center reads at
    full size and opacity; the further away a card drifts, the smaller
