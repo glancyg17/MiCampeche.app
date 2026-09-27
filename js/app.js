@@ -1,4 +1,4 @@
-window.MC_BUILD='7f7bda3e52';
+window.MC_BUILD='12261b2c7a';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1872,30 +1872,48 @@ function renderMercado(){
 }
 /* Destacado/Descuento products get two treatments in this one grid now
    (no more separate boxed section on this tab):
-   1. Up to 2 rotate through the very top slot on the same shared timer
+   1. A rotating group at the very top slot, on the same shared timer
       Home's own destacados block already uses -- deliberately UNFILTERED
       (the full system-wide pool via eligibleDestacados(), exactly like
       the old carousel), so a search/filter doesn't hide them from that
-      one slot either.
-   2. Any promoted product that ALSO matches the current filter is
-      additionally scattered through the rest of the results, at a
-      position seeded by its id + today's date -- stable while re-
-      rendering (typing a search, changing colonia) so items don't
-      visibly jump around, but different from one day to the next. */
+      one slot either. Normally 2 at a time; bumps to 4 once there are
+      enough eligible products that a 2-at-a-time rotation would take a
+      while to actually cycle through everything (see
+      mercadoTopPromoCount). #mkt-top-promo is display:contents so its
+      cards each get their own cell in the outer grid, same as every
+      other product card -- wrapping them in an ordinary div made the
+      wrapper itself count as a single grid cell instead.
+   2. Any OTHER promoted product that ALSO matches the current filter
+      (i.e. isn't already showing at the top right now) is additionally
+      scattered through the rest of the results, at a position seeded by
+      its id + today's date -- stable while re-rendering (typing a
+      search, changing colonia) so items don't visibly jump around, but
+      different from one day to the next. */
+function mercadoTopPromoCount(poolLength){
+  return poolLength>4?4:2;
+}
 function mercadoGridHtml(base){
+  const pool=eligibleDestacados();
+  const showN=Math.min(mercadoTopPromoCount(pool.length),pool.length);
+  const top=[];
+  if(showN){
+    const start=destacadosRotationIndex%pool.length;
+    for(let i=0;i<showN;i++)top.push(pool[(start+i)%pool.length]);
+  }
+  const topIds=new Set(top.map(x=>String(x.id)));
   const rest=base.filter(x=>!(x.featured||x.discountActive));
-  const scattered=base.filter(x=>x.featured||x.discountActive);
+  const scattered=base.filter(x=>(x.featured||x.discountActive)&&!topIds.has(String(x.id)));
   const out=rest.slice();
   scattered.forEach(item=>{
     const pos=Math.floor(seededRand(String(item.id)+TODAY_DS)*(out.length+1));
     out.splice(pos,0,item);
   });
-  return `<div id="mkt-top-promo">${mercadoTopPromoHtml()}</div>${out.map(prodCardHtml).join('')}`;
+  return `<div id="mkt-top-promo" style="display:contents">${top.map(prodCardHtml).join('')}</div>${out.map(prodCardHtml).join('')}`;
 }
 function mercadoTopPromoHtml(){
   const pool=eligibleDestacados();
-  if(!pool.length)return '';
-  const showN=Math.min(2,pool.length);
+  const showN=Math.min(mercadoTopPromoCount(pool.length),pool.length);
+  if(!showN)return '';
   const start=destacadosRotationIndex%pool.length;
   const slice=[];
   for(let i=0;i<showN;i++)slice.push(pool[(start+i)%pool.length]);
@@ -1960,7 +1978,8 @@ function startDestacadosRotation(){
   if(eligibleDestacados().length>2){
     destacadosRotationTimer=setInterval(()=>{
       const pool=eligibleDestacados();
-      destacadosRotationIndex=(destacadosRotationIndex+2)%(pool.length||1);
+      const step=mercadoTopPromoCount(pool.length);
+      destacadosRotationIndex=(destacadosRotationIndex+step)%(pool.length||1);
       renderDestacadosCarousel();
     },7000);
   }
