@@ -1,4 +1,4 @@
-window.MC_BUILD='de415ec407';
+window.MC_BUILD='a68335c1fd';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -1372,6 +1372,18 @@ try{
     });
   }
 }catch(_){}
+try{
+  window.addEventListener('resize',()=>{
+    const wheel=document.getElementById('of-list');
+    if(!wheel)return;
+    const first=wheel.querySelector('.of-card');
+    if(!first)return;
+    const side=Math.max(0,(wheel.clientWidth-first.getBoundingClientRect().width)/2);
+    wheel.style.paddingLeft=side+'px';
+    wheel.style.paddingRight=side+'px';
+    updateOfertaWheelScale();
+  });
+}catch(_){}
 function maybeShowTipGate(key){
   if(tipGateShownThisSession.has(key))return;
   tipGateShownThisSession.add(key);
@@ -2157,101 +2169,119 @@ async function submitMandaditoReport(mandaditoId){
    moves when the business themselves confirms a real payment (see
    confirmOfertaSaleStep2 further down), so there's no more "claimed but
    never showed up" gap. */
-/* Shared by the regular horizontal list and the enlarged spotlight card
-   (big=true just adds a sizing class -- everything else, including the
-   flip-to-see-details/contact/progress-bar behavior, is identical). */
-function ofertaCardHtml(o,big){
-  const soldOut=o.sold>=o.total;
-  const pct=Math.min(100,Math.round((o.sold/o.total)*100));
-  const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
-  const num=digitsOnly(o.phone);
-  const intl=num?(num.length===10?'52'+num:num):'';
-  const msg=contactMsgParam(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
-  const claimBtn=soldOut
-    ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
-    : intl
-      ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="javascript:void(0)" onclick="event.stopPropagation();event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">Contactar</a>`
-      : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
-  const bottomHtml=`
-    <div class="of-bottom">
-      <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
-      <div class="of-claim-row">
-        <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
-        ${claimBtn}
-      </div>
-    </div>`;
-  return `
-  <div class="of-card${soldOut?' sold-out':''}${big?' of-card-big':''}" onclick="toggleOfertaFlip(this)" ${admRm('ofertas',o.id,o.name)}>
-    <div class="of-flip-inner">
-      <div class="of-flip-front">
-        <div class="of-hero-wrap">
-          ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':''}
-          <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
-          <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
-          <div class="of-hero-overlay">
-            <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
-            <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-            <div class="of-price-row">
-              <span class="of-price-now">$${o.priceNow}</span>
-              <span class="of-price-was">$${o.priceWas}</span>
-              <span class="of-pct">-${discountPct}%</span>
-            </div>
-          </div>
-        </div>
-        ${bottomHtml}
-      </div>
-      <div class="of-flip-back">
-        <div class="of-back-seller">${e(o.seller)}</div>
-        <div class="of-back-title">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-        ${o.desc?`<div class="of-back-text">${e(o.desc)}</div>`:'<div class="of-back-text" style="color:var(--ink3)">Sin descripción adicional.</div>'}
-        ${o.terms?`<div class="of-back-section-lbl">Condiciones</div><div class="of-back-text">${e(o.terms)}</div>`:''}
-        ${bottomHtml}
-      </div>
-    </div>
-  </div>`;
-}
-/* The enlarged, spotlighted oferta above the regular list -- same
-   selection as Home's own Oferta del día card (homeOfertaPool()/
-   pickHomeOferta()), so it's consistently the same real oferta
-   throughout the app. Stored in ofertaSpotlightPick so renderOfertas()
-   below can exclude it from the regular list underneath. */
-let ofertaSpotlightPick=null;
-function renderOfertaSpotlight(){
-  const wrap=document.getElementById('of-spotlight-wrap');
-  if(!wrap)return;
-  const o=pickHomeOferta(homeOfertaPool());
-  ofertaSpotlightPick=o;
-  if(!o){wrap.innerHTML='';wrap.style.display='none';return;}
-  wrap.style.display='block';
-  wrap.innerHTML=`
-    <div class="of-spot-glow"></div>
-    <div class="of-spot-eyebrow">Nuevas ofertas cada mañana</div>
-    <h1 class="of-spot-title">Oferta del Día</h1>
-    <p class="of-spot-sub">Un negocio real de Campeche, cantidad limitada — nueva cada mañana.</p>
-    <div class="of-spot-card-wrap">${ofertaCardHtml(o,true)}</div>
-  `;
-  wireAdminRemove(wrap);
-}
 function renderOfertas(){
-  renderOfertaSpotlight();
   const el=document.getElementById('of-list');
   // Example ofertas are exempt from the normal 7-day lifespan (so they
   // actually persist, per how they're meant to be used) and are always
   // sorted after every real oferta.
   const visible=OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
     .sort((a,b)=>(a.isExample===b.isExample)?0:(a.isExample?1:-1));
-  const spotlightId=ofertaSpotlightPick?String(ofertaSpotlightPick.id):null;
-  const rest=visible.filter(o=>String(o.id)!==spotlightId);
-  if(!rest.length){
-    el.innerHTML=visible.length
-      ? emptyState('tienda','Eso es todo por hoy','La oferta del día de arriba es la única disponible ahora mismo.')
-      : emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');
-    return;
-  }
-  el.innerHTML=rest.map(o=>ofertaCardHtml(o,false)).join('');
+  if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
+  el.innerHTML=visible.map((o)=>{
+    const soldOut=o.sold>=o.total;
+    // Genuinely today's real release only -- never the random fallback
+    // pick used just to decide where the wheel starts (see
+    // centerOfertaWheel below). Mutually exclusive with sold-out: if it
+    // sold out the same day, "Agotado" is the more useful thing to show.
+    const isToday=!o.isExample&&o.postedDs===TODAY_DS;
+    const pct=Math.min(100,Math.round((o.sold/o.total)*100));
+    const discountPct=Math.round((1-o.priceNow/o.priceWas)*100);
+    const num=digitsOnly(o.phone);
+    const intl=num?(num.length===10?'52'+num:num):'';
+    const msg=contactMsgParam(`Hola, quiero tu oferta "${o.name}" en MiCampeche.`);
+    const claimBtn=soldOut
+      ? `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Agotado</button>`
+      : intl
+        ? `<a class="of-claim-btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center" href="javascript:void(0)" onclick="event.stopPropagation();event.preventDefault();guardedContact('https://wa.me/${intl}?text=${msg}')">Contactar</a>`
+        : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
+    const bottomHtml=`
+      <div class="of-bottom">
+        <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
+        <div class="of-claim-row">
+          <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
+          ${claimBtn}
+        </div>
+      </div>`;
+    return `
+    <div class="of-card${soldOut?' sold-out':''}" data-oferta-id="${e(String(o.id))}" onclick="toggleOfertaFlip(this)" ${admRm('ofertas',o.id,o.name)}>
+      <div class="of-flip-inner">
+        <div class="of-flip-front">
+          <div class="of-hero-wrap">
+            ${soldOut?'<div class="of-soldout-ribbon">Agotado</div>':(isToday?'<div class="of-today-ribbon">Hoy</div>':'')}
+            <div class="of-flip-hint"><svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M7 22l-4-4 4-4M3 6h13a4 4 0 0 1 4 4v1M21 18H8a4 4 0 0 1-4-4v-1"/></svg></div>
+            <div class="of-hero-img" style="background-image:url('${o.img}')"></div>
+            <div class="of-hero-overlay">
+              <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
+              <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+              <div class="of-price-row">
+                <span class="of-price-now">$${o.priceNow}</span>
+                <span class="of-price-was">$${o.priceWas}</span>
+                <span class="of-pct">-${discountPct}%</span>
+              </div>
+            </div>
+          </div>
+          ${bottomHtml}
+        </div>
+        <div class="of-flip-back">
+          <div class="of-back-seller">${e(o.seller)}</div>
+          <div class="of-back-title">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
+          ${o.desc?`<div class="of-back-text">${e(o.desc)}</div>`:'<div class="of-back-text" style="color:var(--ink3)">Sin descripción adicional.</div>'}
+          ${o.terms?`<div class="of-back-section-lbl">Condiciones</div><div class="of-back-text">${e(o.terms)}</div>`:''}
+          ${bottomHtml}
+        </div>
+      </div>
+    </div>
+  `;}).join('');
   wireAdminRemove(el);
+  centerOfertaWheel();
 }
 function toggleOfertaFlip(el){el.classList.toggle('flipped');}
+/* Positions the wheel on load: today's real oferta if one exists, else
+   the same random-live-not-sold-out fallback Home's own Oferta del día
+   card already uses (homeOfertaPool()/pickHomeOferta() -- not
+   duplicated here). Re-runs on every render (e.g. after a real-time
+   refresh), which is fine -- it just re-settles to the same logical
+   choice. Padding is computed, not fixed, so the first/last card can
+   also actually reach true center; a fixed padding would strand them
+   short of it. */
+function centerOfertaWheel(){
+  const wheel=document.getElementById('of-list');
+  const first=wheel&&wheel.querySelector('.of-card');
+  if(!wheel||!first)return;
+  const side=Math.max(0,(wheel.clientWidth-first.getBoundingClientRect().width)/2);
+  wheel.style.paddingLeft=side+'px';
+  wheel.style.paddingRight=side+'px';
+  const pick=pickHomeOferta(homeOfertaPool());
+  // Not a CSS attribute selector (CSS.escape isn't available in every
+  // environment this runs in) -- a plain dataset comparison is simpler
+  // and just as correct for an id that's always a plain string/number.
+  const target=pick?[...wheel.querySelectorAll('.of-card')].find(c=>c.dataset.ofertaId===String(pick.id)):null;
+  const card=target||first;
+  wheel.scrollLeft=card.offsetLeft+card.offsetWidth/2-wheel.clientWidth/2;
+  updateOfertaWheelScale();
+  let ticking=false;
+  wheel.onscroll=function(){
+    if(ticking)return;
+    ticking=true;
+    requestAnimationFrame(()=>{updateOfertaWheelScale();ticking=false;});
+  };
+}
+/* The actual "wheel" feel: whichever card is closest to center reads at
+   full size and opacity; the further away a card drifts, the smaller
+   and fainter it gets, down to a floor so nothing vanishes outright. */
+function updateOfertaWheelScale(){
+  const wheel=document.getElementById('of-list');
+  if(!wheel)return;
+  const rect=wheel.getBoundingClientRect();
+  const center=rect.left+rect.width/2;
+  wheel.querySelectorAll('.of-card').forEach(card=>{
+    const r=card.getBoundingClientRect();
+    const dist=Math.abs(center-(r.left+r.width/2));
+    const norm=Math.min(1,dist/(rect.width*0.6));
+    card.style.transform=`scale(${1-norm*0.14})`;
+    card.style.opacity=1-norm*0.45;
+  });
+}
 
 let empColonia='';
 function setEmpColonia(v){empColonia=v.trim();renderEmpleos();}

@@ -947,19 +947,16 @@ const fakeClient = {
   assert(text('mkt-top-promo') && text('mkt-top-promo').includes('Producto test'), 'a Destacado product also appears in the rotating top-of-grid slot on Mercado — the separate boxed Destacados section is gone, folded into the same grid');
   assert(text('clas-grid') && text('clas-grid').includes('Artículo test'), 'Clasificados rendered the real fetched row');
   assert(!text('clas-grid').includes('Ricardo T.'), 'Clasificados no longer shows the poster name — personal listings are name-free now');
-  // The Comercio screen now spotlights Oferta del Día above #of-list
-  // (same real pick as Home's own card, via homeOfertaPool()/
-  // pickHomeOferta()) and excludes that one item from the regular list
-  // below it. This fixture has TWO real ofertas booked for today (o1 and
-  // o2), so the random pick could land on either — look the real one up
-  // by its stable data-adm-rm attribute rather than assuming which
-  // container it ended up in.
-  const ofertaTestCard = doc.querySelector('[data-adm-rm="ofertas|o1"]');
-  assert(!!ofertaTestCard && ofertaTestCard.textContent.includes('Oferta test') && ofertaTestCard.textContent.includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count, wherever the spotlight/list split put it');
-  assert(ofertaTestCard.innerHTML.includes('wa.me/529812003000') && ofertaTestCard.textContent.includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
-  const o1InSpotlight = !!doc.querySelector('#of-spotlight-wrap [data-adm-rm="ofertas|o1"]');
-  const o1InList = !!doc.querySelector('#of-list [data-adm-rm="ofertas|o1"]');
-  assert(o1InSpotlight !== o1InList, 'the real oferta appears exactly once across the spotlight and "También hoy" list combined, never both — whichever one is NOT spotlighted stays in the list');
+  // The Comercio screen's ofertas list is now a single centered wheel
+  // carousel — every oferta gets equal visual treatment, no separate
+  // featured/enlarged card. o1 is genuinely booked for today, so its
+  // card alone carries the "Hoy" ribbon (o2 is also booked for today in
+  // this fixture, so its card gets one too — the ribbon is per-card,
+  // not tied to which one the wheel happens to center on).
+  assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');
+  assert(text('of-list').includes('wa.me/529812003000') && text('of-list').includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
+  const o1Card = doc.querySelector('[data-adm-rm="ofertas|o1"]');
+  assert(!!o1Card && !!o1Card.querySelector('.of-today-ribbon'), 'a genuinely same-day real release (o1, booked for today) carries the "Hoy" ribbon');
   // o3 is status:'published' but booked for 3 days from now — approved
   // doesn't mean live yet, so it must never appear in the public feed.
   assert(!text('of-list').includes('Oferta programada'), 'an approved oferta scheduled for a future date is excluded from the public feed until its turn comes');

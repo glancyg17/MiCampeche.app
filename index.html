@@ -21,12 +21,12 @@
 <meta name="twitter:description" content="Noticias, eventos, la tienda local, avisos vecinales y alertas oficiales de Campeche, todo en una sola app.">
 <meta name="twitter:image" content="https://micampeche.app/assets/images/MiCampeche-OG.jpg">
 <meta name="theme-color" content="#000612">
-<meta name="mc-build" content="de415ec407">
+<meta name="mc-build" content="a68335c1fd">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png">
-<link rel="stylesheet" href="css/styles.css?v=de415ec407">
+<link rel="stylesheet" href="css/styles.css?v=a68335c1fd">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -169,12 +169,16 @@
 
     <!-- ═══ TIENDA (Oferta del Día hero + Tienda ⇄ Clasificados toggle) ═══ -->
     <div class="scr" id="scr-tienda">
-      <div class="pad" id="of-spotlight-wrap"></div>
-      <div class="of-hdr">
-        <div class="of-hdr-txt">También hoy</div>
-        <button class="of-hdr-post-btn" id="of-hdr-post-btn" onclick="openPost('oferta')">¿Tienes un negocio? Publica una oferta</button>
+      <div class="of-spot-wrap">
+        <div class="of-spot-glow"></div>
+        <div class="of-spot-eyebrow">Nuevas ofertas cada mañana</div>
+        <h1 class="of-spot-title">Oferta del D<span class="of-spot-i">í</span>a</h1>
+        <p class="of-spot-sub">Un negocio real de Campeche, cantidad limitada.</p>
       </div>
       <div class="of-list" id="of-list"></div>
+      <div class="of-hdr">
+        <button class="of-hdr-post-btn" id="of-hdr-post-btn" onclick="openPost('oferta')">¿Tienes un negocio? Publica una oferta</button>
+      </div>
       <div class="mkt-divider"><span>Explorar</span></div>
       <div class="subtog">
         <button class="subtog-btn on" data-v="mercado" onclick="setTiendaMode('mercado')">Mercado</button>
@@ -541,8 +545,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js?v=de415ec407"></script>
-<script src="js/app.js?v=de415ec407"></script>
+<script src="js/supabase-client.js?v=a68335c1fd"></script>
+<script src="js/app.js?v=a68335c1fd"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads
