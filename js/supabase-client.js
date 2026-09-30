@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='2723eb28d4';
+window.MC_BUILD_CLIENT='cbbc006dd5';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -1088,7 +1088,7 @@ MC.fetchOfertas=async function(){
    for a business's own oferta that's always the business owner's own uid,
    so this is safe without needing a businesses join at all
    (business_name_snapshot already lives on the row). */
-MC.fetchMyActiveOfertas=async function(businessId){
+MC.fetchMyArrivedOfertas=async function(businessId){
   const uid=await MC.ready;
   if(!uid)return [];
   let q=sb.from('ofertas').select('*, ofertas_bookings(booked_date)').eq('submitted_by',uid).eq('status','published');
@@ -1101,9 +1101,15 @@ MC.fetchMyActiveOfertas=async function(businessId){
       const postedDs=booking?booking.booked_date:dToDs(new Date(r.created_at));
       return {id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,sold:r.quantity_sold||0,total:r.quantity_total,postedDs};
     })
-    // approved-but-future ones aren't "active" yet — they show under the
-    // Pendientes tab instead (see fetchMyPendingOfertas)
-    .filter(r=>(r.sold<r.total)&&(r.postedDs<=TODAY_DS));
+    // approved-but-future ones haven't arrived yet — they show under the
+    // Pendientes tab instead (see fetchMyPendingOfertas). Sold-out/expired
+    // ones ARE returned; the caller splits Activas/Finalizadas via ofertaIsFinished.
+    .filter(r=>r.postedDs<=TODAY_DS);
+};
+/* Live and not finished (not sold out, under the 7-day lifespan) — the
+   account-menu badge's data source. */
+MC.fetchMyActiveOfertas=async function(businessId){
+  return (await MC.fetchMyArrivedOfertas(businessId)).filter(o=>!ofertaIsFinished(o));
 };
 /* Everything that ISN'T currently live and confirmable: still awaiting
    moderation, approved but scheduled for a future date (hasn't had its
@@ -1121,7 +1127,7 @@ MC.fetchMyPendingOfertas=async function(businessId){
     .map(r=>{
       const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
       return {
-        id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,
+        id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,raw:r,
         status:r.status,rejectionReason:r.rejection_reason||null,postedDs:booking?booking.booked_date:null
       };
     })

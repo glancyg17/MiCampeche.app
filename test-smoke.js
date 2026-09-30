@@ -2486,6 +2486,45 @@ const fakeClient = {
     SAMPLE.ofertas[0].quantity_sold = 2; // restore the fixture for any later re-fetch
     window.closeModal();
 
+    // ── Ofertas lifecycle: Activas / Pendientes / Finalizadas + business chips ──
+    {
+      const savedBizL = currentBusiness, savedExtraL = extraBusinesses, savedOfertasL = SAMPLE.ofertas.slice();
+      currentBusiness = { id: 'biz-1', profile_id: 'uid-1', business_name: 'Negocio Oferta', is_primary: true, is_premium: false, status: 'published' };
+      extraBusinesses = [{ id: 'biz-x', profile_id: 'uid-1', business_name: 'Otro Negocio', is_primary: false, is_premium: false, status: 'published' }];
+      const mk = (id, biz, name, booked, sold, total) => ({ id, business_id: biz, business_name_snapshot: name, seller_phone: '981 200 3000', title: 'Oferta ' + id, price_was: 100, price_now: 50, quantity_total: total, quantity_sold: sold, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: booked }] });
+      SAMPLE.ofertas.push(
+        mk('ox1', 'biz-1', 'Negocio Oferta', ds(-8), 1, 5),   // expired, unsold units left
+        mk('ox2', 'biz-x', 'Otro Negocio', ds(-1), 3, 3),     // sold out
+        mk('ox3', 'biz-x', 'Otro Negocio', ds(0), 0, 4),      // active
+        mk('ox4', 'biz-1', 'Negocio Oferta', ds(0), 4, 5)     // one unit from sold out
+      );
+      await window.openMyActiveOfertas(null, 'account');
+      await new Promise(r => setTimeout(r, 20));
+      let mb = () => text('modal-body');
+      assert(mb().includes('setMyOfertasBizFilter') && mb().includes('Otro Negocio'), 'with 2+ businesses and no business scoping, business chips appear above the tabs');
+      assert(mb().includes('Activas (3)') && mb().includes('Pendientes (3)') && mb().includes('Finalizadas (2)'), 'tab counts: Activas o1+ox3+ox4, Pendientes o3+o4+o5, Finalizadas ox1 (expired) + ox2 (sold out)');
+      assert(!mb().includes('Oferta ox1') && !mb().includes('Oferta ox2'), 'expired and sold-out ofertas are absent from Activas');
+      window.setMyOfertasTab('finalizadas');
+      assert(mb().includes('Oferta ox1') && mb().includes('Terminó - ya pasaron 7 días') && mb().includes("confirmOfertaSaleStep1('ox1')"), 'an expired unsold oferta is in Finalizadas with its status line AND its +1 button (late payments are real)');
+      assert(mb().includes('Oferta ox2') && mb().includes('Agotada') && !mb().includes("confirmOfertaSaleStep1('ox2')"), 'a sold-out oferta is in Finalizadas as "Agotada" with no +1 button');
+      window.setMyOfertasBizFilter('biz-x');
+      assert(mb().includes('Finalizadas (1)') && mb().includes('Activas (1)') && mb().includes('Pendientes (0)'), 'the business filter scopes all three tab counts');
+      assert(mb().includes('Oferta ox2') && !mb().includes('Oferta ox1'), 'and the Finalizadas list itself');
+      window.setMyOfertasBizFilter('');
+      window.setMyOfertasTab('activas');
+      window.confirmOfertaSaleStep1('ox4');
+      await window.confirmOfertaSaleStep2('ox4');
+      await new Promise(r => setTimeout(r, 20));
+      assert(SAMPLE.ofertas.find(o => o.id === 'ox4').quantity_sold === 5, 'confirming the last unit reaches quantity_total');
+      assert(mb().includes('Activas (2)') && mb().includes('Finalizadas (3)'), 'a newly sold-out oferta moves from Activas to Finalizadas on re-render');
+      await window.openMyActiveOfertas('biz-1', 'account');
+      await new Promise(r => setTimeout(r, 20));
+      assert(!mb().includes('setMyOfertasBizFilter'), 'scoped to one business (businessId arg), no business chips are shown');
+      SAMPLE.ofertas.length = 0; savedOfertasL.forEach(o => SAMPLE.ofertas.push(o));
+      currentBusiness = savedBizL; extraBusinesses = savedExtraL;
+      window.closeModal();
+    }
+
     // ── Error paths: the newest, most bespoke logic (friendly toasts +
     // optimistic-UI rollback), so worth testing deliberately. ──
     forcedErrors.insert.avisos = { code: '23505', message: 'duplicate key value violates unique constraint "one_aviso_per_person_per_day"' };
@@ -4527,7 +4566,8 @@ const fakeClient = {
     await window.openAccount();
     await new Promise(r => setTimeout(r, 20)); // the "N no aprobadas" count loads after the view paints, then re-renders
     assert(text('modal-body').includes('Mis publicaciones'), 'the account view has a "Mis publicaciones" entry for every signed-in resident');
-    assert(text('modal-body').includes('3 no aprobadas'), 'it flags the count of rejected posts inline — now includes m9 (a rejected mascota post with rejection_reason left null, e.g. an admin "Quitar" with no typed message, which used to be undercounted) and o4 (a rejected oferta, now counted at all since ofertas joined SELF_EDIT_TABLES so a rejected oferta gets real visibility/edit path)');
+    assert(text('modal-body').includes('2 no aprobadas'), 'it flags the count of rejected posts inline — av1 + m9 (a rejected mascota with rejection_reason left null, which used to be undercounted); the rejected oferta o4 is NOT counted here any more — ofertas live on their own screen');
+    assert(text('modal-body').includes('1 no aprobada - revisa el motivo'), 'the Ofertas activas entry carries its own red "1 no aprobada - revisa el motivo" sub-line for the rejected oferta o4');
     assert(!text('modal-body').includes('La descripción no es clara'), 'the full rejection reason is no longer duplicated inline in the account view — it lives in the Mis publicaciones view now');
 
     // ── Mis publicaciones: the resident-facing sibling of the admin
@@ -4539,8 +4579,9 @@ const fakeClient = {
     await window.openMyPosts();
     await new Promise(r => setTimeout(r, 20));
     const mp = () => text('modal-body');
-    assert(/^Mis publicaciones \(11\)$/.test(text('modal-title')), 'lists exactly the current user\'s own posts — av1 (rejected) + av2 (published) in avisos, m8 (pending) + m9 (rejected, no reason) + m10 (published) in mascotas, e3 (finished) + e4 (active) in eventos, and now o1 (published) + o3 (published, future-scheduled) + o4 (rejected) + o5 (pending) in ofertas, ofertas having joined SELF_EDIT_TABLES so a rejected oferta is actually visible/editable here like every other type');
-    assert(mp().includes('Pendiente (5)') && mp().includes('Activo (5)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 (rejected) + m8 (pending) + m9 (rejected) + o4 (rejected) + o5 (pending) in Pendiente, av2 + e4 + m10 + o1 + o3 in Activo, e3 in Finalizado');
+    assert(/^Mis publicaciones \(7\)$/.test(text('modal-title')), 'lists exactly the current user\'s own non-oferta posts — av1 + av2 (avisos), m8 + m9 + m10 (mascotas), e3 + e4 (eventos); ofertas (o1/o3/o4/o5) live in Ofertas activas now and are excluded from the list and the count');
+    assert(mp().includes('Pendiente (3)') && mp().includes('Activo (3)') && mp().includes('Finalizado (1)'), 'the three tabs show the right per-bucket counts: av1 + m8 + m9 in Pendiente, av2 + e4 + m10 in Activo, e3 in Finalizado — no ofertas anywhere');
+    assert(!mp().includes('Oferta test') && !mp().includes('Oferta programada'), 'ofertas never appear in Mis publicaciones');
 
     // Default tab is Activo, not Pendiente — most residents open "Mis
     // publicaciones" to check on something already live, not to chase a
@@ -4556,6 +4597,24 @@ const fakeClient = {
     assert(!mp().includes('Editar y reenviar'), 'a non-rejected item never shows the rejected-specific "Editar y reenviar" action');
     assert(mp().includes("confirmDiscardMyPost('avisos','av2')"), 'a published (active) post still carries the universal discard action');
     assert(mp().includes("openMyPostEdit('avisos','av2')"), 'a published, still-editable row is tappable straight into its edit form');
+    {
+      const savedBizP = currentBusiness, savedExtraP = extraBusinesses, savedProdP = SAMPLE.productos.slice();
+      currentBusiness = { id: 'biz-1', profile_id: 'uid-1', business_name: 'Negocio Oferta', is_primary: true, is_premium: false, status: 'published' };
+      extraBusinesses = [{ id: 'biz-x', profile_id: 'uid-1', business_name: 'Otro Negocio', is_primary: false, is_premium: false, status: 'published' }];
+      const pz = (id, biz, title) => ({ id, business_id: biz, business_name_snapshot: 'N', title, category: 'Comida', price_mxn: 10, image_urls: [], status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString() });
+      SAMPLE.productos.push(pz('pz1', 'biz-1', 'ProdUno'), pz('pz2', 'biz-x', 'ProdDos'));
+      await window.openMyPosts();
+      await new Promise(r => setTimeout(r, 20));
+      assert(mp().includes('Todos los negocios') && mp().includes('Otro Negocio') && mp().includes('ProdUno') && mp().includes('ProdDos'), 'Mis publicaciones shows business chips with 2+ businesses, listing both businesses\' productos by default');
+      window.setMyPostsBizFilter('biz-x');
+      assert(mp().includes('ProdDos') && !mp().includes('ProdUno'), 'selecting a business chip filters Mis publicaciones to that business\'s productos');
+      window.setMyPostsBizFilter('');
+      SAMPLE.productos.length = 0; savedProdP.forEach(p => SAMPLE.productos.push(p));
+      currentBusiness = savedBizP; extraBusinesses = savedExtraP;
+      await window.openMyPosts();
+      await new Promise(r => setTimeout(r, 20));
+      assert(!mp().includes('Todos los negocios'), 'with a single business, no business chip row is shown');
+    }
     assert(mp().includes('Mi cachorro en adopción') && mp().includes("resolveMascota('m10',true)") && mp().includes('Marcar como adoptado'), 'a published, unresolved adopción post shows a "Marcar como adoptado" resolve button');
 
     // Switch to Pendiente: rejected alongside true pending — neither is
@@ -4634,9 +4693,14 @@ const fakeClient = {
     //    since its old booking was already freed by
     //    free_oferta_booking_on_reject (live in Supabase) when it was
     //    rejected. ──
-    assert(mp().includes('Oferta rechazada') && mp().includes('La imagen no muestra el producto real'), 'the rejected oferta (o4) shows its real title and rejection reason in Mis publicaciones, now that ofertas is a self-edit table');
-    assert(!mp().includes("confirmDiscardMyPost('ofertas','o4')"), 'a rejected oferta\'s card has no "Descartar" trash-icon action — ofertas has no owner-DELETE RLS policy, so that button would silently no-op');
-    await window.openMyPostEdit('ofertas', 'o4');
+    assert(!mp().includes('Oferta rechazada'), 'the rejected oferta (o4) no longer shows in Mis publicaciones');
+    await window.openMyActiveOfertas(null, 'account');
+    await new Promise(r => setTimeout(r, 20));
+    window.setMyOfertasTab('pendientes');
+    assert(text('modal-body').includes('Oferta rechazada') && text('modal-body').includes('La imagen no muestra el producto real') && text('modal-body').includes("openMyOfertaEdit('o4')") && text('modal-body').includes('Editar y reenviar'), 'the rejected oferta (o4) shows under Ofertas activas > Pendientes with its reason and an "Editar y reenviar" button');
+    assert(!text('modal-body').includes("openMyOfertaEdit('o5')") && !text('modal-body').includes("openMyOfertaEdit('o3')"), 'only rejected ofertas get the edit button — not pending (o5) or scheduled (o3)');
+    window.openMyOfertaEdit('o4');
+    await new Promise(r => setTimeout(r, 20));
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Editar publicación' && doc.getElementById('pf-item').value === 'Oferta rechazada', 'tapping "Editar y reenviar" on the rejected oferta opens the real oferta form, pre-filled with its own data');
     assert(doc.getElementById('post-submit-btn').disabled === true && doc.getElementById('post-submit-btn').textContent === 'Selecciona un día para continuar', 'the submit button starts disabled, same as a fresh oferta submission — its booking was freed on rejection, so a NEW day must be picked before resubmitting');
@@ -4654,7 +4718,8 @@ const fakeClient = {
     assert(lastUpdate.ofertas && lastUpdate.ofertas.title === 'Oferta rechazada' && lastUpdate.ofertas.status === 'pending' && lastUpdate.ofertas.rejection_reason === null, 'resubmitting routes through MC.updateOferta, which re-queues the row as pending and clears the rejection reason');
     assert(lastInsert.ofertas_bookings && lastInsert.ofertas_bookings.oferta_id === 'o4' && lastInsert.ofertas_bookings.booked_date === resubmitDs && lastInsert.ofertas_bookings.fee_paid_mxn === 0, 'a fresh booking is inserted for the newly-picked day, at fee_paid_mxn:0 — this is a moderation resubmission, never a new charge or another free-cycle slot');
     assert(text('toast') === 'Oferta reenviada — vuelve a revisión ✓', 'a distinct, oferta-specific confirmation toast fires, not the generic "Cambios guardados" text');
-    window.mcModalBack('myPosts');
+    await new Promise(r => setTimeout(r, 20));
+    assert(text('modal-title') === 'Ofertas activas', 'saving a resubmitted oferta returns to Ofertas activas (not Mis publicaciones)');
 
     // ── Eventos month calendar: self-editing e3 (event_date 8 days in the
     //    past) should open the calendar already showing THAT event's month

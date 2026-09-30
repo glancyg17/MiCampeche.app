@@ -1,4 +1,4 @@
-window.MC_BUILD='2723eb28d4';
+window.MC_BUILD='cbbc006dd5';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -728,6 +728,9 @@ function ofertaAgeDays(o){
   const posted=new Date(o.postedDs+'T00:00:00');
   return Math.floor((Date.now()-posted.getTime())/86400000);
 }
+
+/* Finished = sold out OR past its 7-day lifespan. Active = arrived and not finished. */
+function ofertaIsFinished(o){return o.sold>=o.total||ofertaAgeDays(o)>=OFERTA_LIFESPAN_DAYS;}
 
 /* Ofertas booking calendar — 1 slot/day, $99 MXN, 14-day visible window,
    enforced for real by a unique constraint on ofertas_bookings.booked_date
@@ -3497,7 +3500,7 @@ function renderAccountSignedIn(acct){
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     `:''}
-    ${(()=>{const rej=(acct.rejections||[]).length;return `
+    ${(()=>{const rej=(acct.rejections||[]).filter(r=>r.table!=='ofertas').length;return `
       <button class="menu-item" onclick="openMyPosts()" style="border:1.5px solid var(--line2);margin-bottom:4px">
         <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></span>
         <span class="menu-item-txt">
@@ -3514,7 +3517,9 @@ function renderAccountSignedIn(acct){
         <span class="menu-item-ico">${svgIco('tienda')}</span>
         <span class="menu-item-txt">
           <span class="menu-item-lbl">Ofertas activas</span>
-          <span class="menu-item-sub">Confirma cada venta cuando te paguen</span>
+          ${(()=>{const ofRej=(acct.rejections||[]).filter(r=>r.table==='ofertas').length;return ofRej
+            ? `<span class="menu-item-sub" style="color:var(--signal)">${ofRej===1?'1 no aprobada':ofRej+' no aprobadas'} - revisa el motivo</span>`
+            : '<span class="menu-item-sub">Confirma cada venta cuando te paguen</span>';})()}
         </span>
         ${(acct.myActiveOfertas&&acct.myActiveOfertas.length)?`<span class="menu-badge on">${acct.myActiveOfertas.length}</span>`:''}
         <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
@@ -3775,32 +3780,54 @@ async function cancelBusinessPremiumUpgrade(businessId){
    once they've actually been paid. The RPC does the ownership + sold-out
    checks server-side; there's no undo by design, which is why Step2 has
    its own confirm screen. */
-let myActiveOfertasList=[];
+let myOfertasList=[];
 let myPendingOfertasList=[];
+let myOfertasBusinesses=[];
+let myOfertasBizFilter=null;
+let myOfertasBusinessId=null;
 let myOfertasTab='activas';
 async function openMyActiveOfertas(businessId,backKey){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'bizProfile');
   myOfertasTab='activas';
+  myOfertasBizFilter=null;
+  myOfertasBusinessId=businessId||null;
   document.getElementById('modal-title').textContent='Ofertas activas';
   document.getElementById('modal-body').innerHTML='<div style="padding:44px 0;text-align:center;color:var(--ink3);font-size:13px">Cargando…</div>';
   document.getElementById('modal-bg').classList.add('on');
-  const [active,pending]=await Promise.all([MC.fetchMyActiveOfertas(businessId),MC.fetchMyPendingOfertas(businessId)]);
-  myActiveOfertasList=active;
+  const [arrived,pending,businesses]=await Promise.all([MC.fetchMyArrivedOfertas(businessId),MC.fetchMyPendingOfertas(businessId),MC.myBusinesses()]);
+  myOfertasList=arrived;
+  myPendingOfertasList=pending;
+  myOfertasBusinesses=businesses||[];
+  renderMyActiveOfertas();
+}
+async function refreshMyActiveOfertas(){
+  const [arrived,pending]=await Promise.all([MC.fetchMyArrivedOfertas(myOfertasBusinessId),MC.fetchMyPendingOfertas(myOfertasBusinessId)]);
+  myOfertasList=arrived;
   myPendingOfertasList=pending;
   renderMyActiveOfertas();
 }
 function setMyOfertasTab(tab){myOfertasTab=tab;renderMyActiveOfertas();}
+function setMyOfertasBizFilter(id){myOfertasBizFilter=id||null;renderMyActiveOfertas();}
 function renderMyActiveOfertas(){
-  const tabsHtml=`<div style="display:flex;gap:8px;margin-bottom:14px">
-    <button class="chip${myOfertasTab==='activas'?' on':''}" onclick="setMyOfertasTab('activas')">Activas (${myActiveOfertasList.length})</button>
-    <button class="chip${myOfertasTab==='pendientes'?' on':''}" onclick="setMyOfertasTab('pendientes')">Pendientes (${myPendingOfertasList.length})</button>
+  const byBiz=r=>!myOfertasBizFilter||String(r.businessId)===String(myOfertasBizFilter);
+  const arrived=myOfertasList.filter(byBiz);
+  const activas=arrived.filter(o=>!ofertaIsFinished(o));
+  const finalizadas=arrived.filter(ofertaIsFinished).sort((a,b)=>(b.postedDs||'').localeCompare(a.postedDs||''));
+  const pendientes=myPendingOfertasList.filter(byBiz);
+  const bizChipsHtml=(!myOfertasBusinessId&&myOfertasBusinesses.length>1)?`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="chip${myOfertasBizFilter?'':' on'}" onclick="setMyOfertasBizFilter('')">Todos</button>
+    ${myOfertasBusinesses.map(b=>`<button class="chip${String(b.id)===String(myOfertasBizFilter)?' on':''}" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="setMyOfertasBizFilter('${e(String(b.id))}')">${e(b.business_name)}</button>`).join('')}
+  </div>`:'';
+  const tabsHtml=bizChipsHtml+`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="chip${myOfertasTab==='activas'?' on':''}" onclick="setMyOfertasTab('activas')">Activas (${activas.length})</button>
+    <button class="chip${myOfertasTab==='pendientes'?' on':''}" onclick="setMyOfertasTab('pendientes')">Pendientes (${pendientes.length})</button>
+    <button class="chip${myOfertasTab==='finalizadas'?' on':''}" onclick="setMyOfertasTab('finalizadas')">Finalizadas (${finalizadas.length})</button>
   </div>`;
+  const body=document.getElementById('modal-body');
+  const emptyHtml=msg=>`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">${msg}</div></div>`;
   if(myOfertasTab==='pendientes'){
-    if(!myPendingOfertasList.length){
-      document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No tienes ofertas pendientes.</div></div>`;
-      return;
-    }
-    document.getElementById('modal-body').innerHTML=tabsHtml+myPendingOfertasList.map(o=>{
+    if(!pendientes.length){body.innerHTML=tabsHtml+emptyHtml('No tienes ofertas pendientes.');return;}
+    body.innerHTML=tabsHtml+pendientes.map(o=>{
       const statusLbl=o.status==='pending'?'En revisión':o.status==='rejected'?'No aprobada':'Programada';
       const statusColor=o.status==='rejected'?'var(--signal)':'var(--ink3)';
       const subLine=o.status==='pending'?'Aún la estamos revisando antes de publicarla.'
@@ -3812,20 +3839,21 @@ function renderMyActiveOfertas(){
         <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(o.name)}</div>
         <div style="font-size:11px;font-weight:700;color:${statusColor};text-transform:uppercase;letter-spacing:.03em;margin-top:6px">${statusLbl}</div>
         <div style="color:var(--ink3);font-size:12.5px;margin-top:2px;line-height:1.4">${subLine}</div>
+        ${o.status==='rejected'?`<button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="openMyOfertaEdit('${e(String(o.id))}')">Editar y reenviar</button>`:''}
       </div>`;
     }).join('');
     return;
   }
-  if(!myActiveOfertasList.length){
-    document.getElementById('modal-body').innerHTML=tabsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">No tienes ofertas activas ahora mismo.</div></div>`;
-    return;
-  }
-  document.getElementById('modal-body').innerHTML=tabsHtml+myActiveOfertasList.map(o=>`
+  const isFin=myOfertasTab==='finalizadas';
+  const list=isFin?finalizadas:activas;
+  if(!list.length){body.innerHTML=tabsHtml+emptyHtml(isFin?'Nada finalizado todavía.':'No tienes ofertas activas ahora mismo.');return;}
+  body.innerHTML=tabsHtml+list.map(o=>`
     <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(o.businessName)}</div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(o.name)}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${o.sold} de ${o.total} vendidos</div>
-      <button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="confirmOfertaSaleStep1('${o.id}')">+1 pago confirmado</button>
+      ${isFin?`<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;margin-top:6px">${o.sold>=o.total?'Agotada':'Terminó - ya pasaron 7 días'}</div>`:''}
+      ${o.sold<o.total?`<button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="confirmOfertaSaleStep1('${e(String(o.id))}')">+1 pago confirmado</button>`:''}
     </div>
   `).join('');
 }
@@ -3834,7 +3862,7 @@ function renderMyActiveOfertas(){
    able to do it alone. Mirrors confirmCancelBusinessPremium's existing
    two-step shape. */
 function confirmOfertaSaleStep1(id){
-  const o=myActiveOfertasList.find(x=>x.id===id);
+  const o=myOfertasList.find(x=>String(x.id)===String(id));
   if(!o)return;
   mcModalPushView('myActiveOfertas');
   document.getElementById('modal-title').textContent='Confirmar venta';
@@ -3856,7 +3884,7 @@ async function confirmOfertaSaleStep2(id){
     return;
   }
   mcModalBack('myActiveOfertas');
-  myActiveOfertasList=myActiveOfertasList.map(o=>o.id===id?{...o,sold:data}:o).filter(o=>o.sold<o.total);
+  myOfertasList=myOfertasList.map(o=>String(o.id)===String(id)?{...o,sold:data}:o);
   renderMyActiveOfertas();
   toast('Venta confirmada ✓');
 }
@@ -4875,22 +4903,26 @@ let myPostsTab='active';
 let myPostsTypeFilter=null; // null = "Todos"; otherwise a table name like 'productos'
 let myPostsTableFilter=null; // null = show every self-editable table (the plain "Mis publicaciones" case); an array like ['productos'] scopes the same list/tabs/edit/discard machinery to just that table, used by the new "Mi negocio" sections
 let myPostsTitleBase='Mis publicaciones';
+let myPostsBizFilter=null;
+let myPostsBusinesses=[];
 async function openMyPosts(tables,title,backKey){
   if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView(backKey||'account');
   myPostsTab='active';
   myPostsTypeFilter=null;
+  myPostsBizFilter=null;
   myPostsTableFilter=tables||null;
   myPostsTitleBase=title||'Mis publicaciones';
   document.getElementById('modal-title').textContent=myPostsTitleBase;
   document.getElementById('modal-body').innerHTML=`<div style="text-align:center;padding:30px 0;color:var(--ink3)">Cargando…</div>`;
   document.getElementById('modal-bg').classList.add('on');
-  myPostsList=await MC.fetchMyPosts();
+  [myPostsList,myPostsBusinesses]=await Promise.all([MC.fetchMyPosts(),MC.myBusinesses()]);
   renderMyPosts();
 }
 async function refreshMyPosts(){
-  myPostsList=await MC.fetchMyPosts();
+  [myPostsList,myPostsBusinesses]=await Promise.all([MC.fetchMyPosts(),MC.myBusinesses()]);
   renderMyPosts();
 }
+function setMyPostsBizFilter(id){myPostsBizFilter=id||null;renderMyPosts();}
 function setMyPostsTab(tab){myPostsTab=tab;renderMyPosts();}
 function setMyPostsTypeFilter(t){myPostsTypeFilter=t||null;renderMyPosts();}
 /* An event stops being "Activo" once its last day has fully passed — the
@@ -4931,14 +4963,21 @@ function postStatusBadge(status,bucket){
   return `<span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.04em;flex-shrink:0">${lbl}</span>`;
 }
 function renderMyPosts(){
-  const byTable=myPostsTableFilter?myPostsList.filter(p=>myPostsTableFilter.includes(p.table)):myPostsList;
+  // Ofertas live on their own screen (Ofertas activas), never here.
+  const allPosts=myPostsList.filter(p=>p.table!=='ofertas');
+  const byTableAll=myPostsTableFilter?allPosts.filter(p=>myPostsTableFilter.includes(p.table)):allPosts;
+  const bizChipsHtml=(myPostsBusinesses.length>1&&allPosts.some(p=>p.raw&&p.raw.business_id))?`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="chip${myPostsBizFilter?'':' on'}" onclick="setMyPostsBizFilter('')">Todos los negocios</button>
+    ${myPostsBusinesses.map(b=>`<button class="chip${String(b.id)===String(myPostsBizFilter)?' on':''}" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="setMyPostsBizFilter('${e(String(b.id))}')">${e(b.business_name)}</button>`).join('')}
+  </div>`:'';
+  const byTable=myPostsBizFilter?byTableAll.filter(p=>p.raw&&String(p.raw.business_id)===String(myPostsBizFilter)):byTableAll;
   // Type filter row only makes sense on the generic "Mis publicaciones" entry
   // point (myPostsTableFilter null) — a Mi negocio sub-view is already
   // scoped to one table, so there's nothing to filter there.
   const typeChipsHtml=(()=>{
     if(myPostsTableFilter)return '';
     const seen=new Map();
-    myPostsList.forEach(p=>{if(!seen.has(p.table))seen.set(p.table,p.label);});
+    byTable.forEach(p=>{if(!seen.has(p.table))seen.set(p.table,p.label);});
     if(seen.size<2)return ''; // only one type present — a filter row would be pointless
     return `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="chip${myPostsTypeFilter?'':' on'}" onclick="setMyPostsTypeFilter('')">Todos</button>
@@ -4948,7 +4987,7 @@ function renderMyPosts(){
   const source=myPostsTypeFilter?byTable.filter(p=>p.table===myPostsTypeFilter):byTable;
   document.getElementById('modal-title').textContent=`${myPostsTitleBase} (${source.length})`;
   if(!source.length){
-    document.getElementById('modal-body').innerHTML=typeChipsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
+    document.getElementById('modal-body').innerHTML=bizChipsHtml+typeChipsHtml+`<div style="text-align:center;padding:30px 10px;color:var(--ink3)">${svgIco('checkBadge')}<div style="margin-top:8px">Aún no has publicado nada.</div></div>`;
     return;
   }
   const buckets={pending:[],active:[],finished:[]};
@@ -4959,11 +4998,11 @@ function renderMyPosts(){
   const list=buckets[myPostsTab];
   const emptyMsgs={pending:'Nada en revisión ahora mismo.',active:'Nada activo todavía.',finished:'Nada finalizado todavía.'};
   if(!list.length){
-    document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${emptyMsgs[myPostsTab]}</div>`;
+    document.getElementById('modal-body').innerHTML=bizChipsHtml+typeChipsHtml+tabsHtml+`<div style="text-align:center;padding:24px 10px;color:var(--ink3)">${emptyMsgs[myPostsTab]}</div>`;
     return;
   }
   const MASCOTA_RESOLVE_LABEL={adopcion:'Marcar como adoptado',perdido:'Ya apareció',encontrado:'Ya lo recogieron'};
-  document.getElementById('modal-body').innerHTML=typeChipsHtml+tabsHtml+list.map(p=>{
+  document.getElementById('modal-body').innerHTML=bizChipsHtml+typeChipsHtml+tabsHtml+list.map(p=>{
     const isRejected=p.status==='rejected';
     // Ofertas are deliberately never tap-anywhere-editable while
     // live/pending -- see the note on MY_POST_EDIT.ofertas above. Only a
@@ -5125,14 +5164,20 @@ function applyPostEditFill(fill){
 /* Opens the post form for kind, pre-filled, routed to an UPDATE. Mirrors
    openBusinessEdit(): push a view so ✕/back returns to the list, let
    openPost() render the form, THEN flip it into edit mode. */
-async function openMyPostEdit(table,id){
-  const item=(myPostsList||[]).find(p=>p.table===table&&String(p.id)===String(id));
+function openMyOfertaEdit(id){
+  const o=(myPendingOfertasList||[]).find(x=>String(x.id)===String(id));
+  if(!o||!o.raw)return;
+  openMyPostEdit('ofertas',o.id,{item:{table:'ofertas',id:o.id,raw:o.raw},backKey:'myActiveOfertas'});
+}
+async function openMyPostEdit(table,id,opts){
+  opts=opts||{};
+  const item=opts.item||(myPostsList||[]).find(p=>p.table===table&&String(p.id)===String(id));
   const cfg=MY_POST_EDIT[table];
   if(!item||!cfg)return;
-  mcModalPushView('myPosts');
+  mcModalPushView(opts.backKey||'myPosts');
   await openPost(cfg.form);
   if(!document.getElementById('post-submit-btn')){return;} // openPost hit a gate — no form rendered
-  editingPost={table,id};
+  editingPost={table,id,backKey:opts.backKey||'myPosts'};
   document.getElementById('modal-title').textContent='Editar publicación';
   applyPostEditFill(cfg.fill(item.raw));
   applyConditionalRows(POST_FORMS[cfg.form]); // re-sync showIf rows now that seg values are set
@@ -5713,7 +5758,7 @@ async function submitPost(kind){
   // Self-edit: same form, same validation (above), routed to an UPDATE of
   // the resident's own row. The DB trigger forces it back to 'pending'.
   if(editingPost){
-    const {table,id}=editingPost;
+    const {table,id,backKey}=editingPost;
     if(table==='ofertas'&&!selectedSlotDate){
       stop();toast('Elige un día para reenviar tu oferta');return;
     }
@@ -5724,12 +5769,12 @@ async function submitPost(kind){
     if(error){toast(pgErrorToast(error,'No se pudieron guardar los cambios.'));return;}
     editingPost=null;
     toast(table==='ofertas'?'Oferta reenviada — vuelve a revisión ✓':'Cambios guardados — vuelve a revisión ✓');
-    mcModalBack('myPosts');
+    mcModalBack(backKey||'myPosts');
     refreshContent(); // re-fetch + re-render every public list so the edited
                        // item's new status (and content) actually disappears
                        // from/updates in public view immediately — refreshMyPosts()
                        // alone only updates the Mis Publicaciones list itself.
-    refreshMyPosts();
+    if(backKey==='myActiveOfertas')refreshMyActiveOfertas();else refreshMyPosts();
     return;
   }
 
