@@ -333,6 +333,7 @@ const SAMPLE = {
 // multi-business test adds on top; both feed the same businesses.select().
 let currentBusiness = null;
 let extraBusinesses = [];
+let extraProfiles = []; // additional fixture accounts for the admin block/broadcast tests
 let currentProfile = { id: 'uid-1', display_name: 'Vecino Test', phone: '+529811234567', is_admin: true, phone_verification_status: 'pending', phone_verification_reason: null };
 let fakePhoneAlreadyVerified = false; // controllable flag for MC.isPhoneAlreadyVerified — defaults to "no match" so normal signup/edit tests aren't blocked by a false positive
 
@@ -532,7 +533,7 @@ const fakeClient = {
             // query applies (honored generically above) can be proven to
             // actually exclude it, not just silently no-op.
             const isAdminAllUsersQuery = selectStr === 'id,display_name,phone,phone_verification_status,banned,is_admin,created_at';
-            const rows = matches ? [currentProfile] : [];
+            const rows = matches ? [currentProfile, ...(selectStr.includes('banned') ? extraProfiles : [])] : [];
             if (isAdminAllUsersQuery) rows.push({ id: 'ghost-1', display_name: null, phone: null, phone_verification_status: null, banned: false, is_admin: false, created_at: NOW.toISOString() });
             return { data: rows, error: null };
           });
@@ -594,6 +595,34 @@ const fakeClient = {
       }
       oferta.quantity_sold = (oferta.quantity_sold || 0) + 1;
       return { data: oferta.quantity_sold, error: null };
+    }
+    if (name === 'admin_set_user_blocked') {
+      const callerUid = currentSession && currentSession.user ? currentSession.user.id : null;
+      if (!currentProfile.is_admin) return { data: null, error: { message: 'not authorized' } };
+      if (args.p_target === callerUid) return { data: null, error: { message: 'cannot_block_self' } };
+      const target = [currentProfile, ...extraProfiles].find(p => p.id === args.p_target);
+      if (!target) return { data: null, error: { message: 'user_not_found' } };
+      if (target.is_admin) return { data: null, error: { message: 'cannot_block_admin' } };
+      if (args.p_message && args.p_message.length > 1000) return { data: null, error: { message: 'message_too_long' } };
+      target.banned = !!args.p_blocked;
+      if (args.p_message && args.p_message.trim()) SAMPLE.admin_messages.push({ id: 'am-blk-' + SAMPLE.admin_messages.length, profile_id: target.id, message: args.p_message, sent_by: callerUid, dismissed_at: null, created_at: NOW.toISOString() });
+      return { data: null, error: null };
+    }
+    if (name === 'admin_broadcast_message') {
+      const callerUid = currentSession && currentSession.user ? currentSession.user.id : null;
+      if (!currentProfile.is_admin) return { data: null, error: { message: 'not authorized' } };
+      const msg = args.p_message || '';
+      if (!msg.trim() || msg.length > 1000) return { data: null, error: { message: 'invalid_message_length' } };
+      const all = [currentProfile, ...extraProfiles];
+      let targets;
+      if (args.p_profile_ids === null || args.p_profile_ids === undefined) targets = all.filter(p => p.phone && p.id !== callerUid);
+      else {
+        if (!args.p_profile_ids.length) return { data: null, error: { message: 'empty_recipient_list' } };
+        if (args.p_profile_ids.length > 500) return { data: null, error: { message: 'too_many_recipients' } };
+        targets = all.filter(p => args.p_profile_ids.includes(p.id));
+      }
+      targets.forEach(p => SAMPLE.admin_messages.push({ id: 'am-bc-' + SAMPLE.admin_messages.length, profile_id: p.id, message: msg, sent_by: callerUid, dismissed_at: null, created_at: NOW.toISOString() }));
+      return { data: targets.length, error: null };
     }
     if (name === 'email_for_phone') {
       // login/reset resolve the typed phone to the account email; the
@@ -1727,47 +1756,23 @@ const fakeClient = {
     window.closeModal();
     currentProfile.phone_verification_status = 'verified';
 
-    // weekly prompt: verified account, no stored timestamp → shows, and
-    // writes the per-account localStorage key. anyOverlayOpen() also checks
-    // 'desktop-gate'/'tip-gate' — real, correct behavior in production (the
-    // prompt must never fire behind either), but jsdom's default desktop
-    // UA means init() left 'desktop-gate' permanently 'on' since test
-    // start, and an earlier section (Empleos) left 'tip-gate' 'on' too;
-    // neither is read by anything later in this file, so clearing them
-    // here just simulates "on a real phone, no gate showing".
+    // The automated weekly opinion popup is gone for good: no function, no
+    // boot-time timer, no weekly variant of the form. (Sugerencias menu stays.)
     doc.getElementById('desktop-gate').classList.remove('on');
     doc.getElementById('tip-gate').classList.remove('on');
-    await window.maybeShowWeeklySuggestionPrompt();
-    assert(text('modal-title') === 'Tu opinión cuenta' && doc.getElementById('modal-bg').classList.contains('on') && !!suggInput(), 'a verified account with no stored timestamp gets the weekly prompt');
-    let storedTs = null;
-    try { storedTs = window.localStorage.getItem(promptKey); } catch (_) {}
-    assert(!!storedTs, 'showing the weekly prompt writes the per-account localStorage timestamp');
+    assert(window.maybeShowWeeklySuggestionPrompt === undefined, 'maybeShowWeeklySuggestionPrompt no longer exists');
+    {
+      const appSrc = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8');
+      assert(!appSrc.includes('maybeShowWeeklySuggestionPrompt') && !appSrc.includes('SUGGEST_PROMPT_EVERY_MS'), 'boot no longer schedules any weekly suggestion prompt (no timer, no constant)');
+      assert(!appSrc.includes('Tu opinión cuenta') && !appSrc.includes('Ahora no'), 'the weekly form variant (title + "Ahora no") is removed from renderSuggestionForm');
+    }
+    doc.getElementById('modal-bg').classList.remove('on');
+    try { window.localStorage.removeItem(promptKey); } catch (_) {}
+    await new Promise(r => setTimeout(r, 30));
+    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a verified account with no stored timestamp is never shown a popup on its own');
+    await window.openSuggestionForm('menu');
+    assert(text('modal-title') === 'Sugerencias' && !!suggInput(), 'the Sugerencias menu variant still works');
     window.closeModal();
-
-    // a timestamp under 7 days old suppresses it
-    try { window.localStorage.setItem(promptKey, String(Date.now())); } catch (_) {}
-    await window.maybeShowWeeklySuggestionPrompt();
-    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a stored timestamp under 7 days old suppresses the weekly prompt');
-
-    // never shown to a guest, regardless of timestamp
-    try { window.localStorage.removeItem(promptKey); } catch (_) {}
-    currentSession = { user: { id: 'uid-1', is_anonymous: true, email: null } };
-    await window.maybeShowWeeklySuggestionPrompt();
-    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'a guest never gets the weekly prompt');
-
-    // never shown to an unverified account
-    currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
-    currentProfile.phone_verification_status = 'pending';
-    await window.maybeShowWeeklySuggestionPrompt();
-    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'an unverified account never gets the weekly prompt');
-
-    // never stacks on top of something already open
-    currentProfile.phone_verification_status = 'verified';
-    window.openMenu();
-    await window.maybeShowWeeklySuggestionPrompt();
-    assert(!doc.getElementById('modal-bg').classList.contains('on'), 'the weekly prompt is skipped while another layer (the menu) is already open');
-    window.closeMenu();
-    try { window.localStorage.removeItem(promptKey); } catch (_) {}
 
     // ── Admin Bandeja: both kinds, unread-first, filter chips, replies. ──
     // #modal-body's first child is now the filter-chips row, so message
@@ -3628,6 +3633,119 @@ const fakeClient = {
       // restore shared fixtures
       window.closeModal();
       SAMPLE.productos = SAMPLE.productos.filter(p => p.id !== 'p-adm');
+      // ── Blocked accounts: currentAccount exposes banned; gates show the notice ──
+      {
+        const suggInput = () => doc.getElementById('suggestion-text');
+        currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+        currentProfile.phone_verification_status = 'verified';
+        currentProfile.banned = false;
+        window.closeModal();
+        currentProfile.banned = true;
+        const gateOk = window.runWriteGate({ signedIn: true, banned: true, phoneVerificationStatus: 'verified' }, null);
+        assert(gateOk === false && text('modal-title') === 'Acceso restringido' && text('modal-body').includes('Escribir por correo') && text('modal-body').includes('Cerrar'), 'runWriteGate refuses a banned account and shows the "Acceso restringido" notice');
+        window.closeModal();
+        const navBefore = window.location.href;
+        const navOk = await window.guardedContact('https://wa.me/529811234567?text=hola');
+        assert(navOk === false && text('modal-title') === 'Acceso restringido' && window.location.href === navBefore, 'guardedContact shows the notice and does not navigate for a banned account');
+        window.closeModal();
+        await window.openContactForm();
+        assert(text('modal-title') === 'Acceso restringido' && !suggInput(), 'a banned account opening Contacto gets the notice instead of the form');
+        window.closeModal();
+        currentProfile.banned = false;
+        await window.openContactForm();
+        assert(text('modal-title') === 'Contacto' && !!suggInput(), 'an unbanned account still gets the Contacto form');
+        window.closeModal();
+        currentProfile.banned = true;
+        await window.openAccount();
+        // currentAccount().banned reaches runWriteGate through the real path
+        assert((await window.openSuggestionForm('menu'), text('modal-title')) === 'Acceso restringido', 'a banned account is stopped at the Sugerencias gate too (real MC.currentAccount().banned)');
+        currentProfile.banned = false;
+        window.closeModal();
+      }
+
+      // ── Admin block toggle ──
+      {
+        currentProfile.phone_verification_status = 'pending'; // the fake's profile list/detail queries (which select created_at) only return a row while pending
+        currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+        currentProfile.is_admin = true;
+        extraProfiles = [
+          { id: 'uid-blk', display_name: 'Persona Bloqueable', phone: '+529815550001', is_admin: false, banned: false, phone_verification_status: 'verified', created_at: NOW.toISOString() },
+          { id: 'uid-adm2', display_name: 'Otro Admin', phone: '+529815550002', is_admin: true, banned: false, phone_verification_status: 'verified', created_at: NOW.toISOString() },
+          { id: 'uid-c', display_name: 'Tercera Persona', phone: '+529815550003', is_admin: false, banned: false, phone_verification_status: 'verified', created_at: NOW.toISOString() },
+        ];
+        await window.openAdminUserView('uid-adm2'); await settle();
+        assert(!doc.querySelector('[data-access]') && !text('admin-user-view').includes('Acceso'), 'the Acceso section is hidden on another admin\'s page');
+        window.closeModal();
+        await window.openAdminUserView('uid-blk'); await settle();
+        const accBtn = v => doc.querySelector('#admin-user-view [data-access="' + v + '"]');
+        assert(!!accBtn('active') && !!accBtn('blocked') && accBtn('active').disabled === true && accBtn('blocked').disabled === false, 'the user page shows [Activo] [Bloqueado] chips, current state (Activo) disabled');
+        assert(text('admin-user-view').includes('Bloquea al instante si sospechas abuso o spam.'), 'active hint text');
+        delete lastRpc.admin_set_user_blocked;
+        window.openAdminBlockConfirm(true);
+        assert(text('modal-title') === 'Bloquear usuario' && !!doc.getElementById('admin-block-msg') && !lastRpc.admin_set_user_blocked, 'tapping the other chip opens a confirm sheet and does NOT write yet');
+        await window.confirmAdminBlock(); await settle();
+        assert(lastRpc.admin_set_user_blocked && lastRpc.admin_set_user_blocked.p_target === 'uid-blk' && lastRpc.admin_set_user_blocked.p_blocked === true && lastRpc.admin_set_user_blocked.p_message === null, 'confirming sends {p_target,p_blocked:true,p_message:null} for a blank message');
+        assert(text('toast') === 'Usuario bloqueado ✓' && accBtn('blocked').disabled === true && accBtn('active').disabled === false && text('admin-user-view').includes('No puede publicar, editar ni contactar'), 'after the re-read the page shows Bloqueado with its hint and a confirmation toast');
+        // unblock, with a message
+        window.openAdminBlockConfirm(false);
+        assert(text('modal-title') === 'Desbloquear usuario', 'unblock opens its own confirm sheet');
+        doc.getElementById('admin-block-msg').value = '  Ya puedes volver  ';
+        const msgsBefore = SAMPLE.admin_messages.length;
+        await window.confirmAdminBlock(); await settle();
+        assert(lastRpc.admin_set_user_blocked.p_blocked === false && lastRpc.admin_set_user_blocked.p_message === 'Ya puedes volver' && SAMPLE.admin_messages.length === msgsBefore + 1, 'unblock sends the trimmed message, which lands in admin_messages');
+        assert(text('toast') === 'Usuario desbloqueado ✓' && accBtn('active').disabled === true, 'unblock works and the page shows Activo again');
+        // error mapping
+        const errCase = async (msg, expected) => {
+          const realRpc = fakeClient.rpc;
+          fakeClient.rpc = async () => ({ data: null, error: { message: msg } });
+          window.openAdminBlockConfirm(true);
+          await window.confirmAdminBlock(); await settle();
+          fakeClient.rpc = realRpc;
+          assert(text('toast') === expected, 'RPC error ' + msg + ' maps to its friendly toast');
+          assert(!!doc.getElementById('admin-block-confirm-btn') && doc.getElementById('admin-block-confirm-btn').disabled === false, 'the confirm button re-enables after ' + msg);
+          window.mcModalBack();
+        };
+        await errCase('cannot_block_self', 'No puedes bloquear tu propia cuenta.');
+        await errCase('cannot_block_admin', 'No se puede bloquear a otro administrador.');
+        await errCase('message_too_long', 'El mensaje es demasiado largo (máx. 1000).');
+        window.closeModal();
+      }
+
+      // ── Admin broadcast ──
+      {
+        assert((await window.openAccount(), true) && text('modal-body').includes('Mensaje a usuarios') && text('modal-body').includes('Avisa a todos o a personas elegidas'), 'admins see the "Mensaje a usuarios" entry in the account menu');
+        await window.openAdminBroadcast(); await settle();
+        const reviewBtn = () => doc.getElementById('admin-bc-review-btn');
+        assert(text('modal-title') === 'Mensaje a usuarios' && reviewBtn().disabled === true, 'the review button is disabled with no text');
+        const typeText = v => { doc.getElementById('admin-bc-text').value = v; window.setAdminBcText(v); };
+        typeText('Aviso general de prueba');
+        assert(reviewBtn().disabled === false && text('admin-bc-chars').startsWith('23'), '"Todos" + text enables review, with a live character counter');
+        window.reviewAdminBroadcast();
+        assert(text('modal-title') === 'Confirmar envío' && text('modal-body').includes('Se enviará a 3 personas') && text('modal-body').includes('Aviso general de prueba') && text('modal-body').includes('No se puede deshacer'), 'the confirm screen shows the count (4 registered accounts minus the sender), the text and the no-undo warning');
+        delete lastRpc.admin_broadcast_message;
+        const msgs0 = SAMPLE.admin_messages.length;
+        await window.sendAdminBroadcast(); await settle();
+        assert(lastRpc.admin_broadcast_message && lastRpc.admin_broadcast_message.p_profile_ids === null && lastRpc.admin_broadcast_message.p_message === 'Aviso general de prueba', '"Todos" sends p_profile_ids null');
+        assert(SAMPLE.admin_messages.length === msgs0 + 3 && text('toast') === 'Enviado a 3 personas ✓', 'the fixture RPC delivered to 3 and the success toast shows the returned count');
+        // Elegir mode
+        await window.openAdminBroadcast(); await settle();
+        window.setAdminBcMode('pick');
+        typeText('Solo para dos');
+        assert(reviewBtn().disabled === true && text('admin-bc-count').startsWith('0 seleccionados'), '"Elegir" with nobody selected keeps review disabled');
+        window.setAdminBcSearch('Persona');
+        assert(text('admin-bc-results').includes('Persona Bloqueable') && !text('admin-bc-results').includes('Otro Admin'), 'the search redraws only the results box, filtering by name');
+        window.setAdminBcSearch('');
+        const cbFor = id => doc.querySelector('#admin-bc-results input[data-uid="' + id + '"]');
+        assert(!!cbFor('uid-blk') && !!cbFor('uid-c'), 'the pick list renders a checkbox per user'); window.toggleAdminBcUser('uid-blk'); window.toggleAdminBcUser('uid-c');
+        assert(text('admin-bc-count').startsWith('2 seleccionados') && reviewBtn().disabled === false, 'selecting people updates the running count and enables review');
+        window.reviewAdminBroadcast();
+        assert(text('modal-body').includes('Se enviará a 2 personas'), 'the confirm screen shows the selection size');
+        await window.sendAdminBroadcast(); await settle();
+        assert(JSON.stringify([...lastRpc.admin_broadcast_message.p_profile_ids].sort()) === JSON.stringify(['uid-blk', 'uid-c']), '"Elegir" sends exactly the selected ids');
+        assert(text('toast') === 'Enviado a 2 personas ✓', 'success toast for the chosen-recipients send');
+        window.closeModal();
+        extraProfiles = [];
+      }
       currentBusiness = saved.biz; extraBusinesses = saved.extra;
       currentProfile.phone_verification_status = saved.status; currentProfile.is_admin = saved.admin; currentProfile.phone = saved.phone; currentProfile.display_name = saved.name;
     }

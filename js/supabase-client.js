@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='cbbc006dd5';
+window.MC_BUILD_CLIENT='3d60b46e7a';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -197,14 +197,14 @@ MC.currentAccount=async function(){
   const uid=session.user.id;
   // profile + businesses are independent — fetch them together, not in series.
   const [{data:prof},{data:businesses}]=await Promise.all([
-    sb.from('profiles').select('display_name,phone,is_admin,phone_verification_status,phone_verification_reason').eq('id',uid).single(),
+    sb.from('profiles').select('display_name,phone,is_admin,phone_verification_status,phone_verification_reason,banned').eq('id',uid).single(),
     sb.from('businesses').select('*').eq('profile_id',uid).order('is_primary',{ascending:false}).order('created_at',{ascending:true})
   ]);
   const all=businesses||[];
   const primary=all.find(b=>b.is_primary)||null;
   return {
     signedIn:true,email:session.user.email,displayName:(prof&&prof.display_name)||'Vecino',phone:(prof&&prof.phone)||null,
-    isAdmin:!!(prof&&prof.is_admin),business:primary,businesses:all,
+    isAdmin:!!(prof&&prof.is_admin),banned:!!(prof&&prof.banned),business:primary,businesses:all,
     phoneVerificationStatus:(prof&&prof.phone_verification_status)||'pending',
     phoneVerificationReason:(prof&&prof.phone_verification_reason)||null
   };
@@ -719,6 +719,12 @@ MC.adminFetchAllUsers=async function(){
     businesses:bizByProfile[p.id]||[]
   }));
 };
+
+/* Block/unblock (profiles.banned only — content untouched; NOT the destructive
+   admin_remove_user purge). Optional message lands in admin_messages. */
+MC.adminSetUserBlocked=async(profileId,blocked,message)=>sb.rpc('admin_set_user_blocked',{p_target:profileId,p_blocked:!!blocked,p_message:(message&&message.trim())||null});
+/* Broadcast an admin message: null ids = every registered account except the sender. Returns the recipient count. */
+MC.adminBroadcastMessage=async(message,profileIds)=>sb.rpc('admin_broadcast_message',{p_message:message,p_profile_ids:Array.isArray(profileIds)?profileIds:null});
 
 /* One profile + its businesses, for the user detail page. */
 MC.adminFetchUserDetail=async function(userId){

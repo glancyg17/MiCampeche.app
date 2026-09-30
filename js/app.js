@@ -1,4 +1,4 @@
-window.MC_BUILD='cbbc006dd5';
+window.MC_BUILD='3d60b46e7a';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -3533,6 +3533,14 @@ function renderAccountSignedIn(acct){
       </span>
       <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
     </button>`:''}
+    ${acct.isAdmin?`<button class="menu-item" onclick="openAdminBroadcast()" style="border:1.5px solid var(--line2);margin-bottom:4px">
+      <span class="menu-item-ico">${svgIco('message')}</span>
+      <span class="menu-item-txt">
+        <span class="menu-item-lbl">Mensaje a usuarios</span>
+        <span class="menu-item-sub">Avisa a todos o a personas elegidas</span>
+      </span>
+      <svg class="ico menu-item-arr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+    </button>`:''}
     ${acct.isAdmin?`<button class="menu-item" onclick="openPending()" style="border:1.5px solid var(--line2);margin-bottom:4px">
       <span class="menu-item-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span>
       <span class="menu-item-txt">
@@ -4047,6 +4055,66 @@ async function openAdminUserView(userId,backRestore){
   adminUserPosts=posts;
   renderAdminUserView(detail);
 }
+let adminBlockSaving=false;
+let adminBlockTarget=null; // the requested state (true = block) while the confirm sheet is open
+/* Same two-chip pattern as the business Premium control: the current
+   state is the disabled "on" chip; tapping the other one opens a confirm
+   sheet rather than writing immediately. */
+function adminBlockSectionHtml(d){
+  const blocked=!!d.banned;
+  const opt=(isBlocked,label)=>{
+    const on=blocked===isBlocked;
+    return `<button class="chip${on?' on':''}" data-access="${isBlocked?'blocked':'active'}"${on?' disabled style="cursor:default"':''} onclick="openAdminBlockConfirm(${isBlocked})">${label}</button>`;
+  };
+  return adminSectionLabel('Acceso')
+    +`<div style="display:flex;gap:8px">${opt(false,'Activo')}${opt(true,'Bloqueado')}</div>`
+    +`<div style="font-size:12px;color:var(--ink3);margin-top:8px;line-height:1.4">${blocked?'No puede publicar, editar ni contactar. Su contenido no se borra.':'Bloquea al instante si sospechas abuso o spam.'}</div>`;
+}
+function openAdminBlockConfirm(blocked){
+  const d=adminUserDetail;
+  if(!d||adminBlockSaving||!!d.banned===!!blocked)return;
+  adminBlockTarget=!!blocked;
+  mcModalPushView('adminBlock');
+  document.getElementById('modal-title').textContent=blocked?'Bloquear usuario':'Desbloquear usuario';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="color:var(--ink3);font-size:13px;margin-bottom:10px;line-height:1.5">${blocked
+      ?`<b>${e(d.display_name||'Esta persona')}</b> no podrá publicar, editar ni contactar. Su contenido no se borra.`
+      :`<b>${e(d.display_name||'Esta persona')}</b> podrá publicar, editar y contactar de nuevo.`}</div>
+    <textarea class="ft" id="admin-block-msg" maxlength="1000" placeholder="${blocked?'Ej. Detectamos spam en tus publicaciones.':'Ej. Ya revisamos tu caso, puedes volver a publicar.'}"></textarea>
+    <div style="font-size:12px;color:var(--ink3);margin:-4px 0 10px">Mensaje para la persona (opcional)</div>
+    <div style="display:flex;gap:8px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink);box-shadow:none" onclick="mcModalBack()">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1" id="admin-block-confirm-btn" onclick="confirmAdminBlock()">${blocked?'Bloquear':'Desbloquear'}</button>
+    </div>`;
+}
+async function confirmAdminBlock(){
+  const id=adminViewingUserId;
+  const blocked=adminBlockTarget;
+  if(!id||blocked===null||adminBlockSaving)return;
+  adminBlockSaving=true;
+  const btn=document.getElementById('admin-block-confirm-btn');
+  if(btn)btn.disabled=true;
+  const msgEl=document.getElementById('admin-block-msg');
+  const {error}=await MC.adminSetUserBlocked(id,blocked,msgEl?msgEl.value:'');
+  if(error){
+    adminBlockSaving=false;
+    if(btn)btn.disabled=false;
+    const m=(error.message||'');
+    toast(m.includes('cannot_block_self')?'No puedes bloquear tu propia cuenta.'
+      :m.includes('cannot_block_admin')?'No se puede bloquear a otro administrador.'
+      :m.includes('message_too_long')?'El mensaje es demasiado largo (máx. 1000).'
+      :pgErrorToast(error,'No se pudo cambiar el acceso.'));
+    return;
+  }
+  mcModalBack();
+  const fresh=await MC.adminFetchUserDetail(id); // never trust the RPC return — re-read the row
+  adminBlockSaving=false;
+  adminBlockTarget=null;
+  if(adminViewingUserId!==id)return;
+  if(fresh){adminUserDetail=fresh;renderAdminUserView(fresh);}
+  if(fresh&&!!fresh.banned===!!blocked)toast(blocked?'Usuario bloqueado ✓':'Usuario desbloqueado ✓');
+  else toast('El cambio no se aplicó — revisa los permisos.');
+}
 function renderAdminUserView(d){
   adminPostsSource=adminUserPosts;
   adminMsgTarget={profileId:d.id,name:d.display_name};
@@ -4075,6 +4143,7 @@ function renderAdminUserView(d){
     ${(pvs==='rejected'&&d.phone_verification_reason)?`<div style="color:var(--ink3);font-size:12.5px;margin-top:3px">${e(d.phone_verification_reason)}</div>`:''}
     ${d.banned?'<div style="margin-top:10px;padding:9px 12px;border-radius:var(--rs);background:var(--signal);color:#fff;font-size:12.5px;font-weight:700">Cuenta bloqueada</div>':''}
     ${joined?`<div style="color:var(--ink3);font-size:12px;margin-top:6px">Se unió el ${joined}</div>`:''}
+    ${d.is_admin?'':adminBlockSectionHtml(d)}
     ${adminSectionLabel('Sus negocios'+(bizs.length?' ('+bizs.length+')':''))}
     ${bizHtml}
     <div id="admin-posts-section">${adminPostsSectionHtml()}</div>
@@ -4167,6 +4236,104 @@ async function submitAdminMessage(profileId){
   if(error){toast(pgErrorToast(error,'No se pudo enviar.'));if(btn){btn.disabled=false;btn.textContent='Enviar';}return;}
   mcModalBack();
   toast('Mensaje enviado ✓');
+}
+
+/* ── Broadcast: one admin message to everyone, or to chosen accounts ── */
+let adminBcUsers=[];
+let adminBcMode='all';
+let adminBcSelected=new Set();
+let adminBcSearch='';
+let adminBcText='';
+let adminBcSending=false;
+let adminBcSelfId=null;
+async function openAdminBroadcast(){
+  mcModalPushView('account');
+  adminBcMode='all';adminBcSelected=new Set();adminBcSearch='';adminBcText='';adminBcSending=false;
+  document.getElementById('modal-title').textContent='Mensaje a usuarios';
+  document.getElementById('modal-body').innerHTML=ADMIN_LOADING;
+  document.getElementById('modal-bg').classList.add('on');
+  [adminBcUsers,adminBcSelfId]=await Promise.all([MC.adminFetchAllUsers(),MC.ready]);
+  renderAdminBroadcast();
+}
+function adminBcRecipients(){return adminBcUsers.filter(u=>String(u.id)!==String(adminBcSelfId));} // "Todos" = every registered account except the sender
+function adminBcFiltered(){
+  const q=adminBcSearch.trim().toLowerCase();
+  const qDigits=/^[\d\s+()-]+$/.test(q)?digitsOnly(q):'';
+  return adminBcUsers.filter(u=>{
+    if(!q)return true;
+    if((u.displayName||'').toLowerCase().includes(q))return true;
+    return !!qDigits&&digitsOnly(u.phone).includes(qDigits);
+  }).sort((a,b)=>(a.displayName||'').localeCompare(b.displayName||''));
+}
+function renderAdminBroadcast(){
+  const chip=(v,l)=>`<button class="chip${adminBcMode===v?' on':''}" onclick="setAdminBcMode('${v}')">${l}</button>`;
+  document.getElementById('modal-body').innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:12px">${chip('all','Todos')}${chip('pick','Elegir usuarios')}</div>
+    ${adminBcMode==='pick'?`<input class="fi" id="admin-bc-search" type="search" autocomplete="off" placeholder="Buscar por nombre o teléfono" value="${e(adminBcSearch)}" oninput="setAdminBcSearch(this.value)" style="margin-bottom:8px">
+    <div id="admin-bc-count" style="font-size:12px;color:var(--ink3);margin-bottom:6px"></div>
+    <div id="admin-bc-results" style="max-height:240px;overflow-y:auto;margin-bottom:12px"></div>`:''}
+    <textarea class="ft" id="admin-bc-text" maxlength="1000" placeholder="Escribe tu mensaje…" oninput="setAdminBcText(this.value)">${e(adminBcText)}</textarea>
+    <div id="admin-bc-chars" style="font-size:12px;color:var(--ink3);text-align:right;margin:-2px 0 10px"></div>
+    <button class="submit-btn" id="admin-bc-review-btn" onclick="reviewAdminBroadcast()">Revisar y enviar</button>`;
+  if(adminBcMode==='pick')renderAdminBcResults();
+  updateAdminBcControls();
+}
+function setAdminBcMode(v){adminBcMode=v;renderAdminBroadcast();}
+function setAdminBcText(v){adminBcText=String(v||'');updateAdminBcControls();}
+// Only the results box is redrawn while typing so the search input keeps focus.
+function setAdminBcSearch(v){adminBcSearch=String(v||'');renderAdminBcResults();}
+function toggleAdminBcUser(id){
+  if(adminBcSelected.has(id))adminBcSelected.delete(id);else adminBcSelected.add(id);
+  updateAdminBcControls();
+}
+function renderAdminBcResults(){
+  const box=document.getElementById('admin-bc-results');
+  if(!box)return;
+  const rows=adminBcFiltered();
+  box.innerHTML=rows.length?rows.map(u=>`<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer">
+      <input type="checkbox" data-uid="${e(String(u.id))}" ${adminBcSelected.has(String(u.id))?'checked':''} onchange="toggleAdminBcUser('${e(String(u.id))}')">
+      <span style="min-width:0"><span style="font-weight:600;font-size:13.5px">${e(u.displayName||'Sin nombre')}</span><span style="display:block;font-size:12px;color:var(--ink3)">${e(u.phone||'Sin teléfono')}</span></span>
+    </label>`).join(''):'<div style="text-align:center;padding:20px 10px;color:var(--ink3)">Sin resultados.</div>';
+}
+function updateAdminBcControls(){
+  const cnt=document.getElementById('admin-bc-count');
+  if(cnt)cnt.textContent=adminBcSelected.size+' seleccionados';
+  const ch=document.getElementById('admin-bc-chars');
+  if(ch)ch.textContent=adminBcText.length+' / 1000';
+  const btn=document.getElementById('admin-bc-review-btn');
+  if(btn)btn.disabled=!adminBcText.trim()||(adminBcMode==='pick'&&adminBcSelected.size===0);
+}
+function reviewAdminBroadcast(){
+  const text=adminBcText.trim();
+  if(!text||(adminBcMode==='pick'&&!adminBcSelected.size))return;
+  const n=adminBcMode==='all'?adminBcRecipients().length:adminBcSelected.size;
+  mcModalPushView('adminBroadcast',renderAdminBroadcast);
+  document.getElementById('modal-title').textContent='Confirmar envío';
+  document.getElementById('modal-body').innerHTML=`
+    <div style="font-weight:800;font-size:16px;margin-bottom:8px">Se enviará a ${n} ${n===1?'persona':'personas'}</div>
+    <div style="border:1.5px solid var(--line2);border-radius:var(--rs);padding:12px 14px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:10px">${e(text)}</div>
+    <div style="color:var(--signal);font-size:12.5px;font-weight:600;margin-bottom:12px">No se puede deshacer.</div>
+    <div style="display:flex;gap:8px">
+      <button class="submit-btn" style="margin-top:0;flex:1;background:var(--paper2);color:var(--ink);box-shadow:none" onclick="mcModalBack()">Cancelar</button>
+      <button class="submit-btn" style="margin-top:0;flex:1" id="admin-bc-send-btn" onclick="sendAdminBroadcast()">Enviar</button>
+    </div>`;
+}
+async function sendAdminBroadcast(){
+  if(adminBcSending)return;
+  adminBcSending=true;
+  const btn=document.getElementById('admin-bc-send-btn');
+  if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+  const {data,error}=await MC.adminBroadcastMessage(adminBcText.trim(),adminBcMode==='all'?null:[...adminBcSelected]);
+  adminBcSending=false;
+  if(error){
+    const m=error.message||'';
+    toast(m.includes('too_many_recipients')?'Máximo 500 destinatarios por envío.':m.includes('invalid_message_length')?'El mensaje debe tener entre 1 y 1000 caracteres.':pgErrorToast(error,'No se pudo enviar.'));
+    if(btn){btn.disabled=false;btn.textContent='Enviar';}
+    return;
+  }
+  mcModalBack(); // confirm screen -> composer
+  mcModalBack(); // composer -> account
+  toast('Enviado a '+data+' personas ✓');
 }
 
 /* ── 3. One business ── */
@@ -5525,6 +5692,7 @@ async function openBusinessEdit(){
    instead of with a raw policy error. */
 function runWriteGate(acct,kindForSignin){
   if(!acct.signedIn){openSignInGate(kindForSignin);return false;}
+  if(acct.banned){openBlockedNotice();return false;}
   if(acct.phoneVerificationStatus!=='verified'){openVerificationGate(acct);return false;}
   return true;
 }
@@ -6448,14 +6616,13 @@ function openSearchResult(kind,id){
 
 /* ══════════════ SUGGESTIONS + CONTACTO (user→admin messages, replies, inboxes) ══════════════
    One table (public.suggestions) holds both kinds of user→admin message:
-   kind='sugerencia' (suggestions box + weekly prompt) and kind='contacto'
+   kind='sugerencia' (suggestions box) and kind='contacto'
    (the Contacto form, which replaces the old mailto). Admin replies are rows
    in public.admin_messages (in_reply_to + a short reply_context snapshot),
    so a reply reaches the user as: popup next app-open + push (existing) and
    a permanent entry in their Mensajes inbox (incoming only — users write to
    us through Contacto, never by replying in the inbox). */
 const SUGGEST_MIN=5,SUGGEST_MAX=1000;
-const SUGGEST_PROMPT_EVERY_MS=7*24*60*60*1000;
 let suggestionKind='sugerencia';   // 'sugerencia' | 'contacto' — set by renderSuggestionForm, read by submitSuggestion
 // Suggestions: same gate as every other write (signed in + phone verified).
 // Checked when the form OPENS (not on submit) so nobody types something and
@@ -6473,7 +6640,18 @@ async function openSuggestionForm(source){
 async function openContactForm(){
   const acct=await MC.currentAccount();
   if(!acct.signedIn)renderContactGuest();
+  else if(acct.banned){openBlockedNotice();return;}
   else renderSuggestionForm('contact');
+  document.getElementById('modal-bg').classList.add('on');
+}
+/* Shown instead of any write/contact for a blocked account (profiles.banned).
+   The database already refuses their writes; this is the clear-message half. */
+function openBlockedNotice(){
+  if(document.getElementById('modal-bg').classList.contains('on'))mcModalPushView('account');
+  document.getElementById('modal-title').textContent='Acceso restringido';
+  document.getElementById('modal-body').innerHTML='<div style="color:var(--ink3);font-size:13.5px;line-height:1.5;margin-bottom:14px">Tu cuenta tiene restringidas las publicaciones y los contactos por ahora. Si crees que es un error, escríbenos por correo.</div>'
+    +'<button class="submit-btn" style="margin-bottom:8px" onclick="contactUs()">Escribir por correo</button>'
+    +'<button class="submit-btn" style="background:var(--paper2);color:var(--ink);box-shadow:none" onclick="closeModal()">Cerrar</button>';
   document.getElementById('modal-bg').classList.add('on');
 }
 function renderContactGuest(){
@@ -6483,16 +6661,14 @@ function renderContactGuest(){
     +'<button class="submit-btn" style="background:var(--paper2);color:var(--ink);box-shadow:none" onclick="contactUs()">Escribir por correo</button>';
 }
 function renderSuggestionForm(source){
-  const weekly=source==='weekly',contact=source==='contact';
+  const contact=source==='contact';
   suggestionKind=contact?'contacto':'sugerencia';
-  document.getElementById('modal-title').textContent=weekly?'Tu opinión cuenta':(contact?'Contacto':'Sugerencias');
-  const intro=weekly?'¿Hay algo que te gustaría ver o mejorar en MiCampeche? Cuéntanos — es opcional.'
-    :contact?'Escríbenos tu pregunta, problema o comentario. Te respondemos aquí mismo, en <b>Mensajes</b>.'
+  document.getElementById('modal-title').textContent=contact?'Contacto':'Sugerencias';
+  const intro=contact?'Escríbenos tu pregunta, problema o comentario. Te respondemos aquí mismo, en <b>Mensajes</b>.'
     :'Cuéntanos qué te gustaría ver, mejorar o arreglar en MiCampeche.';
   document.getElementById('modal-body').innerHTML='<div style="color:var(--ink3);font-size:13.5px;line-height:1.5;margin-bottom:10px">'+intro
     +'</div><textarea class="ft" id="suggestion-text" maxlength="'+SUGGEST_MAX+'" placeholder="'+(contact?'Escribe tu mensaje…':'Escribe tu sugerencia…')+'"></textarea>'
     +'<div style="display:flex;gap:8px;margin-top:4px">'
-    +(weekly?'<button class="submit-btn" style="flex:1;background:var(--paper2);color:var(--ink);box-shadow:none" onclick="closeModal()">Ahora no</button>':'')
     +'<button class="submit-btn" id="suggestion-submit-btn" style="flex:1" onclick="submitSuggestion()">Enviar</button></div>';
 }
 async function submitSuggestion(){
@@ -6513,34 +6689,12 @@ async function submitSuggestion(){
   toast(contact?'¡Mensaje enviado! Te respondemos en Mensajes ✓':'¡Gracias por tu sugerencia! ✓');
 }
 
-// Weekly prompt: verified accounts only, at most once per 7 days per account
-// per device (localStorage, keyed by uid). The timestamp is written when the
-// popup is SHOWN, so closing it any way (Ahora no / ✕ / backdrop) counts as
-// skipping this week — it's optional, unlike the admin-message popup. Never
-// stacks on top of anything else: if any layer is open when it fires, it
-// quietly waits for the next app-open.
 function anyOverlayOpen(){
   return ['modal-bg','menu-bg','wx-lb-bg','install-gate','tip-gate','desktop-gate','search-panel'].some(id=>{
     const el=document.getElementById(id);
     return !!el&&el.classList.contains('on');
   });
 }
-async function maybeShowWeeklySuggestionPrompt(){
-  if(anyOverlayOpen())return;
-  const acct=await MC.currentAccount();
-  if(!acct.signedIn||acct.phoneVerificationStatus!=='verified')return;
-  const uid=await MC.ready;
-  if(!uid)return;
-  const key='mc_sugg_prompt_'+uid;
-  let last=0;
-  try{last=parseInt(localStorage.getItem(key)||'0',10)||0;}catch(err){return;}
-  if(Date.now()-last<SUGGEST_PROMPT_EVERY_MS)return;
-  if(anyOverlayOpen())return;   // re-check: the awaits above gave other popups time to open
-  try{localStorage.setItem(key,String(Date.now()));}catch(err){}
-  renderSuggestionForm('weekly');
-  document.getElementById('modal-bg').classList.add('on');
-}
-
 /* ── User inbox: incoming messages only (admin messages + replies) ── */
 async function openMyMessages(){
   const acct=await MC.currentAccount();
@@ -6676,7 +6830,6 @@ async function init(){
   nudgeAdminVerifications();
   maybeShowMandaditoReviewNudge();
   maybeShowUndismissedMessages();
-  setTimeout(maybeShowWeeklySuggestionPrompt,8000);
   setTiendaMode('mercado');
   setAnunciosMode('eventos');
   setReportarMode('avisos');
