@@ -61,6 +61,8 @@ Unchanged at the constraint level this session.
 
 ### Ofertas — payment messaging, self-edit after rejection
 
+**2026-09-30 — Oferta lifespan removed:** public until sold out or admin-removed; sold-out real ofertas are hidden from public lists (examples still shown with the Agotado ribbon); latest booking date wins when an oferta has several bookings.
+
 **Bug found and fixed: `pickSlotDay()` never checked Premium free-slot eligibility.** The actual submission logic (`submitPost`'s `kind==='oferta'` branch) already correctly checked `oferta_free_slot_available` and skipped Stripe for an eligible Premium business — no one was ever wrongly charged. But `pickSlotDay()`, the function that renders the day-picker's confirmation message and button label the instant a day is tapped, unconditionally showed "$99 MXN" / "Pagar $99 y reservar" regardless of eligibility, purely a display bug. Fixed by having `pickSlotDay()` read a synchronous, already-computed eligibility flag (`selectedOfertaFreeEligible`, set by the existing `applyOfertaBusinessHints()` the moment a business is selected) instead of assuming payment is always required.
 
 **A real, structural gap found and closed: `ofertas` had never had an owner-UPDATE RLS policy in the project's history** — only admin moderation could ever `UPDATE` the table. Combined with the pre-existing `free_oferta_booking_on_reject` trigger (rejecting an oferta deletes its `ofertas_bookings` row, freeing the day back to the calendar), this meant a rejected oferta had no path back to life at all — not a regression, just something that had simply never been built. Added directly in Supabase:

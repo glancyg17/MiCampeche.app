@@ -822,9 +822,8 @@ const fakeClient = {
       assert(pool.length === 1 && pool[0].id === 't-real-old', 'tier 2: with no oferta live today, real (non-example) live ofertas are pooled and examples are excluded');
     }
 
-    // Tier 3: no real oferta at all — examples fill the slot, exempt from the
-    // 7-day lifespan (matching the Ofertas tab), but a sold-out example is
-    // still excluded.
+    // Tier 3: no real oferta at all — examples fill the slot (always shown, matching
+    // the Ofertas tab), but a sold-out example is still excluded.
     SAMPLE.ofertas = [
       baseOferta('t-ex-live', { is_example: true, created_at: new Date(ds(-30) + 'T12:00:00').toISOString() }),
       baseOferta('t-ex-soldout', { is_example: true, quantity_sold: 5, quantity_total: 5, created_at: new Date(ds(-1) + 'T12:00:00').toISOString() }),
@@ -833,6 +832,65 @@ const fakeClient = {
     {
       const pool = window.homeOfertaPool();
       assert(pool.length === 1 && pool[0].id === 't-ex-live', 'tier 3: with zero real ofertas, a live example fills the slot and a sold-out example is excluded');
+    }
+
+    // No lifespan: an unsold real oferta booked 20 days ago is still pooled when nothing was booked today.
+    SAMPLE.ofertas = [
+      baseOferta('t-old20', { ofertas_bookings: [{ booked_date: ds(-20) }], created_at: new Date(ds(-20) + 'T12:00:00').toISOString() }),
+      baseOferta('t-old-soldout', { quantity_sold: 5, quantity_total: 5, ofertas_bookings: [{ booked_date: ds(-3) }] }),
+    ];
+    await window.refreshContent();
+    {
+      const pool = window.homeOfertaPool();
+      assert(pool.length === 1 && pool[0].id === 't-old20', 'a 20-day-old unsold real oferta is eligible for the Oferta del día pool (no lifespan); a real sold-out one is not');
+      const ofText = () => (doc.getElementById('of-list') || {}).textContent || '';
+      assert(ofText().includes('Oferta t-old20') && !ofText().includes('Oferta t-old-soldout'), 'the public wheel shows the old unsold oferta and hides the real sold-out one');
+    }
+    SAMPLE.ofertas = [
+      baseOferta('t-ex-soldout2', { is_example: true, quantity_sold: 5, quantity_total: 5, ofertas_bookings: [{ booked_date: ds(-3) }] }),
+    ];
+    await window.refreshContent();
+    assert((doc.getElementById('of-list').textContent || '').includes('Oferta t-ex-soldout2'), 'a sold-out EXAMPLE oferta still appears in the public wheel');
+
+    // Several bookings on one oferta: the NEWEST booked_date wins regardless of array order.
+    // (MC isn't reachable from the test scope, so each fetch is observed through the UI/state it feeds.)
+    {
+      const savedSessSB = currentSession;
+      currentSession = { user: { id: 'uid-1', is_anonymous: false, email: 'ricardo@example.com' } };
+      const mkTwo = (id, bookings, over) => baseOferta(id, Object.assign({ submitted_by: 'uid-1', ofertas_bookings: bookings, created_at: new Date(ds(-30) + 'T12:00:00').toISOString() }, over || {}));
+      const oldB = { booked_date: ds(-8) }, newB = { booked_date: ds(-1) };
+      const settleB = () => new Promise(r => setTimeout(r, 25));
+      for (const [label, arr] of [['older first', [oldB, newB]], ['newer first', [newB, oldB]]]) {
+        SAMPLE.ofertas = [
+          mkTwo('t-two', arr),
+          mkTwo('t-single', [{ booked_date: ds(-4) }]),
+          mkTwo('t-two-sold', arr, { quantity_sold: 5, quantity_total: 5 }),
+          mkTwo('t-single-sold', [{ booked_date: ds(-4) }], { quantity_sold: 5, quantity_total: 5 }),
+        ];
+        await window.refreshContent();
+        const pool = window.homeOfertaPool();
+        assert(pool.find(o => o.id === 't-two').postedDs === ds(-1) && pool.find(o => o.id === 't-single').postedDs === ds(-4), 'fetchOfertas takes the newest booking; a single-booking oferta is unchanged (' + label + ')');
+        await window.openMyActiveOfertas(null, 'account'); await settleB();
+        window.setMyOfertasTab('finalizadas');
+        const fin = text('modal-body');
+        assert(fin.indexOf('Oferta t-two-sold') >= 0 && fin.indexOf('Oferta t-two-sold') < fin.indexOf('Oferta t-single-sold'), 'fetchMyArrivedOfertas takes the newest booking: the two-booking oferta (newest -1) sorts before the single one (-4) in Finalizadas (' + label + ')');
+        window.closeModal();
+      }
+      // newest booking in the FUTURE, stale one in the past: not public/arrived yet, scheduled in Pendientes
+      SAMPLE.ofertas = [mkTwo('t-future', [{ booked_date: ds(-8) }, { booked_date: ds(3) }, { booked_date: ds(-8) }])];
+      await window.refreshContent();
+      assert(!window.homeOfertaPool().some(o => o.id === 't-future'), 'an oferta whose newest booking is in the future is not public yet');
+      await window.openMyActiveOfertas(null, 'account'); await settleB();
+      assert(text('modal-body').includes('Activas (0)') && text('modal-body').includes('Pendientes (1)'), 'it is not Activa, it is in Pendientes');
+      window.setMyOfertasTab('pendientes');
+      assert(text('modal-body').includes('Oferta t-future') && text('modal-body').includes('Programada') && text('modal-body').includes(window.dsToLongEs(ds(3))), 'shown as scheduled with the NEWEST booking date');
+      window.closeModal();
+      SAMPLE.ofertas = [mkTwo('t-p1', [{ booked_date: ds(2) }, { booked_date: ds(5) }])];
+      await window.openMyActiveOfertas(null, 'account'); await settleB();
+      window.setMyOfertasTab('pendientes');
+      assert(text('modal-body').includes(window.dsToLongEs(ds(5))) && !text('modal-body').includes(window.dsToLongEs(ds(2))), 'fetchMyPendingOfertas takes the newest booking');
+      window.closeModal();
+      currentSession = savedSessSB;
     }
 
     // Empty OFERTAS entirely — the slot must stay empty, not throw.
@@ -2498,7 +2556,7 @@ const fakeClient = {
       extraBusinesses = [{ id: 'biz-x', profile_id: 'uid-1', business_name: 'Otro Negocio', is_primary: false, is_premium: false, status: 'published' }];
       const mk = (id, biz, name, booked, sold, total) => ({ id, business_id: biz, business_name_snapshot: name, seller_phone: '981 200 3000', title: 'Oferta ' + id, price_was: 100, price_now: 50, quantity_total: total, quantity_sold: sold, is_premium: false, image_url: '', status: 'published', submitted_by: 'uid-1', created_at: NOW.toISOString(), ofertas_bookings: [{ booked_date: booked }] });
       SAMPLE.ofertas.push(
-        mk('ox1', 'biz-1', 'Negocio Oferta', ds(-8), 1, 5),   // expired, unsold units left
+        mk('ox1', 'biz-1', 'Negocio Oferta', ds(-30), 1, 5),  // 30 days old, unsold — no lifespan any more, so still Activa
         mk('ox2', 'biz-x', 'Otro Negocio', ds(-1), 3, 3),     // sold out
         mk('ox3', 'biz-x', 'Otro Negocio', ds(0), 0, 4),      // active
         mk('ox4', 'biz-1', 'Negocio Oferta', ds(0), 4, 5)     // one unit from sold out
@@ -2507,10 +2565,10 @@ const fakeClient = {
       await new Promise(r => setTimeout(r, 20));
       let mb = () => text('modal-body');
       assert(mb().includes('setMyOfertasBizFilter') && mb().includes('Otro Negocio'), 'with 2+ businesses and no business scoping, business chips appear above the tabs');
-      assert(mb().includes('Activas (3)') && mb().includes('Pendientes (3)') && mb().includes('Finalizadas (2)'), 'tab counts: Activas o1+ox3+ox4, Pendientes o3+o4+o5, Finalizadas ox1 (expired) + ox2 (sold out)');
-      assert(!mb().includes('Oferta ox1') && !mb().includes('Oferta ox2'), 'expired and sold-out ofertas are absent from Activas');
+      assert(mb().includes('Activas (4)') && mb().includes('Pendientes (3)') && mb().includes('Finalizadas (1)'), 'tab counts: Activas o1+ox1+ox3+ox4, Pendientes o3+o4+o5, Finalizadas ox2 (sold out) only');
+      assert(mb().includes('Oferta ox1') && mb().includes("confirmOfertaSaleStep1('ox1')") && !mb().includes('Oferta ox2'), 'a 30-day-old unsold oferta is in Activas with its +1 button; the sold-out one is not');
       window.setMyOfertasTab('finalizadas');
-      assert(mb().includes('Oferta ox1') && mb().includes('Terminó - ya pasaron 7 días') && mb().includes("confirmOfertaSaleStep1('ox1')"), 'an expired unsold oferta is in Finalizadas with its status line AND its +1 button (late payments are real)');
+      assert(!mb().includes('Oferta ox1') && !mb().includes('Terminó'), 'the old unsold oferta is absent from Finalizadas (no time-based expiry)');
       assert(mb().includes('Oferta ox2') && mb().includes('Agotada') && !mb().includes("confirmOfertaSaleStep1('ox2')"), 'a sold-out oferta is in Finalizadas as "Agotada" with no +1 button');
       window.setMyOfertasBizFilter('biz-x');
       assert(mb().includes('Finalizadas (1)') && mb().includes('Activas (1)') && mb().includes('Pendientes (0)'), 'the business filter scopes all three tab counts');
@@ -2521,7 +2579,7 @@ const fakeClient = {
       await window.confirmOfertaSaleStep2('ox4');
       await new Promise(r => setTimeout(r, 20));
       assert(SAMPLE.ofertas.find(o => o.id === 'ox4').quantity_sold === 5, 'confirming the last unit reaches quantity_total');
-      assert(mb().includes('Activas (2)') && mb().includes('Finalizadas (3)'), 'a newly sold-out oferta moves from Activas to Finalizadas on re-render');
+      assert(mb().includes('Activas (3)') && mb().includes('Finalizadas (2)'), 'a newly sold-out oferta moves from Activas to Finalizadas on re-render');
       await window.openMyActiveOfertas('biz-1', 'account');
       await new Promise(r => setTimeout(r, 20));
       assert(!mb().includes('setMyOfertasBizFilter'), 'scoped to one business (businessId arg), no business chips are shown');

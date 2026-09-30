@@ -1,4 +1,4 @@
-window.MC_BUILD='3d60b46e7a';
+window.MC_BUILD='3872abf075';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -720,17 +720,14 @@ let EMPLEOS=[];
 let REPORTES=[];
 let AVISOS=[];
 
-/* OFERTAS — a deal STAYS VISIBLE for up to OFERTA_LIFESPAN_DAYS or until
-   its quantity sells out, whichever happens first (see Codex Section 6). */
-const OFERTA_LIFESPAN_DAYS=7;
+/* OFERTAS — a deal stays visible until its quantity sells out or an admin
+   removes it; there is no time limit. */
 let OFERTAS=[];
-function ofertaAgeDays(o){
-  const posted=new Date(o.postedDs+'T00:00:00');
-  return Math.floor((Date.now()-posted.getTime())/86400000);
-}
 
-/* Finished = sold out OR past its 7-day lifespan. Active = arrived and not finished. */
-function ofertaIsFinished(o){return o.sold>=o.total||ofertaAgeDays(o)>=OFERTA_LIFESPAN_DAYS;}
+/* Finished = sold out. Active = arrived and not sold out. */
+function ofertaIsFinished(o){return o.sold>=o.total;}
+/* Public lists show every unsold oferta; real sold-out ones drop out, examples always stay. */
+function ofertaPublicVisible(o){return o.isExample||o.sold<o.total;}
 
 /* Ofertas booking calendar — 1 slot/day, $99 MXN, 14-day visible window,
    enforced for real by a unique constraint on ofertas_bookings.booked_date
@@ -903,7 +900,7 @@ function nav(tab,fromBack){
   // while Comercio was hidden, #of-list was display:none and the
   // centering math came out wrong. Re-running it here, on an actual
   // visit, fixes that even though the data itself didn't change.
-  if(tab==='tienda')centerOfertaWheel(OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS));
+  if(tab==='tienda')centerOfertaWheel(OFERTAS.filter(ofertaPublicVisible));
   mcSyncBackTrap();
   trackPage();
 }
@@ -1126,11 +1123,11 @@ function renderInicioQuickNav(){
 
 /* Oferta del día on Inicio — three tiers, never empty unless no ofertas exist:
    1. real live ofertas that went live today; 2. any real live oferta;
-   3. examples (exempt from the 7-day lifespan, same as the Ofertas tab).
+   3. examples (always shown, same as the Ofertas tab).
    Random within the tier, slight bias (2:1) toward premium sellers. */
 function homeOfertaPool(){
   const live=o=>o.sold<o.total;
-  const real=OFERTAS.filter(o=>!o.isExample&&live(o)&&ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS);
+  const real=OFERTAS.filter(o=>!o.isExample&&live(o));
   const todays=real.filter(o=>o.postedDs===TODAY_DS);
   if(todays.length)return todays;
   if(real.length)return real;
@@ -2239,10 +2236,9 @@ function ofertaCardHtml(o){
 }
 function renderOfertas(){
   const el=document.getElementById('of-list');
-  // Example ofertas are exempt from the normal 7-day lifespan (so they
-  // actually persist, per how they're meant to be used) and are always
-  // sorted after every real oferta.
-  const visible=OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS)
+  // Real sold-out ofertas drop out; examples always persist (per how they're
+  // meant to be used) and are always sorted after every real oferta.
+  const visible=OFERTAS.filter(ofertaPublicVisible)
     .sort((a,b)=>(a.isExample===b.isExample)?0:(a.isExample?1:-1));
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
   // Rendered 3x back-to-back so the wheel can loop: the person always
@@ -3860,7 +3856,7 @@ function renderMyActiveOfertas(){
       <div style="font-size:11px;font-weight:700;color:var(--gulf);text-transform:uppercase;letter-spacing:.04em">${e(o.businessName)}</div>
       <div style="font-weight:700;font-size:14.5px;margin-top:3px">${e(o.name)}</div>
       <div style="color:var(--ink3);font-size:12px;margin-top:2px">${o.sold} de ${o.total} vendidos</div>
-      ${isFin?`<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;margin-top:6px">${o.sold>=o.total?'Agotada':'Terminó - ya pasaron 7 días'}</div>`:''}
+      ${isFin?`<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.03em;margin-top:6px">Agotada</div>`:''}
       ${o.sold<o.total?`<button class="submit-btn" style="margin-top:10px;padding:9px;font-size:13px" onclick="confirmOfertaSaleStep1('${e(String(o.id))}')">+1 pago confirmado</button>`:''}
     </div>
   `).join('');
@@ -6498,7 +6494,7 @@ const SEARCH_GROUPS=[
   {key:'categorias',label:'Categorías',items:()=>searchCategoryItems()},
   {key:'noticias',label:'Noticias',ico:'news',items:()=>NOTICIAS.map(n=>({id:n.id,title:n.title,extras:[n.desc,n.source],sub:n.source,img:n.img}))},
   {key:'eventos',label:'Eventos',ico:'eventos',items:()=>EVENTOS.filter(x=>!evtFinished(x)).map(x=>({id:x.id,title:x.name,extras:[x.cat,x.loc,x.colonia,x.desc],sub:x.dateLong+(x.loc?' · '+x.loc:''),img:x.img}))},
-  {key:'ofertas',label:'Ofertas',ico:'tienda',items:()=>OFERTAS.filter(o=>o.isExample||ofertaAgeDays(o)<OFERTA_LIFESPAN_DAYS).map(o=>({id:o.id,title:o.name,extras:[o.seller,o.desc],sub:o.seller+' · $'+o.priceNow,img:o.img}))},
+  {key:'ofertas',label:'Ofertas',ico:'tienda',items:()=>OFERTAS.filter(ofertaPublicVisible).map(o=>({id:o.id,title:o.name,extras:[o.seller,o.desc],sub:o.seller+' · $'+o.priceNow,img:o.img}))},
   {key:'mercado',label:'Mercado',ico:'tienda',items:()=>TIENDA.filter(x=>x.sellerType==='negocio').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.seller,x.desc,x.colonia],sub:x.seller+(x.price?' · '+x.price:''),img:x.img}))},
   {key:'clasificados',label:'Clasificados',ico:'tienda',items:()=>TIENDA.filter(x=>x.sellerType==='personal').map(x=>({id:x.id,title:x.name,extras:[x.cat,x.desc,x.colonia],sub:[x.price,x.colonia].filter(Boolean).join(' · '),img:x.img}))},
   {key:'mandaditos',label:'Mandaditos',ico:'mandaditos',items:()=>MANDADITOS.map(m=>({id:m.id,title:m.name,extras:[m.desc,m.vehicle],sub:m.vehicle||'Mandadito',img:m.img}))},

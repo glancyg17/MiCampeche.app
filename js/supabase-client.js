@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='3d60b46e7a';
+window.MC_BUILD_CLIENT='3872abf075';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -1072,13 +1072,21 @@ MC.submitMandaditoBoost=async function(mandaditoId,startDs){
   return sb.from('mandadito_boosts').insert({mandadito_id:mandaditoId,start_date:startDs});
 };
 
+/* An oferta can have several bookings (a stale one from before a rejection
+   plus a fresh one from MC.updateOferta) in no guaranteed order — the newest
+   booked_date is the truth. */
+function latestBookingDs(r){
+  const ds=(r.ofertas_bookings||[]).map(b=>b&&b.booked_date).filter(Boolean).sort();
+  return ds.length?ds[ds.length-1]:null;
+}
+/* Nothing expires any more (public until sold out or admin-removed), so the
+   limit is only a safety bound, not a freshness window. */
 MC.fetchOfertas=async function(){
   const {data,error}=await sb.from('ofertas').select('*, ofertas_bookings(booked_date)')
-    .eq('status','published').order('created_at',{ascending:false}).limit(30);
+    .eq('status','published').order('created_at',{ascending:false}).limit(100);
   if(error){console.error(error);return [];}
   return data.map(r=>{
-    const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
-    const postedDs=booking?booking.booked_date:dToDs(new Date(r.created_at));
+    const postedDs=latestBookingDs(r)||dToDs(new Date(r.created_at));
     return {
       id:r.id,seller:r.business_name_snapshot,tier:r.is_premium?'premium':'free',name:r.title,
       priceWas:Number(r.price_was)||0,priceNow:Number(r.price_now)||0,img:r.image_url||'',
@@ -1103,8 +1111,7 @@ MC.fetchMyArrivedOfertas=async function(businessId){
   if(error){console.error(error);return [];}
   return (data||[])
     .map(r=>{
-      const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
-      const postedDs=booking?booking.booked_date:dToDs(new Date(r.created_at));
+      const postedDs=latestBookingDs(r)||dToDs(new Date(r.created_at));
       return {id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,sold:r.quantity_sold||0,total:r.quantity_total,postedDs};
     })
     // approved-but-future ones haven't arrived yet — they show under the
@@ -1112,7 +1119,7 @@ MC.fetchMyArrivedOfertas=async function(businessId){
     // ones ARE returned; the caller splits Activas/Finalizadas via ofertaIsFinished.
     .filter(r=>r.postedDs<=TODAY_DS);
 };
-/* Live and not finished (not sold out, under the 7-day lifespan) — the
+/* Live and not finished (arrived and not sold out) — the
    account-menu badge's data source. */
 MC.fetchMyActiveOfertas=async function(businessId){
   return (await MC.fetchMyArrivedOfertas(businessId)).filter(o=>!ofertaIsFinished(o));
@@ -1131,10 +1138,9 @@ MC.fetchMyPendingOfertas=async function(businessId){
   if(error){console.error(error);return [];}
   return (data||[])
     .map(r=>{
-      const booking=(r.ofertas_bookings&&r.ofertas_bookings[0])||null;
       return {
         id:r.id,name:r.title,businessName:r.business_name_snapshot,businessId:r.business_id,raw:r,
-        status:r.status,rejectionReason:r.rejection_reason||null,postedDs:booking?booking.booked_date:null
+        status:r.status,rejectionReason:r.rejection_reason||null,postedDs:latestBookingDs(r)
       };
     })
     // a 'published' row only belongs here if its turn hasn't come yet —
