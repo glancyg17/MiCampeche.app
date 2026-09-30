@@ -1,4 +1,4 @@
-window.MC_BUILD='87387e4588';
+window.MC_BUILD='2de9e03cf2';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',

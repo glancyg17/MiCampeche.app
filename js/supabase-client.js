@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='87387e4588';
+window.MC_BUILD_CLIENT='2de9e03cf2';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
