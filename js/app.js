@@ -1,4 +1,4 @@
-window.MC_BUILD='2de9e03cf2';
+window.MC_BUILD='2723eb28d4';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -2198,6 +2198,11 @@ function ofertaCardHtml(o){
       : `<button class="of-claim-btn" disabled style="opacity:.5;cursor:default">Sin contacto</button>`;
   const bottomHtml=`
     <div class="of-bottom">
+      <div class="of-price-row">
+        <span class="of-price-now">$${o.priceNow}</span>
+        <span class="of-price-was">$${o.priceWas}</span>
+        <span class="of-pct">-${discountPct}%</span>
+      </div>
       <div class="of-progress-track"><div class="of-progress-fill" style="width:${pct}%"></div></div>
       <div class="of-claim-row">
         <span class="of-claimed-txt">${o.sold} de ${o.total} vendidos</span>
@@ -2215,11 +2220,6 @@ function ofertaCardHtml(o){
           <div class="of-hero-overlay">
             <div class="of-seller">${e(o.seller)}${o.tier==='premium'?`<span class="of-badge-premium">${svgIco('checkBadge')}Verificado</span>`:''}</div>
             <div class="of-name">${e(o.name)}${o.isExample?'<span class="example-pill">Ejemplo</span>':''}</div>
-            <div class="of-price-row">
-              <span class="of-price-now">$${o.priceNow}</span>
-              <span class="of-price-was">$${o.priceWas}</span>
-              <span class="of-pct">-${discountPct}%</span>
-            </div>
           </div>
         </div>
         ${bottomHtml}
@@ -2249,7 +2249,21 @@ function renderOfertas(){
   wireAdminRemove(el);
   centerOfertaWheel(visible);
 }
-function toggleOfertaFlip(el){el.classList.toggle('flipped');}
+const OFERTA_FLIP_REVERT_MS=10000;
+const ofertaFlipTimers=new WeakMap();
+function armOfertaFlipTimer(el){
+  clearTimeout(ofertaFlipTimers.get(el));
+  ofertaFlipTimers.set(el,setTimeout(()=>{el.classList.remove('flipped');ofertaFlipTimers.delete(el);},OFERTA_FLIP_REVERT_MS));
+}
+function toggleOfertaFlip(el){
+  if(el.classList.toggle('flipped'))armOfertaFlipTimer(el);
+  else{clearTimeout(ofertaFlipTimers.get(el));ofertaFlipTimers.delete(el);}
+}
+// keep the card open while someone is touching/scrolling the back
+['pointerdown','scroll'].forEach(ev=>document.addEventListener(ev,e=>{
+  const c=e.target&&e.target.closest&&e.target.closest('.of-card.flipped');
+  if(c)armOfertaFlipTimer(c);
+},true));
 /* Positions the wheel AND makes it loop. renderOfertas() renders the
    oferta list 3 copies back-to-back; this starts scrolled into the
    MIDDLE copy (today's real oferta if one exists, else the same

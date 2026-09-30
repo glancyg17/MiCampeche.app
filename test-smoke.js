@@ -955,6 +955,36 @@ const fakeClient = {
   // not tied to which one the wheel happens to center on).
   assert(text('of-list') && text('of-list').includes('Oferta test') && text('of-list').includes('2 de 5 vendidos'), 'Ofertas rendered with the real quantity_sold / quantity_total count');
   assert(text('of-list').includes('wa.me/529812003000') && text('of-list').includes('Contactar'), 'a live oferta shows a "Contactar" WhatsApp link to the business phone — no claim state at all');
+  // ── Oferta card: price lives in the white bottom block (both faces), never in the dark hero overlay ──
+  {
+    const card = doc.querySelector('#of-list .of-card');
+    assert(card && card.querySelector('.of-bottom .of-price-row'), 'oferta card: .of-price-row is inside .of-bottom');
+    assert(!doc.querySelector('#of-list .of-hero-overlay .of-price-row'), 'oferta card: .of-price-row is NOT inside .of-hero-overlay');
+    assert(card.querySelectorAll('.of-price-row').length === 2, 'oferta card: price shows on both front and back faces');
+    const pr = card.querySelector('.of-bottom .of-price-row');
+    assert(/^\$\d+$/.test(pr.querySelector('.of-price-now').textContent) && /^\$\d+$/.test(pr.querySelector('.of-price-was').textContent) && /^-\d+%$/.test(pr.querySelector('.of-pct').textContent), 'oferta card: price row shows now/was/discount pct');
+    assert(pr.parentElement.firstElementChild === pr, 'oferta card: price row is the first child of .of-bottom');
+
+    // 10 s auto-revert: capture the delay via a stubbed setTimeout
+    const realST = window.setTimeout, realCT = window.clearTimeout;
+    const captured = [], cleared = [];
+    window.setTimeout = (fn, ms) => { captured.push({ fn, ms }); return captured.length; };
+    window.clearTimeout = (id) => { cleared.push(id); };
+    try {
+      window.toggleOfertaFlip(card);
+      assert(card.classList.contains('flipped'), 'oferta card: first click flips it');
+      assert(captured.length === 1 && captured[0].ms === 10000, 'oferta card: flip arms a 10000ms revert timer');
+      captured[0].fn();
+      assert(!card.classList.contains('flipped'), 'oferta card: timer callback un-flips the card');
+      window.toggleOfertaFlip(card);
+      const armedId = captured.length;
+      window.toggleOfertaFlip(card);
+      assert(!card.classList.contains('flipped') && cleared.includes(armedId), 'oferta card: a second click flips back and cancels the pending timer');
+    } finally { window.setTimeout = realST; window.clearTimeout = realCT; }
+
+    const cssSrc = fs.readFileSync(path.join(__dirname, 'css', 'styles.css'), 'utf8');
+    assert(/\.modal-hdr\{[^}]*position:sticky[^}]*z-index:\d+/.test(cssSrc), 'styles.css: sticky .modal-hdr has a z-index so chips do not scroll over it');
+  }
   const o1Card = doc.querySelector('[data-adm-rm="ofertas|o1"]');
   assert(!!o1Card && !!o1Card.querySelector('.of-today-ribbon'), 'a genuinely same-day real release (o1, booked for today) carries the "Hoy" ribbon');
   // o3 is status:'published' but booked for 3 days from now — approved

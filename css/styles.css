@@ -1,4 +1,4 @@
-:root{--mc-build:"2de9e03cf2";}
+:root{--mc-build:"2723eb28d4";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -298,7 +298,7 @@ svg{display:block}
 .slot-cal-ok-msg{background:var(--palm-bg);color:var(--palm)}
 .slot-cal-full-msg{background:var(--paper3);color:var(--ink2)}
 .slot-cal-ok-msg .ico,.slot-cal-full-msg .ico{width:15px;height:15px;flex-shrink:0;margin-top:1px}
-.of-card{position:relative;flex:0 0 72vw;max-width:320px;height:270px;scroll-snap-align:center;perspective:1400px;cursor:pointer;transition:transform .18s ease,opacity .18s ease;will-change:transform}
+.of-card{position:relative;flex:0 0 72vw;max-width:320px;height:296px;scroll-snap-align:center;perspective:1400px;cursor:pointer;transition:transform .18s ease,opacity .18s ease;will-change:transform}
 .of-today-ribbon{position:absolute;top:14px;right:-30px;transform:rotate(38deg);background:var(--wall);color:#1c1200;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:4px 34px;z-index:2}
 .of-flip-inner{position:relative;width:100%;height:100%;transition:transform .5s cubic-bezier(.4,.2,.2,1);transform-style:preserve-3d}
 .of-card.flipped .of-flip-inner{transform:rotateY(180deg)}
@@ -307,7 +307,7 @@ svg{display:block}
 .of-card.sold-out .of-flip-front,.of-card.sold-out .of-flip-back{opacity:.6}
 .of-flip-hint{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.35);color:#fff;border-radius:99px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;z-index:2}
 .of-flip-hint svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
-.of-hero-wrap{position:relative;height:180px;flex-shrink:0;overflow:hidden}
+.of-hero-wrap{position:relative;height:172px;flex-shrink:0;overflow:hidden}
 .of-hero-img{position:absolute;inset:0;background-size:cover;background-position:center;background-color:var(--paper2)}
 .of-hero-overlay{position:absolute;left:0;right:0;bottom:0;padding:10px 14px;background:linear-gradient(180deg,rgba(18,32,29,0) 0%,rgba(18,32,29,.55) 45%,rgba(18,32,29,.95) 100%);color:#fff}
 .of-hero-overlay .of-seller{color:rgba(255,255,255,.85)}
@@ -361,9 +361,9 @@ svg{display:block}
 }
 .of-badge-premium .ico{width:10px;height:10px;stroke-width:2.5}
 .of-name{font-size:14px;font-weight:700;color:var(--ink);line-height:1.3}
-.of-price-row{display:flex;align-items:baseline;gap:8px;margin-top:5px}
-.of-price-now{font-family:"Fraunces",Georgia,serif;font-size:19px;font-weight:600;color:var(--signal)}
-.of-price-was{font-size:12.5px;color:var(--ink3);text-decoration:line-through}
+.of-price-row{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.of-price-now{font-family:"Fraunces",Georgia,serif;font-size:26px;font-weight:700;line-height:1;color:var(--ink)}
+.of-price-was{font-size:13.5px;font-weight:600;color:var(--signal);text-decoration:line-through}
 .of-pct{background:var(--signal-bg);color:var(--signal);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px}
 .of-bottom{padding:12px 14px 14px}
 .of-progress-track{height:6px;border-radius:99px;background:var(--paper3);overflow:hidden;margin-bottom:8px}
@@ -779,7 +779,7 @@ svg{display:block}
 .modal-bg{position:fixed;inset:0;background:rgba(18,32,29,.55);z-index:200;display:none;align-items:flex-end;backdrop-filter:blur(2px)}
 .modal-bg.on{display:flex}
 .modal{background:var(--paper);width:100%;max-width:430px;margin:0 auto;border-radius:24px 24px 0 0;max-height:88vh;overflow-y:auto;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -10px 40px rgba(0,0,0,.2)}
-.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:17px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper)}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:17px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;background:var(--paper)}
 .modal-title{font-family:"Fraunces",Georgia,serif;font-size:18.5px;font-weight:600}
 .modal-close{width:32px;height:32px;border-radius:50%;background:var(--paper2);border:none;color:var(--ink2);cursor:pointer;display:flex;align-items:center;justify-content:center}
 .modal-close .ico{width:15px;height:15px}
