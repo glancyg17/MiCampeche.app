@@ -1,0 +1,5 @@
+#!/bin/sh
+if ! node scripts/stamp.js --check >/dev/null 2>&1; then
+  echo "Build stamp is stale. Run: npm run stamp   then re-stage and commit." >&2
+  exit 1
+fi

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "stamp": "node scripts/stamp.js",
-    "test": "node scripts/stamp.js --check && node test-sw.js && node test-selfheal.js && node test-smoke.js"
+    "test": "node scripts/stamp.js --check && node test-sw.js && node test-selfheal.js && node test-smoke.js",
+    "hooks": "git config core.hooksPath .githooks"
   }
 }
