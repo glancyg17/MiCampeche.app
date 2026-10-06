@@ -28,3 +28,8 @@
 - **What/why**: split CLAUDE.md (lean) / HISTORY.md / CODEX-LOG.md; GitHub Action runs npm test on push; pre-commit stamp check.
 - **Gotchas**: none.
 - **DB dependency**: none.
+
+## 2026-10-06 — CI Node version (follow-up)
+- **What/why**: first CI run failed at `npm ci` on Node 20 (logs not readable without admin rights); lockfile was generated on Node 24 / npm 11, so workflow now uses Node 24.
+- **Gotchas**: if CI still fails at `npm ci`, read the job log in the GitHub UI (canvas native install is the other suspect).
+- **DB dependency**: none.
