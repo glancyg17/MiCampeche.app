@@ -1,4 +1,4 @@
-window.MC_BUILD='ec99cb24f6';
+window.MC_BUILD='6c094116c6';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -2774,6 +2774,7 @@ const POST_FORMS={
     {k:'contact_methods',lbl:'¿Cómo quieres que te contacten?',type:'multi',opts:[['whatsapp','WhatsApp'],['llamada','Llamada'],['sms','Mensaje de texto']],def:[],note:'Elige al menos una — así sabemos cómo prefieres que te contacten.',showIf:{field:'want_contact',val:'si'}}
   ]},
   oferta:{title:'Publicar una Oferta',note:'$99 MXN por espacio · 1 espacio disponible por día · reserva hasta con 2 semanas de anticipación. Cuentas Negocio (gratis) pueden tener 1 espacio reservado a la vez; cuentas Premium hasta 3 a la vez. Premium incluye tu primera oferta de cada ciclo sin costo.',fields:[
+    {k:'rules',type:'note',cls:'callout',text:'<b>Antes de publicar: así funciona la Oferta del día</b><br>• Descuento de <b>al menos 50%</b> sobre tu precio normal.<br>• <b>Exclusiva de MiCampeche</b>: hecha especialmente para esta app.<br>• <b>Solo aquí</b>: no la ofrezcas con ese descuento en ningún otro lugar (otras redes, otros anuncios u otras apps).<br>¿Tu descuento es menor al 50%? Si tu negocio es Premium, la opción <b>«Descuento»</b> en tus productos de la Tienda (hasta 2 por negocio) puede ser justo lo que buscas.<br>Todas las ofertas se revisan; si alguna no cumple, se rechaza y podrás corregirla y reenviarla.'},
     {k:'item',lbl:'¿Qué vas a ofrecer?',type:'text',ph:'Ej. Pastel de tres leches entero'},
     {k:'desc',lbl:'Descripción',type:'textarea',ph:'Cuéntale a la gente qué incluye esta oferta...'},
     {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload',note:'Usa buena luz y muestra bien lo que ofreces — no podrás editar esta oferta ni pedir un reembolso después de enviarla, así que revisa todo con cuidado antes de continuar.'},
@@ -2849,7 +2850,7 @@ async function openPost(kind){
     </div>`;
   }
   form.fields.forEach(f=>{
-    if(f.type==='note'){h+=`<div class="field-note" id="row-${f.k}">${f.text||''}</div>`;return;}
+    if(f.type==='note'){h+=`<div class="field-note${f.cls?' '+f.cls:''}" id="row-${f.k}">${f.text||''}</div>`;return;}
     h+=`<div class="form-row" id="row-${f.k}"><label class="fl">${f.lbl}</label>`;
     if(f.type==='textarea')h+=`<textarea class="ft" id="pf-${f.k}" placeholder="${f.ph||''}"></textarea>`;
     else if(f.type==='select')h+=`<select class="fs" id="pf-${f.k}"><option value="">Selecciona...</option>${f.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;

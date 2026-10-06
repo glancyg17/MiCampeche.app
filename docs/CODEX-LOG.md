@@ -58,3 +58,8 @@
 - **What/why**: ofertaWheelList() now puts today's real oferta(s) first, then all other real ofertas in random order, then slices to OFERTA_WHEEL_MAX (today's can't be cut); examples stay last, uncounted. Reason: with chronological order a lone oferta would hold first position for days. The shuffle is memoized per page load (ofertaRandKeys: one random key per oferta id) so refreshes don't reorder.
 - **Gotchas**: ofertaWheelList() has three callers (renderOfertas, nav(), tests) that must agree, hence the memoized keys. ofertaRandKeys is `var` (not const) so tests can reach it via window. Supersedes the previous entry's ordering rule.
 - **DB dependency**: none.
+
+## 2026-10-06 — Oferta form: rules callout
+- **What/why**: "Publicar una Oferta" now opens with a callout (at least 50% off, MiCampeche-exclusive, not offered elsewhere; Premium "Descuento" on Tienda products for smaller discounts). Informational only: no price validation, submission not blocked; moderation enforces.
+- **Gotchas**: the callout is a `type:'note'` field (`rules`, `cls:'callout'`, styled `.field-note.callout`), not the form-level `note`, because that one renders in #post-submit-note and applyOfertaBusinessHints overwrites it. The note branch of the form renderer now accepts an optional `cls`. Consumers of `.fields` checked: renderer, imgupload init, applyConditionalRows (showIf only), submitPost value collection (skips note) and colonia check (type-specific); the rejected-oferta edit flow reuses POST_FORMS.oferta via openPost so it shows the callout too, and its prefill is key-based.
+- **DB dependency**: none.

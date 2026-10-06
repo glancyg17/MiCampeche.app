@@ -4066,6 +4066,14 @@ const fakeClient = {
     // Pinned non-admin: admins skip the Stripe link (covered below).
     currentProfile.is_admin = false;
     await window.openPost('oferta');
+    {
+      const co = doc.querySelector('.field-note.callout');
+      assert(!!co && co.textContent.includes('50%') && co.textContent.includes('Exclusiva de MiCampeche') && co.textContent.includes('Descuento'), 'the oferta form renders the rules callout (.field-note.callout) with the 50% / Exclusiva de MiCampeche / Descuento wording');
+      assert(!doc.getElementById('post-submit-note').contains(co), 'the rules callout is NOT inside #post-submit-note (which applyOfertaBusinessHints overwrites)');
+      assert(co.children.length === 0 || [...co.children].every(c => ['B', 'BR'].includes(c.tagName)), 'the callout payload is only inline <b>/<br> inside one block element');
+      assert(!!doc.querySelector('.slot-day') && doc.getElementById('post-submit-btn').disabled === true, 'the oferta form still shows the booking calendar and a disabled submit button until a day is picked');
+      assert(!doc.getElementById('pf-rules'), 'the note field is never rendered as an input');
+    }
     await attachOfertaPhoto();
     doc.getElementById('pf-item').value = 'Oferta de prueba';
     doc.getElementById('pf-priceWas').value = '100';
@@ -4938,6 +4946,10 @@ const fakeClient = {
     await new Promise(r => setTimeout(r, 20));
     assert(text('modal-title') === 'Editar publicación' && doc.getElementById('pf-item').value === 'Oferta rechazada', 'tapping "Editar y reenviar" on the rejected oferta opens the real oferta form, pre-filled with its own data');
     assert(doc.getElementById('post-submit-btn').disabled === true && doc.getElementById('post-submit-btn').textContent === 'Selecciona un día para continuar', 'the submit button starts disabled, same as a fresh oferta submission — its booking was freed on rejection, so a NEW day must be picked before resubmitting');
+    {
+      const co = doc.querySelector('.field-note.callout');
+      assert(!!co && co.textContent.includes('50%') && co.textContent.includes('Exclusiva de MiCampeche') && co.textContent.includes('Descuento'), 'the rejected-oferta edit/resubmit flow also shows the Oferta del día rules callout');
+    }
     assert((text('post-submit-note') || '').includes('Elige un nuevo día'), 'the note explains a new day is needed, instead of the generic "Guardar cambios" framing every other self-edited type gets immediately');
     await attachOfertaPhoto();
     const resubmitDay = doc.querySelector('.slot-day:not(.full)');
