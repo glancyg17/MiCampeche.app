@@ -1,4 +1,4 @@
-window.MC_BUILD='289c7c51bd';
+window.MC_BUILD='4fb2425f89';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -4883,6 +4883,24 @@ function handleSignupError(error,source,name,email,phone){
   const waMsg='Hola, intenté crear una cuenta en MiCampeche y no se pudo completar. Mi nombre es '+(name||'')+', mi correo es '+(email||'')+' y mi número es '+(phone||'')+'. ¿Me ayudan a activarla?';
   openWhatsAppStep(waMsg,'Tuvimos un problema técnico al crear tu cuenta — ya lo sabemos y lo estamos revisando. Mientras tanto, escríbenos por WhatsApp con estos mismos datos y te ayudamos a activarla directamente.',null);
 }
+const MC_PIXEL_SEND_PHONE=false; // flip to true only AFTER the Aviso de Privacidad mentions Meta Pixel / hashed contact data sharing
+// Meta Pixel CompleteRegistration — called only from submitAuth's successful
+// NEW-account path. Counts signups, not verified users (verification is a
+// manual admin approval in the admin's browser). Never throws.
+function mcTrackRegistration(userId,phone){
+  try{
+    if(typeof window.fbq!=='function')return;
+    const key='mc_pixel_reg_'+(userId||'device');
+    if(localStorage.getItem(key))return; // fire once per user per device
+    if(MC_PIXEL_SEND_PHONE&&phone){
+      let d=String(phone).replace(/\D/g,'');
+      if(d.length===10)d='52'+d;
+      if(d)window.fbq('init','1060910360102541',{ph:d}); // pixel hashes in-browser
+    }
+    window.fbq('track','CompleteRegistration');
+    localStorage.setItem(key,'1');
+  }catch(err){/* never let tracking break the app */}
+}
 async function submitAuth(){
   const password=document.getElementById('acct-password').value||'';
   const btn=document.getElementById('acct-submit-btn');
@@ -4915,6 +4933,10 @@ async function submitAuth(){
   }
   refreshPendingBadge();
   refreshHeaderAccount();
+  if(accountMode==='signup'){
+    // MC.signUp set MC.ready to the (same) uid; fall back to the device key.
+    try{Promise.resolve(MC.ready).then(uid=>mcTrackRegistration(uid,signedUpPhone),()=>mcTrackRegistration(null,signedUpPhone));}catch(err){}
+  }
   if(accountMode==='signup'&&signedUpPhone){
     // The account exists now, but it can't write anything until the founder
     // confirms this WhatsApp message came from the number that was

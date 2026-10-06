@@ -190,7 +190,7 @@ All unchanged since v12.0 except as specifically noted above — see v11.0/v12.0
 
 ## Legal — Aviso de Privacidad / Términos y Condiciones
 
-Unchanged this session — still interim, still needs a real lawyer's review. **The growing list to show them, now including:** the unified Premium billing model (pricing/terms language may reference the old primary-vs-additional split and should be checked against the new one), and the WhatsApp-app-choice preference (device-level, not account-level — probably not a real legal concern, but worth a mention alongside everything else on this list). Also: Oferta del día rules (at least 50% off, MiCampeche-exclusive, not offered elsewhere) are now stated in the app; the Términos may need matching language.
+Unchanged this session — still interim, still needs a real lawyer's review. **The growing list to show them, now including:** the unified Premium billing model (pricing/terms language may reference the old primary-vs-additional split and should be checked against the new one), and the WhatsApp-app-choice preference (device-level, not account-level — probably not a real legal concern, but worth a mention alongside everything else on this list). Also: Oferta del día rules (at least 50% off, MiCampeche-exclusive, not offered elsewhere) are now stated in the app; the Términos may need matching language. Also: Mention Meta Pixel and hashed contact-data sharing with Meta for advertising.
 
 ## Push Notifications
 

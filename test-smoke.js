@@ -5142,6 +5142,31 @@ const fakeClient = {
     assert(text('modal-title') === 'SENTINEL-UNTOUCHED', 'and the modal (WhatsApp step or otherwise) is never touched for a recognized error');
   }
 
+  // ── Meta Pixel: base code in index.html + CompleteRegistration helper. ──
+  {
+    assert(html.includes('1060910360102541') && html.includes("fbq('init', '1060910360102541')") && html.includes("fbq('track', 'PageView')"), 'index.html carries the Meta Pixel ID with the fbq init and PageView calls');
+    const savedFbq = window.fbq;
+    const uid = 'pixel-test-user-' + Date.now();
+    try {
+      window.localStorage.removeItem('mc_pixel_reg_' + uid);
+      window.fbq = undefined;
+      let threw = false;
+      try { window.mcTrackRegistration(uid, '+529810001111'); } catch (_) { threw = true; }
+      assert(!threw, 'mcTrackRegistration does not throw when window.fbq is undefined');
+      assert(!window.localStorage.getItem('mc_pixel_reg_' + uid), 'a missing fbq does not mark the user as tracked');
+      const calls = [];
+      window.fbq = function () { calls.push(Array.prototype.slice.call(arguments)); };
+      window.mcTrackRegistration(uid, '+529810001111');
+      window.mcTrackRegistration(uid, '+529810001111');
+      const regCalls = calls.filter(c => c[0] === 'track' && c[1] === 'CompleteRegistration');
+      assert(regCalls.length === 1, 'mcTrackRegistration fires CompleteRegistration exactly once for the same userId');
+      assert(!calls.some(c => c[0] === 'init'), 'with MC_PIXEL_SEND_PHONE=false no phone data is passed to the pixel');
+    } finally {
+      window.fbq = savedFbq;
+      try { window.localStorage.removeItem('mc_pixel_reg_' + uid); } catch (_) {}
+    }
+  }
+
   // ── sw.js: install must bypass the HTTP cache, not read through it.
   //    cache.addAll() would let a deploy's new HTML precache a STALE
   //    app.js/styles.css (both served with a 4h max-age) into the brand
