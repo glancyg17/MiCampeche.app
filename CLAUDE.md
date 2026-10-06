@@ -11,7 +11,7 @@ Ground truth for every Claude Code session. Rationale/history: docs/HISTORY.md (
 2. `npm run stamp`. Never hand-edit BUILD/CACHE_NAME/version.json; any older "bump CACHE_NAME" instruction is superseded.
 3. `npm test` — every step must pass and output must say ALL PASSED, zero failures. If the stamp check fails, run `npm run stamp` and re-run. Never skip or weaken a test to get green.
 4. Commit with a clear message; `git push origin main`.
-5. Windows/CRLF gotcha: stamp.js hashes raw bytes. If this machine has core.autocrlf=true, LF-normalize the 8 stamped files (sw.js, index.html, js/app.js, js/supabase-client.js, css/styles.css, js/vendor/supabase.js, manifest.json, version.json) BEFORE `npm run stamp`, then verify a fresh `git clone -c core.autocrlf=false` passes `node scripts/stamp.js --check`.
+5. Line endings: .gitattributes enforces LF (stamp.js hashes raw bytes); if the stamp check fails from a fresh clone, re-run `npm run stamp`.
 6. Report the short hash and `cat version.json`.
 
 One-time per clone: `npm run hooks` (pre-commit blocks stale stamps). CI (.github/workflows/test.yml) runs npm test on every push; it flags red but does not block the Pages deploy.

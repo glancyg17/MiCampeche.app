@@ -38,3 +38,8 @@
 - **What/why**: `npm ci` still failed on Node 24; canvas (native) is the suspect, so the workflow installs cairo/pango dev libs first so a source build can succeed.
 - **Gotchas**: job logs need admin rights via API; if still red, read the `npm ci` step log in the GitHub Actions UI.
 - **DB dependency**: none.
+
+## 2026-10-06 — Fix CI: commit package-lock.json; enforce LF (follow-up)
+- **What/why**: root cause of the red Action: package-lock.json was in .gitignore, so it was never in the repo and `npm ci` failed with EUSAGE (Node/canvas/apt guesses were wrong). Removed the ignore rule and committed the lockfile (generated on Windows; no Docker/WSL available to regenerate on Linux, so CI is the Linux proof). Dropped the apt "Native deps for canvas" step. Added `.gitattributes` (`* text=auto eol=lf`) so stamp hashes can't depend on a machine's CRLF setting.
+- **Gotchas**: if `npm ci` still fails on Linux, the Windows-generated lockfile is the suspect; regenerate it on Linux. `.nojekyll` was renormalized (line endings only).
+- **DB dependency**: none.
