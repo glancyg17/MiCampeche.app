@@ -60,6 +60,7 @@ One-time per clone: `npm run hooks` (pre-commit blocks stale stamps). CI (.githu
 - A separate enlarged "featured" oferta card: every oferta gets identical treatment; only start position + small "Hoy" ribbon distinguish today's.
 - A linear oferta carousel with hard start/end stops: it must loop infinitely (triple-render + silent re-center).
 - Admin-gated confirmation for Premium slot purchases: all slot purchases are self-service client-trusted by design.
+- Chronological (newest-first) wheel order: a lone oferta would hold first position for days; today's first, everything else random.
 - Reversible "pause" for excess products on Premium→Básico: owner picks 2 to keep, rest permanently discarded.
 
 ## File map (anchors verified by grep)
@@ -69,7 +70,7 @@ js/app.js:
 - nav — tab switching; re-runs tab-specific setup when a tab becomes visible
 - startDestacadosRotation / eligibleDestacados / mercadoTopPromoCount — shared 7s Destacados rotation, eligible pool, top-slot count for Mercado
 - renderMercado / openProdView / dashColHdr — Mercado grid, product detail, Home section header
-- renderOfertas / ofertaWheelList / ofertaCardHtml / centerOfertaWheel — Comercio oferta wheel (3x render, silent re-center): newest booking first, examples last, capped at OFERTA_WHEEL_MAX, starts on index 0; shared flip-card markup, wheel positioning
+- renderOfertas / ofertaWheelList / ofertaCardHtml / centerOfertaWheel — Comercio oferta wheel (3x render, silent re-center): today's oferta(s) first, rest random (keys memoized per page load), examples last, capped at OFERTA_WHEEL_MAX, starts on index 0; shared flip-card markup, wheel positioning
 - ofertaPublicVisible — sold-out real ofertas hidden from public lists (examples kept)
 - pickSlotDay — day-picker confirmation text/button (free vs paid vs edit-reprogram)
 - submitPost — post submission for all kinds, incl. oferta payment branch

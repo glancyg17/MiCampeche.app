@@ -53,3 +53,8 @@
 - **What/why**: new ofertaWheelList() orders real ofertas by postedDs descending (stable; missing = oldest), capped at OFERTA_WHEEL_MAX = 30, examples after all real ones in existing order (not counted toward the cap). centerOfertaWheel now starts on index 0 of that list (today's oferta, else newest real, else first example) instead of Home's pickHomeOferta pick; nav()'s re-center call uses the same list. Home's pick logic untouched.
 - **Gotchas**: nav() previously passed its own unsorted filter to centerOfertaWheel, so it must use ofertaWheelList() or the order diverges. jsdom has no layout, so scroll start position/feel is not covered; the wheel now always re-centers on index 0 after background refreshes.
 - **DB dependency**: none.
+
+## 2026-10-06 — Comercio wheel: today's first, rest random (replaces newest-first)
+- **What/why**: ofertaWheelList() now puts today's real oferta(s) first, then all other real ofertas in random order, then slices to OFERTA_WHEEL_MAX (today's can't be cut); examples stay last, uncounted. Reason: with chronological order a lone oferta would hold first position for days. The shuffle is memoized per page load (ofertaRandKeys: one random key per oferta id) so refreshes don't reorder.
+- **Gotchas**: ofertaWheelList() has three callers (renderOfertas, nav(), tests) that must agree, hence the memoized keys. ofertaRandKeys is `var` (not const) so tests can reach it via window. Supersedes the previous entry's ordering rule.
+- **DB dependency**: none.

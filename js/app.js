@@ -1,4 +1,4 @@
-window.MC_BUILD='ff86a80a09';
+window.MC_BUILD='ec99cb24f6';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -2235,18 +2235,29 @@ function ofertaCardHtml(o){
   </div>`;
 }
 const OFERTA_WHEEL_MAX=30;
-/* The wheel's order: real ofertas newest booking first (postedDs, ISO date
-   strings; missing = oldest; stable, so same-day ties keep fetch order),
-   capped at OFERTA_WHEEL_MAX; examples always come after every real one
-   (existing order, not counted toward the cap). Real sold-out ofertas
-   drop out via ofertaPublicVisible; examples persist. Index 0 is where the
-   wheel starts: today's oferta if there is one, else the newest. */
+/* The wheel's order: today's real oferta(s) (postedDs===TODAY_DS) first,
+   then every other real oferta in RANDOM order -- so with nothing released
+   today the whole wheel is random and no single oferta can hold first
+   position for days. Real ofertas are ordered, THEN capped at
+   OFERTA_WHEEL_MAX (today's can never be cut; which others make the cap is
+   random per visit). Examples always come after every real one (existing
+   order, not counted toward the cap). Real sold-out ofertas drop out via
+   ofertaPublicVisible; examples persist.
+   The shuffle is memoized per page load (one random key per oferta id) so
+   renderOfertas(), nav() and background-refresh re-renders all agree and the
+   cards never reshuffle under someone's thumb; ofertas first seen in a later
+   refresh get their own key then. `var` (not const) so tests can reach it. */
+var ofertaRandKeys=new Map();
+function ofertaRandKey(id){const k=String(id);if(!ofertaRandKeys.has(k))ofertaRandKeys.set(k,Math.random());return ofertaRandKeys.get(k);}
 function ofertaWheelList(){
   const vis=OFERTAS.filter(ofertaPublicVisible);
-  const real=vis.filter(o=>!o.isExample)
-    .sort((a,b)=>(b.postedDs||'').localeCompare(a.postedDs||''))
-    .slice(0,OFERTA_WHEEL_MAX);
-  return [...real,...vis.filter(o=>o.isExample)];
+  const byKey=(a,b)=>ofertaRandKey(a.id)-ofertaRandKey(b.id);
+  const real=vis.filter(o=>!o.isExample);
+  const ordered=[
+    ...real.filter(o=>o.postedDs===TODAY_DS).sort(byKey),
+    ...real.filter(o=>o.postedDs!==TODAY_DS).sort(byKey)
+  ].slice(0,OFERTA_WHEEL_MAX);
+  return [...ordered,...vis.filter(o=>o.isExample)];
 }
 function renderOfertas(){
   const el=document.getElementById('of-list');
@@ -2276,10 +2287,9 @@ function toggleOfertaFlip(el){
 },true));
 /* Positions the wheel AND makes it loop. renderOfertas() renders the
    oferta list 3 copies back-to-back; this starts scrolled into the
-   MIDDLE copy on index 0 of `visible` (ofertaWheelList(): newest
-   release first, so today's real oferta if one exists, else the newest
-   real one, else the first example; swiping forward walks back through
-   older ofertas and the loop returns to today's), then, once scrolling settles, silently jumps the scroll
+   MIDDLE copy on index 0 of `visible` (ofertaWheelList(): today's
+   real oferta if one exists, else a random one -- the order is random
+   but memoized per page load, and examples come last), then, once scrolling settles, silently jumps the scroll
    position by exactly one copy's width whenever it drifts into the
    left or right copy -- imperceptible, since every copy is identical
    content, and the practical effect is a loop that never hits a real
