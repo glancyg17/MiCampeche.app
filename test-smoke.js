@@ -852,6 +852,46 @@ const fakeClient = {
     await window.refreshContent();
     assert((doc.getElementById('of-list').textContent || '').includes('Oferta t-ex-soldout2'), 'a sold-out EXAMPLE oferta still appears in the public wheel');
 
+    // ── Wheel order: newest release first, examples last, capped, starts on index 0 ──
+    {
+      const ids = () => window.ofertaWheelList().map(o => o.id);
+      const cardIds = () => [...doc.querySelectorAll('#of-list .of-card')].map(c => c.getAttribute('data-adm-rm').split('|')[1]);
+      SAMPLE.ofertas = [
+        baseOferta('w-ex1', { is_example: true, ofertas_bookings: [{ booked_date: ds(0) }] }),
+        baseOferta('w-d5', { ofertas_bookings: [{ booked_date: ds(-5) }] }),
+        baseOferta('w-two', { ofertas_bookings: [{ booked_date: ds(-9) }, { booked_date: ds(-2) }] }), // LATEST booking (-2) wins
+        baseOferta('w-d1', { ofertas_bookings: [{ booked_date: ds(-1) }] }),
+        baseOferta('w-ex2', { is_example: true, ofertas_bookings: [{ booked_date: ds(-4) }] }),
+        baseOferta('w-d0', { ofertas_bookings: [{ booked_date: ds(0) }] }),
+      ];
+      await window.refreshContent();
+      assert(JSON.stringify(ids()) === JSON.stringify(['w-d0', 'w-d1', 'w-two', 'w-d5', 'w-ex1', 'w-ex2']), 'wheel order: real ofertas newest->oldest by postedDs (an oferta with two bookings sorts by its LATEST), then every example in its existing order');
+      assert(JSON.stringify(cardIds().slice(0, 6)) === JSON.stringify(ids()), 'the rendered wheel (first copy) matches ofertaWheelList() order');
+      assert(ids()[0] === 'w-d0', "wheel start card (index 0) is today's real oferta when one exists");
+
+      SAMPLE.ofertas = [
+        baseOferta('w-ex1', { is_example: true, ofertas_bookings: [{ booked_date: ds(0) }] }),
+        baseOferta('w-d5', { ofertas_bookings: [{ booked_date: ds(-5) }] }),
+        baseOferta('w-d3', { ofertas_bookings: [{ booked_date: ds(-3) }] }),
+      ];
+      await window.refreshContent();
+      assert(ids()[0] === 'w-d3', 'with nothing released today, the start card is the newest real oferta (not an example)');
+
+      SAMPLE.ofertas = [baseOferta('w-ex1', { is_example: true, ofertas_bookings: [{ booked_date: ds(0) }] })];
+      await window.refreshContent();
+      assert(ids()[0] === 'w-ex1', 'with only examples, the start card is the first example');
+
+      // Cap: only the newest OFERTA_WHEEL_MAX real ofertas; examples don't count toward it.
+      const many = [];
+      for (let i = 0; i < 34; i++) many.push(baseOferta('w-m' + i, { ofertas_bookings: [{ booked_date: ds(-i) }] }));
+      many.push(baseOferta('w-ex1', { is_example: true, ofertas_bookings: [{ booked_date: ds(0) }] }));
+      many.push(baseOferta('w-ex2', { is_example: true, ofertas_bookings: [{ booked_date: ds(0) }] }));
+      SAMPLE.ofertas = many;
+      await window.refreshContent();
+      const capped = ids();
+      assert(capped.length === 32 && capped[0] === 'w-m0' && capped[29] === 'w-m29' && !capped.includes('w-m30') && capped.slice(30).join() === 'w-ex1,w-ex2', 'wheel cap: newest 30 real ofertas kept, the older ones dropped, and both examples still follow (not counted toward the cap)');
+    }
+
     // Several bookings on one oferta: the NEWEST booked_date wins regardless of array order.
     // (MC isn't reachable from the test scope, so each fetch is observed through the UI/state it feeds.)
     {

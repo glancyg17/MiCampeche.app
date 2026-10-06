@@ -69,7 +69,7 @@ js/app.js:
 - nav — tab switching; re-runs tab-specific setup when a tab becomes visible
 - startDestacadosRotation / eligibleDestacados / mercadoTopPromoCount — shared 7s Destacados rotation, eligible pool, top-slot count for Mercado
 - renderMercado / openProdView / dashColHdr — Mercado grid, product detail, Home section header
-- renderOfertas / ofertaCardHtml / centerOfertaWheel — Comercio oferta wheel (3x render, silent re-center), shared flip-card markup, wheel positioning
+- renderOfertas / ofertaWheelList / ofertaCardHtml / centerOfertaWheel — Comercio oferta wheel (3x render, silent re-center): newest booking first, examples last, capped at OFERTA_WHEEL_MAX, starts on index 0; shared flip-card markup, wheel positioning
 - ofertaPublicVisible — sold-out real ofertas hidden from public lists (examples kept)
 - pickSlotDay — day-picker confirmation text/button (free vs paid vs edit-reprogram)
 - submitPost — post submission for all kinds, incl. oferta payment branch
@@ -93,6 +93,5 @@ js/supabase-client.js:
 ## Current priorities / open decisions (founder decides; don't build without a go-ahead)
 a) "Terminar oferta": owner ends a live oferta early. Proposed: `ended_at timestamptz` + owner RPC (DB side via chat), client filters ended_at is null, shows in Finalizadas as "Terminada por ti"; do NOT delete the row and do NOT use status='rejected'.
 b) Stale 2026-09-17 booking on oferta 51ec3ca9… (payment record; not deleted) and/or a DB rule that a resubmission replaces the old booking.
-c) Whether the Comercio wheel needs a sort order or cap now that ofertas never expire.
 
 Carry-forward: today's-oferta push decision (stale, ask); lawyer review of Aviso/Términos (list in HISTORY.md); push adoption is low. Open security items: kept privately by the founder, not in this repo; ask before assuming there are none. Known: wheel re-centers on every background refresh.

@@ -48,3 +48,8 @@
 - **What/why**: repo and /docs are public, so CLAUDE.md now has the Hard "Never" list and working rules 12–21 (restored from earlier codex versions, plus a Known traps section); HISTORY.md / CODEX-LOG.md scrubbed of account ids, personal contact details, business metrics and open-security specifics (replaced by one generic line).
 - **Gotchas**: git history was NOT rewritten, so earlier commits still contain the removed values; the Stripe account id and phone number should be treated as already public. Rule 12's force_pending_on_insert is a DB trigger (not greppable in this repo).
 - **DB dependency**: none.
+
+## 2026-10-06 — Comercio wheel: newest release first, starts on today's oferta
+- **What/why**: new ofertaWheelList() orders real ofertas by postedDs descending (stable; missing = oldest), capped at OFERTA_WHEEL_MAX = 30, examples after all real ones in existing order (not counted toward the cap). centerOfertaWheel now starts on index 0 of that list (today's oferta, else newest real, else first example) instead of Home's pickHomeOferta pick; nav()'s re-center call uses the same list. Home's pick logic untouched.
+- **Gotchas**: nav() previously passed its own unsorted filter to centerOfertaWheel, so it must use ofertaWheelList() or the order diverges. jsdom has no layout, so scroll start position/feel is not covered; the wheel now always re-centers on index 0 after background refreshes.
+- **DB dependency**: none.

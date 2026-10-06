@@ -1,4 +1,4 @@
-window.MC_BUILD='3872abf075';
+window.MC_BUILD='ff86a80a09';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -900,7 +900,7 @@ function nav(tab,fromBack){
   // while Comercio was hidden, #of-list was display:none and the
   // centering math came out wrong. Re-running it here, on an actual
   // visit, fixes that even though the data itself didn't change.
-  if(tab==='tienda')centerOfertaWheel(OFERTAS.filter(ofertaPublicVisible));
+  if(tab==='tienda')centerOfertaWheel(ofertaWheelList());
   mcSyncBackTrap();
   trackPage();
 }
@@ -2234,12 +2234,23 @@ function ofertaCardHtml(o){
     </div>
   </div>`;
 }
+const OFERTA_WHEEL_MAX=30;
+/* The wheel's order: real ofertas newest booking first (postedDs, ISO date
+   strings; missing = oldest; stable, so same-day ties keep fetch order),
+   capped at OFERTA_WHEEL_MAX; examples always come after every real one
+   (existing order, not counted toward the cap). Real sold-out ofertas
+   drop out via ofertaPublicVisible; examples persist. Index 0 is where the
+   wheel starts: today's oferta if there is one, else the newest. */
+function ofertaWheelList(){
+  const vis=OFERTAS.filter(ofertaPublicVisible);
+  const real=vis.filter(o=>!o.isExample)
+    .sort((a,b)=>(b.postedDs||'').localeCompare(a.postedDs||''))
+    .slice(0,OFERTA_WHEEL_MAX);
+  return [...real,...vis.filter(o=>o.isExample)];
+}
 function renderOfertas(){
   const el=document.getElementById('of-list');
-  // Real sold-out ofertas drop out; examples always persist (per how they're
-  // meant to be used) and are always sorted after every real oferta.
-  const visible=OFERTAS.filter(ofertaPublicVisible)
-    .sort((a,b)=>(a.isExample===b.isExample)?0:(a.isExample?1:-1));
+  const visible=ofertaWheelList();
   if(!visible.length){el.innerHTML=emptyState('tienda','Sin ofertas hoy','Vuelve mañana por la mañana — las ofertas se renuevan cada día.');return;}
   // Rendered 3x back-to-back so the wheel can loop: the person always
   // lives in the middle copy, with an identical copy on either side to
@@ -2265,21 +2276,19 @@ function toggleOfertaFlip(el){
 },true));
 /* Positions the wheel AND makes it loop. renderOfertas() renders the
    oferta list 3 copies back-to-back; this starts scrolled into the
-   MIDDLE copy (today's real oferta if one exists, else the same
-   random-live-not-sold-out fallback Home's own Oferta del día card
-   already uses -- homeOfertaPool()/pickHomeOferta(), not duplicated
-   here), then, once scrolling settles, silently jumps the scroll
+   MIDDLE copy on index 0 of `visible` (ofertaWheelList(): newest
+   release first, so today's real oferta if one exists, else the newest
+   real one, else the first example; swiping forward walks back through
+   older ofertas and the loop returns to today's), then, once scrolling settles, silently jumps the scroll
    position by exactly one copy's width whenever it drifts into the
    left or right copy -- imperceptible, since every copy is identical
    content, and the practical effect is a loop that never hits a real
    end no matter how far or fast you scroll. Validated first as a live,
    hands-on interactive prototype before being ported here.
    Re-runs on every render (e.g. after a background data refresh), which
-   is fine -- it just re-settles to the same logical starting choice;
-   `visible` is the exact list renderOfertas() just rendered 3 copies of,
-   needed here to find which copy is the real "today" pick within the
-   middle third specifically (a plain data-oferta-id match would find
-   the FIRST copy, not the middle one). Padding is computed, not fixed,
+   is fine -- it just re-settles to index 0 of the middle copy
+   (`visible` is the exact list renderOfertas() just rendered 3 copies
+   of). Padding is computed, not fixed,
    so the first/last actual card can also truly reach center -- a fixed
    padding would strand them short of it. */
 function centerOfertaWheel(visible){
@@ -2298,9 +2307,7 @@ function centerOfertaWheel(visible){
   // copy's width (cards + gaps) -- measured, not assumed, so it stays
   // correct regardless of how many real ofertas exist.
   const setWidth=cards[perSet].offsetLeft-cards[0].offsetLeft;
-  const pick=pickHomeOferta(homeOfertaPool());
-  const idxInSet=pick?visible.findIndex(o=>String(o.id)===String(pick.id)):-1;
-  const startCard=cards[perSet+(idxInSet>=0?idxInSet:0)];
+  const startCard=cards[perSet];
   wheel.scrollLeft=startCard.offsetLeft+startCard.offsetWidth/2-wheel.clientWidth/2;
   updateOfertaWheelScale();
   function reposition(){
