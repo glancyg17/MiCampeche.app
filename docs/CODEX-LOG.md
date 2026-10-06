@@ -21,7 +21,7 @@
 - **DB dependency**: none.
 
 ## 2026-09-30 — Findings (no code change)
-- Oferta 51ec3ca9-66e6-4520-abe9-75510fd35d5b has two bookings (stale 2026-09-17 $99, and 2026-09-27 $0 from MC.updateOferta). Stale row deliberately NOT deleted (payment record).
+- Oferta 51ec3ca9-66e6-4520-abe9-75510fd35d5b has two bookings (a stale 2026-09-17 one, and a 2026-09-27 one from MC.updateOferta). Stale row deliberately NOT deleted (payment record).
 - Owners cannot delete/end their own ofertas (no owner DELETE policy; only REJECTED ofertas are editable; admin long-press "Quitar" works).
 
 ## 2026-10-06 — Docs restructure + CI + stamp hook (this commit)
@@ -42,4 +42,9 @@
 ## 2026-10-06 — Fix CI: commit package-lock.json; enforce LF (follow-up)
 - **What/why**: root cause of the red Action: package-lock.json was in .gitignore, so it was never in the repo and `npm ci` failed with EUSAGE (Node/canvas/apt guesses were wrong). Removed the ignore rule and committed the lockfile (generated on Windows; no Docker/WSL available to regenerate on Linux, so CI is the Linux proof). Dropped the apt "Native deps for canvas" step. Added `.gitattributes` (`* text=auto eol=lf`) so stamp hashes can't depend on a machine's CRLF setting.
 - **Gotchas**: if `npm ci` still fails on Linux, the Windows-generated lockfile is the suspect; regenerate it on Linux. `.nojekyll` was renormalized (line endings only).
+- **DB dependency**: none.
+
+## 2026-10-06 — docs: restored Hard Never + working rules from history; scrubbed sensitive data; history not rewritten
+- **What/why**: repo and /docs are public, so CLAUDE.md now has the Hard "Never" list and working rules 12–21 (restored from earlier codex versions, plus a Known traps section); HISTORY.md / CODEX-LOG.md scrubbed of account ids, personal contact details, business metrics and open-security specifics (replaced by one generic line).
+- **Gotchas**: git history was NOT rewritten, so earlier commits still contain the removed values; the Stripe account id and phone number should be treated as already public. Rule 12's force_pending_on_insert is a DB trigger (not greppable in this repo).
 - **DB dependency**: none.

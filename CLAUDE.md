@@ -28,10 +28,33 @@ One-time per clone: `npm run hooks` (pre-commit blocks stale stamps). CI (.githu
 9. A reported "ALL PASSED" from one session is not proof of build integrity; the stamp has gone stale unnoticed twice (v12, v13). Re-run `npm test` against the final content.
 10. Contacto is the one exception to phone verification (Rule 12 in HISTORY.md).
 11. SEARCH_PAGES must be maintained when a screen's content/shape changes (Comercio's entry is due a review: its top section changed shape).
-12. TODO: original Core Working Rules 4–11 were never written out in the v13 codex ("carry forward unchanged"); founder to restore if they should be here.
+12. Real account actions require a signed-in account with a verified phone (Contacto is the one exception, rule 10). Server side too: content inserts are forced to `pending` by the force_pending_on_insert trigger; any NEW content table must be checked for forged status/is_example on insert.
+13. Validate against the real system before calling anything done. For a UI/rendering bug, reproduce it in a real browser first and confirm the fix live after deploy (extends rule 8).
+14. Voice/tone: plain, warm, concrete; Spanish-first for anything user-facing; never invent statistics or business numbers the founder hasn't stated.
+15. Flag before reopening a killed idea, including a new request that merely resembles one, or a recent structural decision.
+16. Solo-founder constraint: every solution must be executable and reviewable by one person; no new build for something an existing feature already does (Mascotas' "Negocios" chip reuses Mercado).
+17. Big builds become small, sequential, independently shippable steps (DB layer tested first, client after; redesigns as separate commits).
+18. If a proposed feature resembles gig-economy work-matching, check Mexico's digital-platform labor law before designing anything (see Hard "Never").
+19. Design decisions with the founder: prototype live and screenshot at real phone widths; don't guess.
+20. If a live-reported bug can't be reproduced, say so plainly (ruled out X/Y, found A, couldn't determine C) instead of forcing a diagnosis.
+21. PRIVACY: docs are public. Never write secrets, Stripe/account ids, revenue or user/subscriber counts, real people's names/phones/emails, or unfixed security weaknesses into any doc, log or commit message; use generic wording.
+
+## Known traps
+- Tests: identify DOM elements by exact attribute (`data-adm-rm="table|id"`), never title-substring; activeFeaturedEventIds() rotates off the real wall-clock hour, so substring lookups pass or fail depending on when you run.
+- A `display:flex` container (e.g. `.submit-note`) turns every direct child, bare text and inline tags included, into its own flex item: wrap the whole text payload in ONE element.
+- Gesture/scroll handlers must check overlays first (pullScrollTarget in js/app.js: search panel before `.scr.on`) and raise related UI above the overlay's z-index.
+- Multi-step operations that can fail at different layers must say which layer failed (see handleSignupError).
 
 ## Hard "Never" constraints
-TODO: list not found in repo, founder to restore. (v13 codex only said "Unchanged at the constraint level"; the list lived in an earlier version.)
+- **NEVER** make MiCampeche a party to someone else's transaction. Merchant-payment-facilitation is killed. Only Stripe Payment Links charging MiCampeche's own users for its own fees; MiCampeche never touches card data. No cut, no deposit, no percentage, ever (Ofertas: the business self-confirms a sale after being paid directly in person; Mandaditos: WhatsApp-connect only).
+- **NEVER** build in-app task-matching, acceptance, or completion-status tracking for gig/courier work. A directory is fine; the app posting a task, a worker accepting it, or tracking progress is not.
+- **NEVER** build a public rating/review system for individuals. Private-only feedback (visible only to the founder) is the correct shape.
+- **NEVER** assume mock data represents real user behaviour.
+- **NEVER** reproduce copyrighted news content. Noticias/Eventos/Alertas ingestion is aggregator-only: headline + thumbnail + link out, no paraphrase layer.
+- **NEVER** add a feature that increases moderation burden without discussing capacity first (removing a review gate isn't free either, e.g. the admin "Quitar" safety net).
+- **NEVER** ship a change without validating it against the real system it touches.
+- **NEVER** let a DB policy or trigger grant a privilege it doesn't explicitly, narrowly intend to. Enforce limits in the database (CHECK constraints, triggers, SECURITY DEFINER RPCs with their own ownership checks), not trust-the-client; avoid "owner can UPDATE own row with no column restriction" policies.
+- **NEVER** hardcode a Ko'ox (city bus) route, schedule or fare as static in-app content; link to live trackers instead.
 
 ## Killed ideas — don't re-propose without a specific new reason
 - A separate enlarged "featured" oferta card: every oferta gets identical treatment; only start position + small "Hoy" ribbon distinguish today's.
@@ -72,4 +95,4 @@ a) "Terminar oferta": owner ends a live oferta early. Proposed: `ended_at timest
 b) Stale 2026-09-17 booking on oferta 51ec3ca9… (payment record; not deleted) and/or a DB rule that a resubmission replaces the old booking.
 c) Whether the Comercio wheel needs a sort order or cap now that ofertas never expire.
 
-Carry-forward: Supabase Auth Site URL still http://localhost:3000 (founder, dashboard); today's-oferta push decision (stale, ask); lawyer review of Aviso/Términos (list in HISTORY.md); push subscribers very low (1 of 11). Known: wheel re-centers on every background refresh.
+Carry-forward: today's-oferta push decision (stale, ask); lawyer review of Aviso/Términos (list in HISTORY.md); push adoption is low. Open security items: kept privately by the founder, not in this repo; ask before assuming there are none. Known: wheel re-centers on every background refresh.
