@@ -33,3 +33,8 @@
 - **What/why**: first CI run failed at `npm ci` on Node 20 (logs not readable without admin rights); lockfile was generated on Node 24 / npm 11, so workflow now uses Node 24.
 - **Gotchas**: if CI still fails at `npm ci`, read the job log in the GitHub UI (canvas native install is the other suspect).
 - **DB dependency**: none.
+
+## 2026-10-06 — CI native deps for canvas (follow-up)
+- **What/why**: `npm ci` still failed on Node 24; canvas (native) is the suspect, so the workflow installs cairo/pango dev libs first so a source build can succeed.
+- **Gotchas**: job logs need admin rights via API; if still red, read the `npm ci` step log in the GitHub Actions UI.
+- **DB dependency**: none.
