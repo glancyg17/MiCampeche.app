@@ -72,6 +72,7 @@ js/app.js:
 - renderMercado / openProdView / dashColHdr — Mercado grid, product detail, Home section header
 - renderOfertas / ofertaWheelList / ofertaCardHtml / centerOfertaWheel — Comercio oferta wheel (3x render, silent re-center): today's oferta(s) first, rest random (keys memoized per page load), examples last, capped at OFERTA_WHEEL_MAX, starts on index 0; shared flip-card markup, wheel positioning
 - ofertaPublicVisible — sold-out real ofertas hidden from public lists (examples kept)
+- ofertaDiscountInfo — real-price discount check {valid,pct,ok} (50% minimum), shared by the oferta form's live hint (updateOfertaDiscountHint) and the admin moderation check
 - pickSlotDay — day-picker confirmation text/button (free vs paid vs edit-reprogram)
 - submitPost — post submission for all kinds, incl. oferta payment branch
 - openMyPostEdit / MY_POST_EDIT — owner self-edit of own posts (ofertas editable only when rejected)

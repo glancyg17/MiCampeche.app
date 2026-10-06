@@ -63,3 +63,8 @@
 - **What/why**: "Publicar una Oferta" now opens with a callout (at least 50% off, MiCampeche-exclusive, not offered elsewhere; Premium "Descuento" on Tienda products for smaller discounts). Informational only: no price validation, submission not blocked; moderation enforces.
 - **Gotchas**: the callout is a `type:'note'` field (`rules`, `cls:'callout'`, styled `.field-note.callout`), not the form-level `note`, because that one renders in #post-submit-note and applyOfertaBusinessHints overwrites it. The note branch of the form renderer now accepts an optional `cls`. Consumers of `.fields` checked: renderer, imgupload init, applyConditionalRows (showIf only), submitPost value collection (skips note) and colonia check (type-specific); the rejected-oferta edit flow reuses POST_FORMS.oferta via openPost so it shows the callout too, and its prefill is key-based.
 - **DB dependency**: none.
+
+## 2026-10-06 — Oferta: live discount hint + admin discount check
+- **What/why**: ofertaDiscountInfo(priceWas,priceNow) -> {valid,pct,ok}. The oferta form shows a non-blocking live hint under the price fields (updateOfertaDiscountHint; also run after the edit/resubmit prefill); the admin oferta moderation detail shows "Descuento: X% ... cumple / NO cumple el mínimo de 50%" plus the reviewer criteria line. Informational only: the submit button and approve/reject flow are untouched.
+- **Gotchas**: percentages come from the REAL prices because the stored discount_pct is clamped to 1-75 at submission; exactly 50% passes via priceNow*2<=priceWas, and a not-ok pct is capped at 49. The hint is a type:'note' field (discountHint) and the warning colour is a hardcoded amber (no amber variable exists).
+- **DB dependency**: none.

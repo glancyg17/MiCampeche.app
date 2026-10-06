@@ -1,4 +1,4 @@
-window.MC_BUILD='6c094116c6';
+window.MC_BUILD='289c7c51bd';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -728,6 +728,36 @@ let OFERTAS=[];
 function ofertaIsFinished(o){return o.sold>=o.total;}
 /* Public lists show every unsold oferta; real sold-out ones drop out, examples always stay. */
 function ofertaPublicVisible(o){return o.isExample||o.sold<o.total;}
+/* Real-price discount check shared by the oferta form's live hint and the
+   admin moderation view. Uses the REAL prices, never the stored discount_pct
+   (clamped to 1-75 at submission). ok uses the exact comparison
+   priceNow*2<=priceWas (exactly 50% passes); a not-ok pct is capped at 49 so
+   49.6% can never read as "50%". Accepts numbers or typed strings. */
+function ofertaDiscountInfo(priceWas,priceNow){
+  const w=typeof priceWas==='number'?priceWas:parseMoney(priceWas);
+  const n=typeof priceNow==='number'?priceNow:parseMoney(priceNow);
+  const valid=Number.isFinite(w)&&Number.isFinite(n)&&w>0&&n>0&&n<w;
+  if(!valid)return {valid:false,pct:0,ok:false};
+  const ok=n*2<=w;
+  let pct=Math.round((1-n/w)*100);
+  if(!ok)pct=Math.min(pct,49);
+  return {valid:true,pct,ok};
+}
+/* Live, NON-BLOCKING discount hint under the oferta form's price fields.
+   Informational only: never touches the submit button. */
+function updateOfertaDiscountHint(){
+  const hint=document.getElementById('row-discountHint');
+  const wEl=document.getElementById('pf-priceWas'),nEl=document.getElementById('pf-priceNow');
+  if(!hint||!wEl||!nEl)return;
+  const info=ofertaDiscountInfo(wEl.value,nEl.value);
+  const w=parseMoney(wEl.value),n=parseMoney(nEl.value);
+  let msg='',cls='';
+  if(info.valid&&info.ok){msg=`Tu descuento: ${info.pct}% ✓`;cls='ok';}
+  else if(info.valid){msg=`Tu descuento: ${info.pct}%. La Oferta del día requiere al menos 50%; puedes continuar, pero la revisión podría rechazarla. Con menos de 50% considera la opción «Descuento» de tus productos (Premium).`;cls='warn';}
+  else if(w>0&&n>0&&n>=w){msg='El precio con descuento debe ser menor al precio normal.';cls='warn';}
+  hint.className='field-note'+(cls?' '+cls:'');
+  hint.textContent=msg;
+}
 
 /* Ofertas booking calendar — 1 slot/day, $99 MXN, 14-day visible window,
    enforced for real by a unique constraint on ofertas_bookings.booked_date
@@ -2780,6 +2810,7 @@ const POST_FORMS={
     {k:'photo',lbl:'Foto del producto o servicio',type:'imgupload',note:'Usa buena luz y muestra bien lo que ofreces — no podrás editar esta oferta ni pedir un reembolso después de enviarla, así que revisa todo con cuidado antes de continuar.'},
     {k:'priceWas',lbl:'Precio normal',type:'money',ph:'200'},
     {k:'priceNow',lbl:'Precio con descuento',type:'money',ph:'150'},
+    {k:'discountHint',type:'note',text:''},
     {k:'qty',lbl:'Cantidad disponible',type:'number',ph:'Ej. 10'},
     {k:'terms',lbl:'Condiciones (opcional)',type:'textarea',ph:'Ej. Válido de lunes a viernes, no aplica con otras promociones...'},
     {k:'slot',lbl:'Elige el día',type:'calendar'}
@@ -2850,7 +2881,7 @@ async function openPost(kind){
     </div>`;
   }
   form.fields.forEach(f=>{
-    if(f.type==='note'){h+=`<div class="field-note${f.cls?' '+f.cls:''}" id="row-${f.k}">${f.text||''}</div>`;return;}
+    if(f.type==='note'){h+=`<div class="field-note${f.cls?' '+f.cls:''}" id="row-${f.k}"${f.k==='discountHint'?' aria-live="polite"':''}>${f.text||''}</div>`;return;}
     h+=`<div class="form-row" id="row-${f.k}"><label class="fl">${f.lbl}</label>`;
     if(f.type==='textarea')h+=`<textarea class="ft" id="pf-${f.k}" placeholder="${f.ph||''}"></textarea>`;
     else if(f.type==='select')h+=`<select class="fs" id="pf-${f.k}"><option value="">Selecciona...</option>${f.opts.map(o=>`<option>${o}</option>`).join('')}</select>`;
@@ -2890,6 +2921,8 @@ async function openPost(kind){
   }
   if(kind==='oferta'){
     applyOfertaBusinessHints(postBusinessOptions.find(b=>String(b.id)===String(selectedPostBusinessId)));
+    ['pf-priceWas','pf-priceNow'].forEach(id=>{const inp=document.getElementById(id);if(inp)inp.addEventListener('input',updateOfertaDiscountHint);});
+    updateOfertaDiscountHint();
   }
   if(kind==='clasificado'||kind==='avisos'||kind==='mascotas'||kind==='empleos'){
     // Prefill the contact number from the account so a signed-in poster
@@ -5361,6 +5394,7 @@ async function openMyPostEdit(table,id,opts){
   editingPost={table,id,backKey:opts.backKey||'myPosts'};
   document.getElementById('modal-title').textContent='Editar publicación';
   applyPostEditFill(cfg.fill(item.raw));
+  if(table==='ofertas')updateOfertaDiscountHint(); // prefill sets .value without an input event
   applyConditionalRows(POST_FORMS[cfg.form]); // re-sync showIf rows now that seg values are set
   if(table==='productos'){
     const acct=await MC.currentAccount();
@@ -5496,6 +5530,16 @@ async function fillBusinessDuplicateCheck(raw){
   box.innerHTML=renderBusinessDuplicateCheck(raw,others);
 }
 
+/* Admin-only discount check shown under an oferta's detail fields. Real prices
+   from the raw row; reviewer decides, nothing here gates approve/reject. */
+function ofertaModerationDiscountHtml(raw){
+  const info=ofertaDiscountInfo(raw.price_was,raw.price_now);
+  const line=info.valid
+    ?`Descuento: ${info.pct}% (de $${e(String(raw.price_was))} a $${e(String(raw.price_now))}): ${info.ok?'cumple':'NO cumple'} el mínimo de 50%`
+    :'Descuento: no se puede calcular';
+  return `<div class="field-note ${info.valid&&info.ok?'ok':'warn'}" id="of-mod-discount" style="font-size:13px;margin:12px 0 0">${line}</div>
+    <div class="field-note" id="of-mod-criteria" style="margin:6px 0 0">Criterios: al menos 50% de descuento · exclusiva de MiCampeche · no ofrecida en otro lugar.</div>`;
+}
 function openModerationDetail(table,id){
   const item=moderationQueue.find(i=>i.table===table&&i.id===id);
   if(!item)return;
@@ -5505,6 +5549,7 @@ function openModerationDetail(table,id){
   document.getElementById('modal-body').innerHTML=`
     <div style="color:var(--ink3);font-size:12px;margin-bottom:12px">Enviado por ${e(item.submittedBy)} · ${relTimeEs(item.createdAt)}</div>
     ${isNoticia?renderNoticiaModerationFields(item.raw):renderModerationDetailFields(table,item.raw)}
+    ${table==='ofertas'?ofertaModerationDiscountHtml(item.raw):''}
     ${table==='eventos'?`<div id="evt-dup-check" style="margin:14px 0"></div>`:''}
     ${table==='businesses'?`<div id="biz-dup-check" style="margin:14px 0"></div>`:''}
     <div style="display:flex;gap:8px;margin-top:16px">

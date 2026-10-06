@@ -4073,6 +4073,43 @@ const fakeClient = {
       assert(co.children.length === 0 || [...co.children].every(c => ['B', 'BR'].includes(c.tagName)), 'the callout payload is only inline <b>/<br> inside one block element');
       assert(!!doc.querySelector('.slot-day') && doc.getElementById('post-submit-btn').disabled === true, 'the oferta form still shows the booking calendar and a disabled submit button until a day is picked');
       assert(!doc.getElementById('pf-rules'), 'the note field is never rendered as an input');
+
+      // ── ofertaDiscountInfo unit cases ──
+      const di = window.ofertaDiscountInfo;
+      const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      assert(eq(di(200, 100), { valid: true, pct: 50, ok: true }), 'ofertaDiscountInfo: 200->100 is exactly 50%, ok');
+      assert(eq(di(200, 101), { valid: true, pct: 49, ok: false }), 'ofertaDiscountInfo: 200->101 (49.5%) is NOT ok and reads 49, never 50');
+      assert(eq(di(200, 150), { valid: true, pct: 25, ok: false }), 'ofertaDiscountInfo: 200->150 is 25%, not ok');
+      assert(di(200, 60).ok && di(200, 60).pct === 70, 'ofertaDiscountInfo: 200->60 is ok (70%)');
+      assert(!di(200, 200).valid && !di(200, 250).valid, 'ofertaDiscountInfo: price >= normal is not valid');
+      assert(!di(0, 0).valid && !di(NaN, 5).valid && !di('', '').valid && !di(null, 5).valid && !di(200, 0).valid, 'ofertaDiscountInfo: zero / NaN / empty are not valid');
+      assert(eq(di('1,200', '$600'), { valid: true, pct: 50, ok: true }), 'ofertaDiscountInfo: typed strings "1,200" and "$600" parse like the form does');
+
+      // ── live hint in the form ──
+      const setPrices = (w, n) => {
+        const we = doc.getElementById('pf-priceWas'), ne = doc.getElementById('pf-priceNow');
+        we.value = w; ne.value = n;
+        we.dispatchEvent(new window.Event('input', { bubbles: true })); ne.dispatchEvent(new window.Event('input', { bubbles: true }));
+        return doc.getElementById('row-discountHint');
+      };
+      const btnBefore = doc.getElementById('post-submit-btn').disabled + '|' + doc.getElementById('post-submit-btn').textContent;
+      let hint = setPrices('200', '150');
+      assert(hint.textContent.includes('Tu descuento: 25%') && hint.textContent.includes('al menos 50%') && hint.classList.contains('warn'), 'below 50%: warning hint with the real percentage');
+      hint = setPrices('200', '100');
+      assert(hint.textContent === 'Tu descuento: 50% ✓' && hint.classList.contains('ok'), 'exactly 50%: success hint');
+      hint = setPrices('200', '60');
+      assert(hint.textContent === 'Tu descuento: 70% ✓', 'above 50%: success hint');
+      hint = setPrices('200', '101');
+      assert(hint.textContent.includes('Tu descuento: 49%') && !hint.textContent.includes('50%.'), '49.5% shows 49% as a warning, never 50%');
+      hint = setPrices('$1,200', '$600');
+      assert(hint.textContent === 'Tu descuento: 50% ✓', 'typed "$1,200" / "$600" produce the hint');
+      hint = setPrices('200', '250');
+      assert(hint.textContent === 'El precio con descuento debe ser menor al precio normal.', 'price >= normal: the must-be-lower message');
+      hint = setPrices('200', '');
+      assert(hint.textContent === '' && !hint.classList.contains('ok') && !hint.classList.contains('warn'), 'partial input: empty hint');
+      hint = setPrices('', '');
+      assert(hint.textContent === '' && hint.getAttribute('aria-live') === 'polite', 'empty form: empty hint, aria-live polite');
+      assert(doc.getElementById('post-submit-btn').disabled + '|' + doc.getElementById('post-submit-btn').textContent === btnBefore, 'the hint never changes the submit button state');
     }
     await attachOfertaPhoto();
     doc.getElementById('pf-item').value = 'Oferta de prueba';
@@ -4633,7 +4670,12 @@ const fakeClient = {
     // that still need it). openModerationDetail() first, same as any real
     // reject flow (it's what pushes the 'pendingList' stack entry that a
     // successful reject later pops back to).
+    window.openModerationDetail('ofertas', 'o5');
+    assert(/Descuento: 40% \(de \$150 a \$90\): NO cumple el mínimo de 50%/.test(text('of-mod-discount')) && doc.getElementById('of-mod-discount').classList.contains('warn'), 'admin oferta review shows the real discount and NO cumple wording (150->90 = 40%)');
+    assert(text('of-mod-criteria').includes('exclusiva de MiCampeche') && text('modal-body').includes('Aprobar') && text('modal-body').includes('Rechazar'), 'the reviewer criteria line shows and approve/reject are still there');
+    window.mcModalBack('pendingList');
     window.openModerationDetail('eventos', 'e4');
+    assert(!doc.getElementById('of-mod-discount') && !text('modal-body').includes('Criterios: al menos 50%'), 'the admin discount check is NOT shown for a non-oferta table');
     window.openRejectReasonPrompt('eventos', 'e4');
     assert((text('modal-body') || '').includes('lo verá en su cuenta'), 'a resident-submitted eventos row shows the real (non-automated) explanation copy');
     delete lastUpdate.eventos;
@@ -4949,6 +4991,7 @@ const fakeClient = {
     {
       const co = doc.querySelector('.field-note.callout');
       assert(!!co && co.textContent.includes('50%') && co.textContent.includes('Exclusiva de MiCampeche') && co.textContent.includes('Descuento'), 'the rejected-oferta edit/resubmit flow also shows the Oferta del día rules callout');
+      assert(doc.getElementById('row-discountHint').textContent.includes('Tu descuento: 40%'), 'the edit/resubmit flow shows the discount hint from the prefilled prices (150->90) without any typing');
     }
     assert((text('post-submit-note') || '').includes('Elige un nuevo día'), 'the note explains a new day is needed, instead of the generic "Guardar cambios" framing every other self-edited type gets immediately');
     await attachOfertaPhoto();
