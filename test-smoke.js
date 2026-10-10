@@ -5181,6 +5181,24 @@ const fakeClient = {
     assert(swCode.includes("cache: 'reload'") || swCode.includes('cache:\'reload\''), "sw.js precaches each app-shell file with a cache:'reload' fetch, bypassing the HTTP cache");
   }
 
+  // ── Local image URLs carry a fixed asset version (?v=), so a cached 301
+  //    for the old unversioned URL can never match (CODEX-LOG 2026-10-10).
+  //    Absolute og:/twitter: image URLs (crawlers) are intentionally exempt. ──
+  {
+    const files = ['index.html', path.join('css', 'styles.css')];
+    let refs = 0;
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
+      const re = /(?<![A-Za-z0-9:\/.])\/?assets\/(?:images|icons)\/[^"'\)\s]+?\.(?:png|jpe?g|webp|svg|gif)(\?[^"'\)\s]*)?/g;
+      let m;
+      while ((m = re.exec(src))) {
+        refs++;
+        assert(/^\?v=\d+$/.test(m[1] || ''), f + ' local image ref is versioned (?v=N): ' + m[0]);
+      }
+    }
+    assert(refs >= 8, 'found the local image refs to check (' + refs + ')');
+  }
+
   console.log('\n' + (failures === 0 ? `ALL PASSED` : `${failures} FAILURE(S)`));
   process.exit(failures === 0 ? 0 : 1);
 })();

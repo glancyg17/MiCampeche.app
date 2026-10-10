@@ -1,4 +1,4 @@
-:root{--mc-build:"4fb2425f89";}
+:root{--mc-build:"fc9839cd0f";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -385,9 +385,10 @@ svg{display:block}
    only chooses the photo and its focal point. */
 .welcome-hero{position:relative;flex-shrink:0;overflow:hidden}
 .wh-photo{height:clamp(270px,46vh,400px);background-size:cover;background-position:var(--wh-pos,50% 50%);background-color:var(--paper3)}
-.wh-am .wh-photo{background-image:url('/assets/images/MiCampeche-Hero.jpg');--wh-pos:32% 50%}
-.wh-pm .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-2.jpg');--wh-pos:50% 50%}
-.wh-noche .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-3.jpg');--wh-pos:60% 50%}
+/* ?v=2 is the asset version; bump when an image file changes (see CODEX-LOG 2026-10-10) */
+.wh-am .wh-photo{background-image:url('/assets/images/MiCampeche-Hero.jpg?v=2');--wh-pos:32% 50%}
+.wh-pm .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-2.jpg?v=2');--wh-pos:50% 50%}
+.wh-noche .wh-photo{background-image:url('/assets/images/MiCampeche-Hero-3.jpg?v=2');--wh-pos:60% 50%}
 .wh-sheet{position:absolute;left:0;right:0;bottom:0;background:rgba(0,6,18,.56);padding:14px 20px 16px;color:#fbf8f2}
 .wh-greet{font-size:12.5px;font-weight:700;color:var(--wall-soft);letter-spacing:.03em}
 .wh-city{font-family:"Fraunces",Georgia,serif;font-size:clamp(22px,6.2vw,27px);font-weight:600;letter-spacing:-.015em;line-height:1.15;margin-top:2px;color:#fff}

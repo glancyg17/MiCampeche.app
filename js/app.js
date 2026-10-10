@@ -1,4 +1,4 @@
-window.MC_BUILD='4fb2425f89';
+window.MC_BUILD='fc9839cd0f';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -500,7 +500,7 @@ function showInstallGate(){
   const ua=navigator.userAgent;
   const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   const iosNoInstall=isIOS&&/CriOS|FxiOS|EdgiOS|OPiOS|GSA|FBAN|FBAV|Instagram|Line|Twitter/.test(ua);
-  const icon='<img class="gate-icon" src="assets/icons/MiCampeche-app-icon.png" alt="MiCampeche">';
+  const icon='<img class="gate-icon" src="assets/icons/MiCampeche-app-icon.png?v=2" alt="MiCampeche">';
   const escape=`<button class="gate-escape" onclick="dismissInstallGate()">Seguir en el navegador por ahora</button>`;
   let body;
   if(iosNoInstall){
@@ -2113,8 +2113,8 @@ function renderMandaditoTabCta(){
    long-press wiring (not a real row). This is a plain array, not tied to
    any threshold — delete entries here whenever you want fewer/none. */
 const MANDADITO_EXAMPLES=[
-  {name:'Ejemplo: Juan Canul',vehicle:'Motocicleta',img:'/assets/images/Mandadito-Ejemplo-1.png'},
-  {name:'Ejemplo: María Chan',vehicle:'Bicicleta',img:'/assets/images/Mandadito-Ejemplo-2.png'}
+  {name:'Ejemplo: Juan Canul',vehicle:'Motocicleta',img:'/assets/images/Mandadito-Ejemplo-1.png?v=2'},
+  {name:'Ejemplo: María Chan',vehicle:'Bicicleta',img:'/assets/images/Mandadito-Ejemplo-2.png?v=2'}
 ];
 function mandaditoCardHtml(m,isExample){
   const num=isExample?'':digitsOnly(m.phone);

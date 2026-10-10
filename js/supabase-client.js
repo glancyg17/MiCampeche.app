@@ -1,4 +1,4 @@
-window.MC_BUILD_CLIENT='4fb2425f89';
+window.MC_BUILD_CLIENT='fc9839cd0f';
 /* ══════════════ SUPABASE CLIENT + DATA LAYER ══════════════
    Bridges the real MiCampeche Supabase project to the existing render
    pipeline in app.js. Every fetch function below returns data reshaped
@@ -926,10 +926,10 @@ MC.unsubscribeFromPush=async function(){
    instead of a blank background. Anything else (e.g. a manually-inserted
    row) falls back to a plain generic MiCampeche placeholder. */
 const NOTICIA_SOURCE_PLACEHOLDER={
-  'Tribuna Campeche':'assets/images/Tribuna.jpg',
-  'Central de Noticias Campeche':'assets/images/CNCampeche.jpg'
+  'Tribuna Campeche':'assets/images/Tribuna.jpg?v=2',
+  'Central de Noticias Campeche':'assets/images/CNCampeche.jpg?v=2'
 };
-const NOTICIA_DEFAULT_PLACEHOLDER='assets/images/Noticias-Generico.jpg';
+const NOTICIA_DEFAULT_PLACEHOLDER='assets/images/Noticias-Generico.jpg?v=2';
 MC.fetchNoticias=async function(){
   const {data,error}=await sb.from('noticias').select('*')
     .eq('status','published').order('published_at',{ascending:false}).limit(30);
@@ -1208,10 +1208,10 @@ MC.fetchMascotas=async function(){
    Anything not Clima/Agua (e.g. a future cierre-vial/emergencia type)
    falls back to a plain generic alert placeholder. */
 const ALERTA_TYPE_PLACEHOLDER={
-  'clima':'assets/images/Alertas-Clima.jpg',
-  'agua':'assets/images/Alertas-Agua.jpg'
+  'clima':'assets/images/Alertas-Clima.jpg?v=2',
+  'agua':'assets/images/Alertas-Agua.jpg?v=2'
 };
-const ALERTA_DEFAULT_PLACEHOLDER='assets/images/Alertas-General.jpg';
+const ALERTA_DEFAULT_PLACEHOLDER='assets/images/Alertas-General.jpg?v=2';
 MC.fetchAlertas=async function(){
   const {data,error}=await sb.from('alertas').select('*')
     .eq('status','published').order('created_at',{ascending:false}).limit(30);
