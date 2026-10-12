@@ -748,11 +748,10 @@ const fakeClient = {
   const realRefreshContent = window.refreshContent;
   window.refreshContent = (...args) => { refreshContentCallCount++; return realRefreshContent(...args); };
 
-  // maybeNudgeInstall() schedules a self-dismissing install-reminder toast
-  // ~2.8s after a sign-in / post-update reload. Its timing isn't meaningfully
-  // testable here, and left live it would clobber the toast text later
-  // assertions read once enough real wall-clock time has passed. Stub it out
-  // — the sign-in success toasts it sits beside are still asserted directly.
+  // maybeNudgeInstall() schedules the install popup ~1.8s after a sign-in / post-update
+  // reload. Its timing isn't meaningfully testable here, and left live it could pop the
+  // tip-gate overlay in the middle of later assertions. Stub it out; the popup itself is
+  // tested directly (maybeShowInstallPopup) in the 'Install popup' block near the end.
   window.maybeNudgeInstall = () => {};
 
   // ── Inicio dashboard: the stat strip is gone, the welcome hero photo
@@ -1880,7 +1879,8 @@ const fakeClient = {
     {
       const appSrc = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8');
       assert(!appSrc.includes('maybeShowWeeklySuggestionPrompt') && !appSrc.includes('SUGGEST_PROMPT_EVERY_MS'), 'boot no longer schedules any weekly suggestion prompt (no timer, no constant)');
-      assert(!appSrc.includes('Tu opinión cuenta') && !appSrc.includes('Ahora no'), 'the weekly form variant (title + "Ahora no") is removed from renderSuggestionForm');
+      const sf = appSrc.slice(appSrc.indexOf('function renderSuggestionForm'), appSrc.indexOf('function renderSuggestionForm') + 4000);
+      assert(!appSrc.includes('Tu opinión cuenta') && !sf.includes('Ahora no'), 'the weekly form variant (title + "Ahora no") is removed from renderSuggestionForm');
     }
     doc.getElementById('modal-bg').classList.remove('on');
     try { window.localStorage.removeItem(promptKey); } catch (_) {}
@@ -5179,6 +5179,115 @@ const fakeClient = {
     // why) — check for the actual dangerous call, not that bare substring.
     assert(!swCode.includes('addAll(APP_SHELL)'), 'sw.js no longer precaches the app shell via cache.addAll(APP_SHELL) (which reads through the HTTP cache)');
     assert(swCode.includes("cache: 'reload'") || swCode.includes('cache:\'reload\''), "sw.js precaches each app-shell file with a cache:'reload' fetch, bypassing the HTTP cache");
+  }
+
+  // ── Install popup replaces the old mobile install gate (CODEX-LOG 2026-10-12).
+  //    jsdom only: popup timing / return-from-WhatsApp need a real browser. ──
+  {
+    const setUA = (ua) => Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+    const setStandalone = (v) => Object.defineProperty(window.navigator, 'standalone', { value: v, configurable: true });
+    const resetPop = () => {
+      for (const k of ['mc_install_pop_n', 'mc_install_pop_t', 'mc_install_after_contact']) window.localStorage.removeItem(k);
+      for (const id of ['modal-bg', 'menu-bg', 'wx-lb-bg', 'tip-gate', 'desktop-gate', 'search-panel']) doc.getElementById(id).classList.remove('on');
+    };
+    const popOn = () => doc.getElementById('tip-gate').classList.contains('on') && !!doc.getElementById('install-pop-title');
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36';
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1';
+    const origUA = window.navigator.userAgent;
+    const html0 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    const app0 = fs.readFileSync(path.join(__dirname, 'js/app.js'), 'utf8');
+
+    assert(!/id="install-gate"/.test(html0) && !doc.getElementById('install-gate'), 'no #install-gate markup remains');
+    assert(!/install-gate|mc_skip_install_gate|mc_gate_dismissed/.test(app0), 'app.js has no install-gate references or keys left');
+    assert(window.showInstallGate === undefined && window.dismissInstallGate === undefined && window.gateInstall === undefined, 'the install-gate functions are gone');
+    let overlayThrew = false;
+    try { window.anyOverlayOpen(); } catch (_) { overlayThrew = true; }
+    assert(!overlayThrew, 'anyOverlayOpen() works without #install-gate');
+
+    resetPop();
+    setStandalone(false);
+    setUA(origUA);
+    assert(window.maybeShowInstallPopup() === false && !popOn(), 'popup never shows on a non-phone (desktop) session');
+
+    setUA(ANDROID);
+    resetPop();
+    assert(window.maybeShowInstallPopup() === true && popOn(), 'popup shows on an Android session at a trigger');
+    const popTxt = text('tip-gate-card').toLowerCase();
+    assert(popTxt.includes('instala micampeche') && !popTxt.includes('notific') && !popTxt.includes('oferta del d'), 'popup copy is the install copy and does not mention push or oferta del día');
+    assert(!!doc.getElementById('install-pop-x') && !!doc.getElementById('install-pop-later') && text('install-pop-later') === 'Ahora no', 'popup has a close X and a plain "Ahora no"');
+    assert(!doc.getElementById('install-pop-go'), 'no Instalar button without a captured install prompt (manual steps in the copy)');
+    window.dismissInstallPopup();
+    assert(!doc.getElementById('tip-gate').classList.contains('on'), '"Ahora no" closes the popup');
+    assert(window.localStorage.getItem('mc_install_pop_n') === '1' && !!window.localStorage.getItem('mc_install_pop_t'), 'dismissal stores a count and a timestamp');
+
+    assert(window.maybeShowInstallPopup() === false, 'within the cooldown window the popup does not show again');
+    window.localStorage.setItem('mc_install_pop_t', String(Date.now() - 13 * 86400000));
+    assert(window.maybeShowInstallPopup() === false, 'one day before the 14-day cooldown ends it still stays hidden');
+    window.localStorage.setItem('mc_install_pop_t', String(Date.now() - 15 * 86400000));
+    assert(window.maybeShowInstallPopup() === true, 'after the cooldown the popup can show again');
+    window.dismissInstallPopup();
+    assert(window.localStorage.getItem('mc_install_pop_n') === '2' && !popOn(), 'the X also counts as a dismissal');
+    window.localStorage.setItem('mc_install_pop_t', String(Date.now() - 400 * 86400000));
+    assert(window.maybeShowInstallPopup() === true, 'second dismissal still allows a later popup');
+    window.dismissInstallPopup();
+    window.localStorage.setItem('mc_install_pop_t', String(Date.now() - 400 * 86400000));
+    assert(window.localStorage.getItem('mc_install_pop_n') === '3' && window.maybeShowInstallPopup() === false, 'after 3 dismissals it never shows again, however old the timestamp');
+
+    resetPop();
+    setStandalone(true);
+    assert(window.maybeShowInstallPopup() === false, 'never shows when running standalone (installed)');
+    setStandalone(false);
+
+    resetPop();
+    doc.getElementById('modal-bg').classList.add('on');
+    assert(window.maybeShowInstallPopup() === false && !popOn(), 'skipped while another overlay (modal) is open');
+    doc.getElementById('modal-bg').classList.remove('on');
+
+    // iOS: manual steps, no button; Android with a captured prompt: Instalar button calls it.
+    setUA(IPHONE);
+    assert(window.maybeShowInstallPopup() === true && text('tip-gate-card').includes('Agregar a inicio de pantalla') && !doc.getElementById('install-pop-go'), 'iPhone popup carries the manual Safari steps');
+    window.dismissInstallPopup();
+    resetPop();
+    setUA(ANDROID);
+    let prompted = false;
+    const bip = new window.Event('beforeinstallprompt');
+    bip.prompt = () => { prompted = true; };
+    bip.userChoice = Promise.resolve({ outcome: 'dismissed' });
+    window.dispatchEvent(bip);
+    assert(window.maybeShowInstallPopup() === true && !!doc.getElementById('install-pop-go'), 'Android with a captured install prompt shows an Instalar button');
+    window.installFromPopup();
+    assert(prompted === true && !popOn(), 'Instalar calls the captured browser prompt and closes the popup');
+
+    // Contact trigger: flag set by guardedContact, popup offered on return (visibilitychange).
+    resetPop();
+    const fireVisible = () => doc.dispatchEvent(new window.Event('visibilitychange'));
+    fireVisible();
+    assert(!popOn(), 'returning to the app with no contact flag shows nothing');
+    window.markInstallAfterContact();
+    doc.getElementById('modal-bg').classList.add('on');
+    fireVisible();
+    assert(!popOn() && !!window.localStorage.getItem('mc_install_after_contact'), 'return after contact with an overlay open: skipped, flag kept');
+    doc.getElementById('modal-bg').classList.remove('on');
+    fireVisible();
+    assert(popOn() && window.localStorage.getItem('mc_install_after_contact') === null, 'return after contact shows the popup and clears the flag');
+    window.dismissInstallPopup();
+    resetPop();
+    window.localStorage.setItem('mc_install_after_contact', String(Date.now() - 48 * 3600000));
+    fireVisible();
+    assert(!popOn() && window.localStorage.getItem('mc_install_after_contact') === null, 'a stale (>24h) contact flag is discarded, not shown');
+
+    const gc = app0.slice(app0.indexOf('async function guardedContact'), app0.indexOf('function contactMsgParam'));
+    assert(/runWriteGate\(acct,null\)\)return false;\s*markInstallAfterContact\(\);/.test(gc), 'guardedContact marks the contact right after passing the write gate (signed-out Contacto included)');
+
+    // The tip gate must not overwrite a popup that is already up.
+    resetPop();
+    window.maybeShowInstallPopup();
+    window.maybeShowTipGate('mandaditos');
+    assert(popOn(), 'a section tip does not replace the install popup while it is open');
+    window.dismissInstallPopup();
+
+    setUA(origUA);
+    resetPop();
   }
 
   // ── Local image URLs carry a fixed asset version (?v=), so a cached 301

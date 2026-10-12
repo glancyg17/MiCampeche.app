@@ -1,4 +1,4 @@
-:root{--mc-build:"fc9839cd0f";}
+:root{--mc-build:"0e96e8ecb5";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -61,10 +61,10 @@ svg{display:block}
 .ico{width:20px;height:20px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 
 /* ═══ DESKTOP GATE (landing page) ═══ */
-/* Both gate screens are always dark-on-dark by design and use --paper as a
+/* The desktop gate is always dark-on-dark by design and uses --paper as a
    "light text" token; re-pin it to its light value so the dark theme's
    --paper override (near-black) doesn't turn their text invisible. */
-#desktop-gate,#install-gate{--paper:#fbf8f2}
+#desktop-gate{--paper:#fbf8f2}
 #desktop-gate{display:none;position:fixed;inset:0;background:radial-gradient(120% 100% at 50% 0%,#1a3238 0%,var(--night) 62%);z-index:99999;overflow-y:auto}
 #desktop-gate.on{display:block}
 .gate-page{max-width:900px;margin:0 auto;padding:64px 40px 84px;color:var(--paper)}
@@ -96,32 +96,19 @@ svg{display:block}
   .gate-features{grid-template-columns:1fr}
 }
 
-/* ═══ INSTALL GATE (mobile browser) ═══ */
-#install-gate{display:none;position:fixed;inset:0;z-index:99998;background:radial-gradient(120% 100% at 50% 0%,#1a3238 0%,var(--night) 62%);overflow-y:auto}
-#install-gate.on{display:block}
-/* Tip gate — blocking per-section onboarding overlay. 260 sits above
-   .wx-lb-bg (250) and below .toast (300); the cold-load #install-gate
-   (99998) still wins if it's up, which is intentional. */
+/* Tip gate — blocking per-section onboarding overlay (also hosts the install
+   popup). 260 sits above .wx-lb-bg (250) and below .toast (300). */
 #tip-gate{display:none;position:fixed;inset:0;z-index:260;background:rgba(18,32,29,.55);align-items:center;justify-content:center;padding:20px}
 #tip-gate.on{display:flex}
 #tip-gate .onboard-card{margin-bottom:0;max-width:360px;width:100%}
-.gate-card{max-width:420px;text-align:center;color:var(--paper)}
-.gate-card h1{font-family:"Fraunces",Georgia,serif;font-size:32px;font-weight:600;margin-bottom:14px;letter-spacing:-0.015em;line-height:1.15}
-.gate-card p{font-size:15px;line-height:1.65;color:#b9c4bf;margin-bottom:34px}
-#install-gate .gate-card{min-height:100%;box-sizing:border-box;padding:48px 30px;display:flex;flex-direction:column;justify-content:center;margin:0 auto}
-.gate-card h1+p{margin-bottom:28px}
-.gate-highlights{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:0 auto 26px;max-width:340px}
-.gate-highlight{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:99px;padding:7px 13px 7px 10px;font-size:12.5px;font-weight:600;color:#dbe3df}
-.gate-highlight .ico{width:14px;height:14px;color:var(--wall-soft)}
-.gate-btn{align-self:center;background:var(--wall);color:var(--night);font-family:inherit;font-size:15px;font-weight:700;border:none;border-radius:99px;padding:15px 34px;cursor:pointer;box-shadow:var(--sh2)}
-.gate-steps{text-align:left;display:flex;flex-direction:column;gap:15px;margin:2px auto 4px;max-width:320px}
-.gate-step{display:flex;gap:13px;align-items:flex-start;font-size:13.5px;line-height:1.55;color:#cdd6d1}
-.gate-step b{color:var(--paper);font-weight:600}
-.gate-step-ico{flex-shrink:0;width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.13);display:flex;align-items:center;justify-content:center;color:var(--paper)}
-.gate-step-ico svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.gate-fallback{font-size:12px;line-height:1.55;color:#8a978f;margin:16px auto 0;max-width:300px}
-.gate-fallback b{color:#b9c4bf;font-weight:600}
-.gate-escape{align-self:center;margin-top:26px;background:none;border:none;color:#8a978f;font-family:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:8px 12px}
+.install-pop-icon{width:38px;height:38px;border-radius:11px;flex-shrink:0}
+.install-pop-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.install-pop-later{background:none;border:none;color:var(--ink3);font-family:inherit;font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:8px 4px}
+.gate-steps{text-align:left;display:flex;flex-direction:column;gap:15px;margin:2px 0 14px}
+.gate-step{display:flex;gap:11px;align-items:flex-start;font-size:12.5px;line-height:1.5;color:var(--ink2)}
+.gate-step b{color:var(--ink);font-weight:600}
+.gate-step-ico{flex-shrink:0;width:30px;height:30px;border-radius:9px;background:var(--paper2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink2)}
+.gate-step-ico svg{width:16px;height:16px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 
 /* ═══ APP SHELL ═══ */
 .app{max-width:430px;margin:0 auto;height:100vh;height:100svh;display:none;flex-direction:column;background:var(--paper2);position:relative;overflow:hidden}

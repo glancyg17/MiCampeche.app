@@ -1,4 +1,4 @@
-window.MC_BUILD='fc9839cd0f';
+window.MC_BUILD='0e96e8ecb5';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -439,11 +439,10 @@ window.addEventListener('beforeinstallprompt',(e)=>{
 });
 window.addEventListener('appinstalled',()=>{
   deferredInstallPrompt=null;
-  const g=document.getElementById('install-gate');
-  if(g)g.classList.remove('on');
 });
 function triggerInstall(){
   closeMenu();
+  if(!isPhoneSession())return;
   if(deferredInstallPrompt){
     deferredInstallPrompt.prompt();
     deferredInstallPrompt.userChoice.then(()=>{deferredInstallPrompt=null;});
@@ -455,82 +454,129 @@ function triggerInstall(){
     : 'Abre el menú de tu navegador y elige "Instalar app" ✓');
 }
 
-/* ══════════════ INSTALL GATE (mobile browser) ══════════════
-   Shown to mobile visitors who are still in a browser tab rather than the
-   installed app. Not a hard wall — there's a plain "seguir en el
-   navegador" link — but the default path is to install, so updates,
-   offline use and instant delivery all just work. Skipped entirely once
-   the app runs standalone. Founder bypass: localStorage mc_skip_install_gate=1. */
+/* ══════════════ INSTALL POPUP ══════════════
+   A dismissible card (hosted in the existing #tip-gate overlay + .onboard-card
+   styles) offered at a few good moments instead of a cold-load wall:
+   after sign-in/signup, after an app update applies, and when the person
+   comes back from contacting a business. Phones/tablets only, never when
+   already installed, never over another overlay. Dismissal is a cooldown
+   (not permanent like section tips) and stops for good after a few. */
+const INSTALL_POP_COOLDOWN_DAYS=14;
+const INSTALL_POP_MAX_DISMISSALS=3;
+const INSTALL_POP_CONTACT_TTL_HOURS=24;
 function isStandalone(){
   return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)
       || window.navigator.standalone===true
       || document.referrer.startsWith('android-app://');
 }
-/* A brief, self-dismissing nudge toward installing the PWA — lighter
-   than the full install-gate (shown once per browser session on cold
-   load), reinforced specifically right after a real sign-in and right
-   after an app update finishes applying, since those are two moments
-   someone's freshly invested in the app. No-ops entirely once actually
-   running installed. */
-function maybeNudgeInstall(){
-  if(isStandalone())return;
-  setTimeout(()=>toast('💡 Instala MiCampeche desde el menú ☰ para que se abra más rápido'),2800);
+/* One definition of "this is a phone/tablet session" for every install
+   affordance. Deliberately UA/touch based, not window width: a narrow
+   desktop window must not be offered an install. (iPadOS Safari reports a
+   Macintosh UA, hence the touch-points check.) */
+function isPhoneSession(){
+  const ua=navigator.userAgent;
+  return /Android|iPhone|iPad|iPod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 }
+function installPopState(){
+  try{
+    return {n:parseInt(localStorage.getItem('mc_install_pop_n')||'0',10)||0,
+            t:parseInt(localStorage.getItem('mc_install_pop_t')||'0',10)||0};
+  }catch(_){return {n:0,t:0};}
+}
+function installPopupDue(){
+  const st=installPopState();
+  if(st.n>=INSTALL_POP_MAX_DISMISSALS)return false;
+  return !st.t||Date.now()-st.t>=INSTALL_POP_COOLDOWN_DAYS*86400000;
+}
+function recordInstallPopDismissal(){
+  const st=installPopState();
+  try{
+    localStorage.setItem('mc_install_pop_n',String(st.n+1));
+    localStorage.setItem('mc_install_pop_t',String(Date.now()));
+  }catch(_){}
+}
+/* Contact navigates away from the page, so a popup at click time is
+   useless: leave a timestamped flag and offer the popup on return. */
+function markInstallAfterContact(){
+  try{localStorage.setItem('mc_install_after_contact',String(Date.now()));}catch(_){}
+}
+function consumeContactInstallFlag(){
+  let t=0;
+  try{t=parseInt(localStorage.getItem('mc_install_after_contact')||'0',10)||0;}catch(_){}
+  if(!t)return false;
+  if(Date.now()-t>INSTALL_POP_CONTACT_TTL_HOURS*3600000){
+    try{localStorage.removeItem('mc_install_after_contact');}catch(_){}
+    return false;
+  }
+  return true;
+}
+function maybeShowInstallPopup(){
+  if(!isPhoneSession()||isStandalone())return false;
+  if(!installPopupDue())return false;
+  if(anyOverlayOpen())return false;
+  const ua=navigator.userAgent;
+  const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const iosNoInstall=isIOS&&/CriOS|FxiOS|EdgiOS|OPiOS|GSA|FBAN|FBAV|Instagram|Line|Twitter/.test(ua);
+  let lead,steps='',cta='';
+  if(iosNoInstall){
+    lead='En iPhone, MiCampeche solo se puede instalar desde Safari. Abre <b>micampeche.app</b> en Safari y luego:';
+    steps=iosAddToHomeStepsHtml();
+  }else if(isIOS){
+    lead='Se abre más rápido, funciona sin conexión y te llega todo al instante. Toma unos segundos:';
+    steps=iosAddToHomeStepsHtml();
+  }else if(deferredInstallPrompt){
+    lead='Se abre más rápido, funciona sin conexión y te llega todo al instante.';
+    cta='<button class="onboard-card-cta" id="install-pop-go" onclick="installFromPopup()">Instalar</button>';
+  }else{
+    lead='Se abre más rápido, funciona sin conexión y te llega todo al instante. Abre el menú de tu navegador y elige <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.';
+  }
+  document.getElementById('tip-gate-card').innerHTML=`
+    <button class="onboard-card-x" id="install-pop-x" aria-label="Cerrar" onclick="dismissInstallPopup()">${svgIco('close')}</button>
+    <div class="onboard-card-hd">
+      <img class="install-pop-icon" src="assets/icons/MiCampeche-app-icon.png?v=2" alt="">
+      <div class="onboard-card-ttl" id="install-pop-title">Instala MiCampeche</div>
+    </div>
+    <div class="onboard-card-lead">${lead}</div>
+    ${steps}
+    <div class="install-pop-actions">${cta}<button class="install-pop-later" id="install-pop-later" onclick="dismissInstallPopup()">Ahora no</button></div>`;
+  document.getElementById('tip-gate').classList.add('on');
+  try{localStorage.removeItem('mc_install_after_contact');}catch(_){}
+  return true;
+}
+function dismissInstallPopup(){
+  recordInstallPopDismissal();
+  document.getElementById('tip-gate').classList.remove('on');
+}
+function installFromPopup(){
+  document.getElementById('tip-gate').classList.remove('on');
+  recordInstallPopDismissal();
+  if(!deferredInstallPrompt)return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(()=>{deferredInstallPrompt=null;});
+}
+/* Trigger entry point (sign-in, post-update). Delayed so the sign-in toast
+   and any modal close finish first; if an overlay is still open it is
+   skipped this time, not queued. */
+function maybeNudgeInstall(delay){
+  setTimeout(()=>maybeShowInstallPopup(),delay==null?1800:delay);
+}
+function maybeShowInstallAfterContact(){
+  if(consumeContactInstallFlag())maybeShowInstallPopup();
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')maybeShowInstallAfterContact();
+});
 const GATE_ICO={
   share:'<svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
   plus:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
   check:'<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>'
 };
-function installGateHighlightsHtml(){
-  return `<div class="gate-highlights">
-    <span class="gate-highlight">${svgIco('news')}Noticias</span>
-    <span class="gate-highlight">${svgIco('eventos')}Eventos</span>
-    <span class="gate-highlight">${svgIco('tienda')}Tienda</span>
-    <span class="gate-highlight">${svgIco('alertas')}Alertas</span>
-  </div>`;
-}
 function iosAddToHomeStepsHtml(){
   return `<div class="gate-steps">
     <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.share}</span><span>Toca <b>Compartir</b> en la barra de Safari — el cuadro con la flecha hacia arriba.</span></div>
     <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.plus}</span><span>Desliza y elige <b>Agregar a inicio de pantalla</b>.</span></div>
     <div class="gate-step"><span class="gate-step-ico">${GATE_ICO.check}</span><span>Toca <b>Agregar</b>. Abre MiCampeche desde el nuevo ícono.</span></div>
   </div>`;
-}
-function showInstallGate(){
-  const ua=navigator.userAgent;
-  const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-  const iosNoInstall=isIOS&&/CriOS|FxiOS|EdgiOS|OPiOS|GSA|FBAN|FBAV|Instagram|Line|Twitter/.test(ua);
-  const icon='<img class="gate-icon" src="assets/icons/MiCampeche-app-icon.png?v=2" alt="MiCampeche">';
-  const escape=`<button class="gate-escape" onclick="dismissInstallGate()">Seguir en el navegador por ahora</button>`;
-  let body;
-  if(iosNoInstall){
-    body=`<h1>Ábrelo en Safari para instalarlo</h1>
-      <p>En iPhone, MiCampeche solo se puede instalar desde Safari. Abre <b>micampeche.app</b> en Safari y luego:</p>
-      ${installGateHighlightsHtml()}
-      ${iosAddToHomeStepsHtml()}`;
-  }else if(isIOS){
-    body=`<h1>Instala MiCampeche en tu iPhone</h1>
-      <p>Se abre más rápido, funciona sin conexión y te llega todo al instante. Toma unos segundos:</p>
-      ${installGateHighlightsHtml()}
-      ${iosAddToHomeStepsHtml()}`;
-  }else{
-    body=`<h1>Instala MiCampeche</h1>
-      <p>Se abre más rápido, funciona sin conexión y te llega todo al instante.</p>
-      ${installGateHighlightsHtml()}
-      <button class="gate-btn" onclick="gateInstall()">Instalar la app</button>
-      <div class="gate-fallback">¿No aparece la opción? Abre el menú de tu navegador y elige <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.</div>`;
-  }
-  document.getElementById('install-gate-card').innerHTML=icon+body+escape;
-  document.getElementById('install-gate').classList.add('on');
-}
-function dismissInstallGate(){
-  try{sessionStorage.setItem('mc_gate_dismissed','1');}catch(e){}
-  document.getElementById('install-gate').classList.remove('on');
-}
-function gateInstall(){
-  if(!deferredInstallPrompt){toast('Abre el menú de tu navegador y elige "Instalar app"');return;}
-  deferredInstallPrompt.prompt();
-  deferredInstallPrompt.userChoice.then(()=>{deferredInstallPrompt=null;});
 }
 
 function openWeatherLightbox(){
@@ -1422,6 +1468,7 @@ try{
   });
 }catch(_){}
 function maybeShowTipGate(key){
+  if(document.getElementById('install-pop-title')&&document.getElementById('tip-gate').classList.contains('on'))return; // never replace an open install popup
   if(tipGateShownThisSession.has(key))return;
   tipGateShownThisSession.add(key);
   if(!tipsEnabled())return;
@@ -1475,7 +1522,7 @@ function renderPreferencesBody(acct=lastFetchedAccount){
     </div>
     ${renderWaAppPrefBlock()}
     ${acct&&acct.signedIn?renderPushPrefBlock():''}
-    ${isStandalone()?'':`
+    ${isStandalone()||!isPhoneSession()?'':`
       <button class="menu-item" onclick="triggerInstall()" style="border:1.5px solid var(--line2);justify-content:center;margin-top:6px">
         <span class="menu-item-lbl">Instalar la app</span>
       </button>
@@ -5792,6 +5839,7 @@ function runWriteGate(acct,kindForSignin){
 async function guardedContact(url){
   const acct=await MC.currentAccount();
   if(!runWriteGate(acct,null))return false;
+  markInstallAfterContact();
   if(url.indexOf('https://wa.me/')===0){openWhatsAppSmart(url);}else{location.href=url;}
   return true;
 }
@@ -6396,7 +6444,6 @@ async function refreshPendingBadge(){
    write needed. */
 async function maybeShowMandaditoReviewNudge(){
   if(document.getElementById('modal-bg').classList.contains('on'))return;
-  if(document.getElementById('install-gate').classList.contains('on'))return;
   const pending=await MC.fetchPendingMandaditoReview();
   if(!pending)return;
   const name=(pending.mandaditos&&pending.mandaditos.display_name)||'ese mandadito';
@@ -6445,7 +6492,6 @@ async function submitMandaditoProblem(contactId,mandaditoId){
 let pendingAdminMessages=[];
 async function maybeShowUndismissedMessages(){
   if(document.getElementById('modal-bg').classList.contains('on'))return;
-  if(document.getElementById('install-gate').classList.contains('on'))return;
   const uid=await MC.ready;
   if(!uid)return;
   pendingAdminMessages=await MC.fetchMyUndismissedMessages();
@@ -6771,7 +6817,7 @@ async function submitSuggestion(){
 }
 
 function anyOverlayOpen(){
-  return ['modal-bg','menu-bg','wx-lb-bg','install-gate','tip-gate','desktop-gate','search-panel'].some(id=>{
+  return ['modal-bg','menu-bg','wx-lb-bg','tip-gate','desktop-gate','search-panel'].some(id=>{
     const el=document.getElementById(id);
     return !!el&&el.classList.contains('on');
   });
@@ -6898,11 +6944,6 @@ async function init(){
     document.getElementById('desktop-gate').classList.add('on');
   }else{
     document.getElementById('app').classList.add('on');
-    if(!isStandalone()
-       && localStorage.getItem('mc_skip_install_gate')!=='1'
-       && sessionStorage.getItem('mc_gate_dismissed')!=='1'){
-      showInstallGate();
-    }
   }
   renderBottomNav();
   renderHeaderWeather();
@@ -6916,11 +6957,12 @@ async function init(){
   setReportarMode('avisos');
   renderKooxApps();
   initPullToRefresh();
-  if(!document.getElementById('install-gate').classList.contains('on'))maybeShowTipGate('inicio');
-  if(!isStandalone()&&sessionStorage.getItem('mc_just_updated')==='1'){
+  maybeShowTipGate('inicio');
+  if(sessionStorage.getItem('mc_just_updated')==='1'){
     try{sessionStorage.removeItem('mc_just_updated');}catch(e){}
-    setTimeout(()=>maybeNudgeInstall(),1200);
+    maybeNudgeInstall(1200);
   }
+  maybeShowInstallAfterContact();
   mcBackInit();
 }
 applyTheme();
