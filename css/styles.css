@@ -1,4 +1,4 @@
-:root{--mc-build:"0e96e8ecb5";}
+:root{--mc-build:"5beeeb29af";}
 *{box-sizing:border-box;margin:0;padding:0}
 button{font:inherit;line-height:1.2}
 /* Tells the browser this page has its own deliberate theming and shouldn't
@@ -69,6 +69,7 @@ svg{display:block}
 #desktop-gate.on{display:block}
 .gate-page{max-width:900px;margin:0 auto;padding:64px 40px 84px;color:var(--paper)}
 .gate-icon{width:78px;height:78px;border-radius:20px;display:block;margin:0 auto 30px;box-shadow:var(--sh3)}
+.gate-continue{display:block;margin:0 auto 30px;background:var(--wall);color:var(--night);font-family:inherit;font-size:15px;font-weight:700;border:none;border-radius:99px;padding:15px 34px;cursor:pointer;box-shadow:var(--sh2)}
 .gate-qr{width:172px;height:172px;background:#fff;border-radius:20px;margin:0 auto 22px;display:flex;align-items:center;justify-content:center;padding:14px;box-shadow:var(--sh3)}
 .gate-qr img{width:100%;height:100%}
 .gate-url{font-size:13.5px;color:#8a978f;letter-spacing:.02em}
@@ -798,6 +799,13 @@ svg{display:block}
 .submit-btn{background:var(--night);color:var(--paper);border:none;border-radius:var(--rs);padding:15px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px;box-shadow:var(--sh2)}
 
 /* ═══ TOAST ═══ */
+/* Desktop: the app is the 430px column centered on the dark body backdrop.
+   Fixed overlays that anchor to a window edge are re-anchored to the column. */
+@media (min-width:431px){
+  .fab{right:calc(18px + (100vw - 430px)/2)}
+  .menu-drawer{left:calc((100vw - 430px)/2);transform:translateX(-24px);opacity:0;transition:transform .25s ease,opacity .25s ease}
+  .menu-bg.on .menu-drawer{transform:none;opacity:1}
+}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--night);color:var(--paper);padding:13px 22px;border-radius:99px;font-size:13px;font-weight:600;z-index:300;display:none;box-shadow:var(--sh3);white-space:nowrap}
 .toast.on{display:block;animation:toastIn .25s ease}
 @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}

@@ -38,12 +38,12 @@ src="https://www.facebook.com/tr?id=1060910360102541&ev=PageView&noscript=1"
 <meta name="twitter:description" content="Noticias, eventos, la tienda local, avisos vecinales y alertas oficiales de Campeche, todo en una sola app.">
 <meta name="twitter:image" content="https://micampeche.app/assets/images/MiCampeche-OG.jpg">
 <meta name="theme-color" content="#000612">
-<meta name="mc-build" content="0e96e8ecb5">
+<meta name="mc-build" content="5beeeb29af">
 <meta name="color-scheme" content="light">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/icons/MiCampeche-app-icon.png?v=2">
 <link rel="icon" href="assets/icons/MiCampeche-app-icon.png?v=2">
-<link rel="stylesheet" href="css/styles.css?v=0e96e8ecb5">
+<link rel="stylesheet" href="css/styles.css?v=5beeeb29af">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="48f853e2-c8ce-4065-8eef-ba03ed423be3"></script>
 </head>
 <body>
@@ -94,6 +94,7 @@ src="https://www.facebook.com/tr?id=1060910360102541&ev=PageView&noscript=1"
     </section>
 
     <section class="gate-cta">
+      <button class="gate-continue" id="desktop-continue-btn" onclick="continueOnDesktop()">Continuar en la computadora</button>
       <div class="gate-qr"><img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://micampeche.app&color=000612" alt="QR"></div>
       <div class="gate-url">Escanea el código con tu teléfono, o visita <b>micampeche.app</b> desde ahí, para empezar</div>
     </section>
@@ -558,8 +559,8 @@ src="https://www.facebook.com/tr?id=1060910360102541&ev=PageView&noscript=1"
 <div class="toast" id="toast"></div>
 
 <script src="js/vendor/supabase.js"></script>
-<script src="js/supabase-client.js?v=0e96e8ecb5"></script>
-<script src="js/app.js?v=0e96e8ecb5"></script>
+<script src="js/supabase-client.js?v=5beeeb29af"></script>
+<script src="js/app.js?v=5beeeb29af"></script>
 <script>
 /* Manual escape hatch: visiting the site with ?forceupdate=1 unregisters
    every service worker and clears all caches for this origin, then reloads

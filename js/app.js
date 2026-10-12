@@ -1,4 +1,4 @@
-window.MC_BUILD='0e96e8ecb5';
+window.MC_BUILD='5beeeb29af';
 /* ══════════════ ICONS ══════════════ */
 const ICO={
   account:'<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/>',
@@ -498,6 +498,7 @@ function recordInstallPopDismissal(){
 /* Contact navigates away from the page, so a popup at click time is
    useless: leave a timestamped flag and offer the popup on return. */
 function markInstallAfterContact(){
+  if(!isPhoneSession())return;
   try{localStorage.setItem('mc_install_after_contact',String(Date.now()));}catch(_){}
 }
 function consumeContactInstallFlag(){
@@ -6939,8 +6940,19 @@ async function markSuggestionReviewed(id){
   renderAdminSuggestions();
 }
 
+/* Desktop visitors first see the landing page; "Continuar en la computadora"
+   enters the app (the 430px column) and remembers that choice. Also what
+   lets an iPad (Macintosh UA, width >= 700) in. */
+function continueOnDesktop(){
+  try{localStorage.setItem('mc_desktop_continue','1');}catch(_){}
+  document.getElementById('desktop-gate').classList.remove('on');
+  document.getElementById('app').classList.add('on');
+}
+function desktopContinueRemembered(){
+  try{return localStorage.getItem('mc_desktop_continue')==='1';}catch(_){return false;}
+}
 async function init(){
-  if(!isMobile()){
+  if(!isMobile()&&!desktopContinueRemembered()){
     document.getElementById('desktop-gate').classList.add('on');
   }else{
     document.getElementById('app').classList.add('on');

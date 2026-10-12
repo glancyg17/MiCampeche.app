@@ -5290,6 +5290,60 @@ const fakeClient = {
     resetPop();
   }
 
+  // ── Desktop: "Continuar en la computadora" + install affordances hidden off-phone
+  //    (CODEX-LOG 2026-10-12). jsdom only; real window widths need a real browser. ──
+  {
+    const setUA = (ua) => Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+    const origUA = window.navigator.userAgent;
+    const gate = () => doc.getElementById('desktop-gate');
+    const app = () => doc.getElementById('app');
+    const htmlD = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    window.localStorage.removeItem('mc_desktop_continue');
+
+    const btn = doc.getElementById('desktop-continue-btn');
+    assert(!!btn && btn.textContent.trim() === 'Continuar en la computadora' && btn.getAttribute('onclick') === 'continueOnDesktop()', 'the desktop gate has a "Continuar en la computadora" button');
+    assert(/class="gate-qr"/.test(htmlD) && /micampeche\.app<\/b>/.test(htmlD), 'the QR code and landing content are still there');
+
+    gate().classList.add('on');
+    app().classList.remove('on');
+    window.continueOnDesktop();
+    assert(!gate().classList.contains('on') && app().classList.contains('on'), 'Continuar hides the gate and shows the app');
+    assert(window.localStorage.getItem('mc_desktop_continue') === '1', 'the choice is remembered in localStorage');
+
+    // Returning desktop visitor goes straight in; a first-time visitor still sees the landing page.
+    gate().classList.remove('on'); app().classList.remove('on');
+    await window.init();
+    assert(!gate().classList.contains('on') && app().classList.contains('on'), 'a returning desktop visitor goes straight into the app');
+    window.localStorage.removeItem('mc_desktop_continue');
+    app().classList.remove('on');
+    await window.init();
+    assert(gate().classList.contains('on') && !app().classList.contains('on'), 'a first-time desktop visitor still sees the landing page');
+    gate().classList.remove('on');
+    doc.getElementById('tip-gate').classList.remove('on');
+
+    // Install affordances: hidden on desktop, present on a phone.
+    assert(!window.renderPreferencesBody({ signedIn: false }).includes('triggerInstall()'), 'the "Instalar la app" menu item is hidden on a desktop session');
+    assert(window.isPhoneSession() === false, 'isPhoneSession() is false for a desktop UA');
+    let toastBefore = text('toast');
+    window.triggerInstall();
+    assert(text('toast') === toastBefore, 'triggerInstall does nothing on desktop (no manual-install toast)');
+    setUA('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36');
+    assert(window.isPhoneSession() === true && window.renderPreferencesBody({ signedIn: false }).includes('triggerInstall()'), 'the "Instalar la app" menu item shows on a phone session');
+    setUA(origUA);
+    window.localStorage.removeItem('mc_install_after_contact');
+    window.markInstallAfterContact();
+    assert(window.localStorage.getItem('mc_install_after_contact') === null, 'a desktop contact does not leave an install flag behind');
+
+    // Non-Android WhatsApp path is just the https://wa.me link.
+    const waSrc = fs.readFileSync(path.join(__dirname, 'js/app.js'), 'utf8');
+    assert(/function openWhatsAppSmart\(waUrl\)\{\s*if\(!isAndroidUA\(\)\)\{location\.href=waUrl;return;\}/.test(waSrc), 'openWhatsAppSmart on non-Android just navigates to the wa.me link');
+
+    // Overlays are capped to the 430px column (CSS source check; layout needs a real browser).
+    const cssD = fs.readFileSync(path.join(__dirname, 'css/styles.css'), 'utf8');
+    assert(/@media \(min-width:431px\)\{[^}]*\.fab\{right:calc\(18px \+ \(100vw - 430px\)\/2\)\}[\s\S]*?\.menu-drawer\{left:calc\(\(100vw - 430px\)\/2\)/.test(cssD), 'FAB and menu drawer are anchored to the app column on wide windows');
+    assert(/\.modal\{[^}]*max-width:430px;margin:0 auto/.test(cssD), 'the bottom sheet is capped and centered to the column');
+  }
+
   // ── Local image URLs carry a fixed asset version (?v=), so a cached 301
   //    for the old unversioned URL can never match (CODEX-LOG 2026-10-10).
   //    Absolute og:/twitter: image URLs (crawlers) are intentionally exempt. ──

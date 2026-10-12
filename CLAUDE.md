@@ -80,6 +80,7 @@ js/app.js:
 - openAdminBusinessView / renderAdminBusinessView — admin business detail
 - renderModerationDetailFields — shared detail-fields renderer (moderation, admin, owner views)
 - openAccount — account menu
+- continueOnDesktop / desktopContinueRemembered — "Continuar en la computadora" on #desktop-gate (mc_desktop_continue); install item lives in renderPreferencesBody
 - maybeShowInstallPopup / isPhoneSession / maybeNudgeInstall / markInstallAfterContact — install popup (hosted in #tip-gate), phone-only helper, triggers; cooldown constants INSTALL_POP_*
 - runWriteGate — gate for writes (verification, blocked "Acceso restringido")
 - guardedContact / openWhatsAppSmart / navigateWhatsAppPackage — contact buttons, Android WhatsApp vs Business chooser
